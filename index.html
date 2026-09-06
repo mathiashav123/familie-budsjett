@@ -401,43 +401,66 @@
         <div class="card-head">
           <h2 id="merSyncTitle">Konto / Synk</h2>
         </div>
-        <p class="hint compact">Logg inn for synk mellom telefon og PC. Data lagres fortsatt lokalt som sikkerhetskopi. Ingen bankkobling.</p>
+        <p class="sync-lead" id="syncLead">
+          Synk budsjettet mellom <strong>PC og telefon</strong> med brukernavn og passord.
+          Data lagres fortsatt lokalt som sikkerhetskopi. Ingen bankkobling.
+        </p>
         <div class="sync-status" id="syncStatusBox" role="status">
-          <span class="sync-status-label" id="syncStatusLabel">Kun lokalt</span>
-          <span class="sync-status-detail" id="syncStatusDetail">Logg inn for synk mellom telefon og PC</span>
+          <span class="sync-status-dot" aria-hidden="true"></span>
+          <div class="sync-status-text">
+            <span class="sync-status-label" id="syncStatusLabel">Kun lokalt</span>
+            <span class="sync-status-detail" id="syncStatusDetail">Logg inn for synk mellom telefon og PC</span>
+          </div>
         </div>
+
         <div id="syncLoggedOut" class="sync-panel">
+          <div class="sync-mode" role="tablist" aria-label="Velg handling">
+            <button type="button" class="sync-mode-btn is-active" id="syncModeSignup" role="tab" aria-selected="true" data-sync-mode="signup">Opprett husstand</button>
+            <button type="button" class="sync-mode-btn" id="syncModeLogin" role="tab" aria-selected="false" data-sync-mode="login">Logg inn</button>
+          </div>
+          <p class="hint compact sync-mode-hint" id="syncModeHint">
+            Opprett husstand én gang (f.eks. på PC). Deretter logger du inn på telefonen med samme brukernavn og passord.
+          </p>
           <label class="field">
             <span>Brukernavn</span>
-            <input type="text" id="syncUsername" class="input" maxlength="32" autocomplete="username" placeholder="f.eks. mathias" />
+            <input type="text" id="syncUsername" class="input lg" maxlength="32" autocomplete="username" placeholder="f.eks. mathias" spellcheck="false" />
           </label>
           <label class="field">
             <span>Passord</span>
-            <input type="password" id="syncPassword" class="input" maxlength="72" autocomplete="current-password" placeholder="Minst 6 tegn" />
+            <input type="password" id="syncPassword" class="input lg" maxlength="72" autocomplete="new-password" placeholder="Minst 6 tegn" />
           </label>
-          <div class="sync-actions">
-            <button type="button" class="btn primary" id="btnSyncLogin">Logg inn</button>
-            <button type="button" class="btn" id="btnSyncSignup">Opprett konto</button>
-          </div>
-          <p class="hint compact" id="syncConfigHint" hidden>Sky-synk er ikke aktiv ennå. Når config er på plass, fungerer innlogging her.</p>
+          <p class="sync-form-error" id="syncFormError" hidden role="alert"></p>
+          <button type="button" class="btn primary lg sync-submit" id="btnSyncSubmit">Opprett husstand</button>
+          <!-- Keep ids for compatibility; hidden, driven by mode + submit -->
+          <button type="button" class="btn primary" id="btnSyncLogin" hidden>Logg inn</button>
+          <button type="button" class="btn" id="btnSyncSignup" hidden>Opprett husstand</button>
+          <p class="hint compact" id="syncConfigHint" hidden>Synk er ikke aktiv ennå. Du kan bruke appen som vanlig – data lagres lokalt.</p>
         </div>
+
         <div id="syncLoggedIn" class="sync-panel" hidden>
           <p class="sync-user-line" id="syncUserLine"></p>
-          <p class="sync-invite-line" id="syncInviteLine" hidden>
-            Invitasjonskode: <strong id="syncInviteCode"></strong>
-            <button type="button" class="btn ghost sync-copy-btn" id="btnSyncCopyInvite">Kopier</button>
-          </p>
-          <label class="field" id="syncJoinField">
-            <span>Bli med i husstand (kode fra PC / partner)</span>
-            <input type="text" id="syncJoinCode" class="input" maxlength="16" autocomplete="off" placeholder="f.eks. AB12CD34" />
-          </label>
-          <div class="sync-actions">
-            <button type="button" class="btn" id="btnSyncJoin">Bli med</button>
+          <div class="sync-invite-card" id="syncInviteLine" hidden>
+            <p class="sync-invite-title">Invitasjonskode til andre enhet</p>
+            <p class="hint compact sync-invite-help">På telefonen: opprett egen husstandskonto <em>eller</em> logg inn med samme brukernavn – eller skriv inn koden under «Bli med».</p>
+            <div class="sync-invite-row">
+              <strong class="sync-invite-code" id="syncInviteCode"></strong>
+              <button type="button" class="btn primary sync-copy-btn" id="btnSyncCopyInvite">Kopier kode</button>
+            </div>
+          </div>
+          <div class="sync-join-block" id="syncJoinField">
+            <label class="field">
+              <span>Bli med i husstand</span>
+              <input type="text" id="syncJoinCode" class="input lg" maxlength="16" autocomplete="off" placeholder="Kode fra PC / partner" spellcheck="false" />
+            </label>
+            <p class="hint compact">Har partneren allerede husstand? Skriv inn invitasjonskoden her.</p>
+            <button type="button" class="btn" id="btnSyncJoin">Bli med med kode</button>
+          </div>
+          <div class="sync-actions sync-actions-logged">
             <button type="button" class="btn primary" id="btnSyncNow">Synk nå</button>
             <button type="button" class="btn ghost" id="btnSyncLogout">Logg ut</button>
           </div>
         </div>
-        <p class="hint compact">Første innlogging på PC laster opp budsjettet. På telefon: samme brukernavn, eller egen konto + invitasjonskode.</p>
+        <p class="hint compact sync-footer-hint">Lokal sikkerhetskopi i nettleseren beholdes alltid. Ingen bankinnlogging.</p>
       </section>
 
       <section class="card compact-card mer-year-card" id="sectionMerYear" aria-labelledby="merYearTitle">
@@ -843,7 +866,10 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
+  <script src="supabase-config.js"></script>
   <script src="calc-core.js"></script>
+  <script src="sync-core.js"></script>
+  <script src="cloud-sync.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

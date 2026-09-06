@@ -16,7 +16,7 @@ app = app.replace(/\/\* === familie sync loader === \*\/[\s\S]*?\/\* === end syn
 let html = fs.readFileSync("index.html", "utf8");
 html = html.replace(/<link rel="stylesheet" href="styles\.css"\s*\/>/, `<style>\n${css}\n</style>`);
 html = html.replace(
-  /<script src="calc-core\.js"><\/script>\s*<script src="app\.js"><\/script>/,
+  /<script src="supabase-config\.js"><\/script>\s*<script src="calc-core\.js"><\/script>\s*<script src="sync-core\.js"><\/script>\s*<script src="cloud-sync\.js"><\/script>\s*<script src="app\.js"><\/script>/,
   `<script>\n${config}\n</script>\n<script>\n${calc}\n</script>\n<script>\n${sync}\n</script>\n<script>\n${cloud}\n</script>\n<script>\n${app}\n</script>`
 );
 

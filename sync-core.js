@@ -162,14 +162,14 @@
     if (!configured) {
       return {
         label: "Kun lokalt",
-        detail: "Sky-synk aktiveres når Supabase-config er fylt ut.",
+        detail: "Synk mellom PC og telefon er ikke aktiv ennå. Data lagres lokalt.",
         kind: "local"
       };
     }
     if (!meta.userId && !meta.username) {
       return {
         label: "Kun lokalt",
-        detail: "Logg inn for synk mellom telefon og PC",
+        detail: "Opprett husstand eller logg inn for å synke PC og telefon",
         kind: "local"
       };
     }

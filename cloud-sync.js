@@ -143,7 +143,7 @@
   async function api(method, path, body, opts) {
     opts = opts || {};
     var c = getConfig();
-    if (!c.url) throw new Error("Supabase er ikke konfigurert");
+    if (!c.url) throw new Error("Synk er ikke aktiv ennå");
     var url = String(c.url).replace(/\/$/, "") + path;
     var init = { method: method, headers: authHeaders(opts.headers || {}) };
     if (body !== undefined) init.body = JSON.stringify(body);
@@ -233,7 +233,7 @@
   }
 
   async function signUp(username, password) {
-    if (!isConfigured()) throw new Error("Supabase er ikke konfigurert");
+    if (!isConfigured()) throw new Error("Synk er ikke aktiv ennå");
     var vu = validateUsername(username);
     if (!vu.ok) throw new Error(vu.error);
     var vp = validatePassword(password);
@@ -255,7 +255,7 @@
     }
     if (!data.access_token) {
       throw new Error(
-        "Konto opprettet, men mangler sesjon. Slå AV «Confirm email» i Supabase Auth (gratis)."
+        "Konto opprettet, men innlogging feilet. Prøv «Logg inn» om et øyeblikk."
       );
     }
     var session = {
@@ -276,7 +276,7 @@
   }
 
   async function signIn(username, password) {
-    if (!isConfigured()) throw new Error("Supabase er ikke konfigurert");
+    if (!isConfigured()) throw new Error("Synk er ikke aktiv ennå");
     var vu = validateUsername(username);
     if (!vu.ok) throw new Error(vu.error);
     var vp = validatePassword(password);
@@ -436,7 +436,7 @@
     pushTimer = setTimeout(function () {
       pushTimer = null;
       pushNow().then(function (r) {
-        if (r && r.error && host && host.showToast) host.showToast("Kunne ikke synke til sky");
+        if (r && r.error && host && host.showToast) host.showToast("Kunne ikke synke nå");
         if (host && host.onMeta) host.onMeta(loadMeta());
       });
     }, PUSH_DEBOUNCE_MS);
@@ -497,7 +497,7 @@
 
         if (decision.action === "conflict" && localHas && differs && !opts.silent) {
           var takeCloud = confirmFn(
-            "Skyen har andre data enn denne enheten.\n\nOK = hent fra sky (anbefalt)\nAvbryt = behold lokal og last opp"
+            "Husstanden har andre data enn denne enheten.\n\nOK = hent fra husstanden (anbefalt)\nAvbryt = behold lokal og last opp"
           );
           if (!takeCloud) {
             meta.keepLocalOnce = true;
@@ -507,7 +507,7 @@
           }
         } else if (localHas && differs && decision.action === "pull" && !opts.silent && meta.lastSyncedCloudAt) {
           var okPull = confirmFn(
-            "Finne nyere data i skyen. Erstatte det som ligger lokalt på denne enheten?"
+            "Fant nyere data i husstanden. Erstatte det som ligger lokalt på denne enheten?"
           );
           if (!okPull) return { ok: true, action: "skipped-pull" };
         }
@@ -522,7 +522,7 @@
           meta.pendingPush = false;
           clearError(meta);
           saveMeta(meta);
-          if (host.showToast) host.showToast("Hentet fra sky");
+          if (host.showToast) host.showToast("Hentet fra husstanden");
           if (host.onMeta) host.onMeta(meta);
           return { ok: true, action: "pull" };
         }
@@ -557,7 +557,7 @@
     if (!row) {
       if (host && host.showToast) host.showToast("Oppretter husstand…");
       await createHouseholdWithLocal();
-      if (host && host.showToast) host.showToast("Synket til sky");
+      if (host && host.showToast) host.showToast("Husstand opprettet og synket");
       if (host && host.onMeta) host.onMeta(loadMeta());
       return { loggedIn: true, created: true };
     }
@@ -584,7 +584,7 @@
     if (localHas && differs) {
       var confirmFn = (host && host.confirmFn) || function (msg) { return window.confirm(msg); };
       var takeCloud = confirmFn(
-        "Du har lokal data som skiller seg fra husstanden.\n\nOK = hent husstandens data fra sky\nAvbryt = behold lokal (lastes opp til husstanden)"
+        "Du har lokal data som skiller seg fra husstanden.\n\nOK = hent husstandens data\nAvbryt = behold lokal (lastes opp til husstanden)"
       );
       if (!takeCloud) {
         await pushNow();
@@ -601,7 +601,7 @@
       meta.localChangeAt = meta.lastPullAt;
       clearError(meta);
       saveMeta(meta);
-      if (host.showToast) host.showToast("Hentet fra sky");
+      if (host.showToast) host.showToast("Hentet fra husstanden");
     }
     if (host && host.onMeta) host.onMeta(loadMeta());
     return { ok: true, action: "joined" };

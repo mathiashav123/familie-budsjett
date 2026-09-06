@@ -1,5 +1,15 @@
 # Endringslogg – Familiebudsjett
 
+## 7. september 2026 (UTC+2) – Konto / Synk UX
+
+### Mer → Konto / Synk
+- Tydelig valg: **Opprett husstand** vs **Logg inn** (brukernavn + passord).
+- Forklaring: synker PC og telefon; lokal sikkerhetskopi beholdes. Ingen bank.
+- Status med prikk: **Kun lokalt** / **Synket** / **Synker…** (+ feil).
+- Invitasjonskode som egen kort for andre enhet (Kopier kode).
+- Feilmeldinger og hint på norsk; ingen leverandørnavn i brukergrensesnitt.
+- Lagringsnøkkel uendret: **`familie-budsjett-v1`**.
+
 ## 6. september 2026 (UTC+2) – Husstands-synk (gratis)
 
 ### Konto / Synk

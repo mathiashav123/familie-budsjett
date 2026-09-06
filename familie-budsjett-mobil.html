@@ -3751,39 +3751,156 @@ button.cat-group-header {
 .goal-card-eta.is-need { color: var(--amber); }
 
 /* Mer → Konto / Synk */
+.mer-sync-card .sync-lead {
+  margin: 0 0 .65rem;
+  font-size: .92rem;
+  line-height: 1.45;
+  color: var(--text);
+}
 .mer-sync-card .sync-status {
   display: flex;
-  flex-direction: column;
-  gap: .25rem;
-  padding: .75rem .9rem;
-  border-radius: 12px;
-  background: var(--teal-bg);
+  flex-direction: row;
+  align-items: flex-start;
+  gap: .7rem;
+  padding: .85rem 1rem;
+  border-radius: 14px;
+  background: #f3f4f6;
   border: 1px solid var(--border);
-  margin: .5rem 0 .75rem;
+  margin: .35rem 0 .9rem;
 }
-.mer-sync-card .sync-status.is-local { background: #f3f4f6; }
+.mer-sync-card .sync-status.is-local { background: #f3f4f6; border-color: #e5e7eb; }
 .mer-sync-card .sync-status.is-synced { background: #ecfdf5; border-color: #a7f3d0; }
 .mer-sync-card .sync-status.is-pending { background: #fffbeb; border-color: #fde68a; }
 .mer-sync-card .sync-status.is-error { background: #fef2f2; border-color: #fecaca; }
-.sync-status-label { font-weight: 800; color: var(--text); }
-.sync-status-detail { font-size: .85rem; color: var(--muted); }
-.sync-panel { display: grid; gap: .65rem; margin-top: .35rem; }
+.sync-status-dot {
+  width: .7rem;
+  height: .7rem;
+  border-radius: 999px;
+  margin-top: .35rem;
+  flex: 0 0 auto;
+  background: #9ca3af;
+  box-shadow: 0 0 0 3px rgba(156, 163, 175, .2);
+}
+.sync-status.is-synced .sync-status-dot { background: #059669; box-shadow: 0 0 0 3px rgba(5, 150, 105, .18); }
+.sync-status.is-pending .sync-status-dot {
+  background: #d97706;
+  box-shadow: 0 0 0 3px rgba(217, 119, 6, .18);
+  animation: sync-pulse 1.1s ease-in-out infinite;
+}
+.sync-status.is-error .sync-status-dot { background: #dc2626; box-shadow: 0 0 0 3px rgba(220, 38, 38, .18); }
+.sync-status.is-local .sync-status-dot { background: #6b7280; box-shadow: 0 0 0 3px rgba(107, 114, 128, .16); }
+@keyframes sync-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .55; transform: scale(.92); }
+}
+.sync-status-text { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
+.sync-status-label { font-weight: 800; color: var(--text); letter-spacing: -.01em; }
+.sync-status-detail { font-size: .85rem; color: var(--muted); line-height: 1.35; }
+.sync-panel { display: grid; gap: .75rem; margin-top: .15rem; }
+.sync-mode {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .35rem;
+  padding: .3rem;
+  border-radius: 14px;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+}
+.sync-mode-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 750;
+  font-size: .9rem;
+  min-height: 2.6rem;
+  border-radius: 11px;
+  cursor: pointer;
+  padding: .45rem .55rem;
+  transition: background .15s ease, color .15s ease, box-shadow .15s ease;
+}
+.sync-mode-btn.is-active {
+  background: #fff;
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .08);
+}
+.sync-mode-btn:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+.sync-mode-hint { margin: 0; }
+.sync-form-error {
+  margin: 0;
+  padding: .65rem .8rem;
+  border-radius: 12px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  font-size: .88rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+.sync-submit { width: 100%; justify-content: center; min-height: 3rem; }
 .sync-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: .5rem;
+  gap: .55rem;
 }
+.sync-actions-logged { grid-template-columns: 1fr auto; }
 .sync-actions .btn { min-height: 2.75rem; justify-content: center; }
-.sync-user-line { font-weight: 700; margin: 0; }
-.sync-invite-line {
+.sync-user-line {
+  font-weight: 750;
+  margin: 0;
+  padding: .55rem .7rem;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+}
+.sync-invite-card {
+  display: grid;
+  gap: .55rem;
+  margin: 0;
+  padding: .85rem .9rem;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #f0fdfa 0%, #ecfeff 100%);
+  border: 1px solid #99f6e4;
+}
+.sync-invite-title {
+  margin: 0;
+  font-weight: 800;
+  font-size: .95rem;
+  color: var(--teal-dark, #0f766e);
+}
+.sync-invite-help { margin: 0; }
+.sync-invite-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: .5rem;
-  margin: 0;
-  font-size: .95rem;
+  gap: .55rem;
 }
-.sync-copy-btn { min-height: 2.25rem; padding: .35rem .7rem; }
+.sync-invite-code {
+  font-size: 1.25rem;
+  letter-spacing: .08em;
+  font-variant-numeric: tabular-nums;
+  padding: .45rem .7rem;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px dashed #5eead4;
+  color: var(--text);
+}
+.sync-copy-btn { min-height: 2.5rem; padding: .4rem .85rem; }
+.sync-join-block {
+  display: grid;
+  gap: .55rem;
+  padding: .75rem .85rem;
+  border-radius: 14px;
+  background: #fafafa;
+  border: 1px solid #e5e7eb;
+}
+.sync-join-block .hint { margin: 0; }
+.sync-join-block .btn { justify-content: center; min-height: 2.6rem; }
+.sync-footer-hint { margin: .85rem 0 0; }
 
 </style>
 </head>
@@ -4173,43 +4290,66 @@ button.cat-group-header {
         <div class="card-head">
           <h2 id="merSyncTitle">Konto / Synk</h2>
         </div>
-        <p class="hint compact">Logg inn for synk mellom telefon og PC. Data lagres fortsatt lokalt som sikkerhetskopi. Ingen bankkobling.</p>
+        <p class="sync-lead" id="syncLead">
+          Synk budsjettet mellom <strong>PC og telefon</strong> med brukernavn og passord.
+          Data lagres fortsatt lokalt som sikkerhetskopi. Ingen bankkobling.
+        </p>
         <div class="sync-status" id="syncStatusBox" role="status">
-          <span class="sync-status-label" id="syncStatusLabel">Kun lokalt</span>
-          <span class="sync-status-detail" id="syncStatusDetail">Logg inn for synk mellom telefon og PC</span>
+          <span class="sync-status-dot" aria-hidden="true"></span>
+          <div class="sync-status-text">
+            <span class="sync-status-label" id="syncStatusLabel">Kun lokalt</span>
+            <span class="sync-status-detail" id="syncStatusDetail">Logg inn for synk mellom telefon og PC</span>
+          </div>
         </div>
+
         <div id="syncLoggedOut" class="sync-panel">
+          <div class="sync-mode" role="tablist" aria-label="Velg handling">
+            <button type="button" class="sync-mode-btn is-active" id="syncModeSignup" role="tab" aria-selected="true" data-sync-mode="signup">Opprett husstand</button>
+            <button type="button" class="sync-mode-btn" id="syncModeLogin" role="tab" aria-selected="false" data-sync-mode="login">Logg inn</button>
+          </div>
+          <p class="hint compact sync-mode-hint" id="syncModeHint">
+            Opprett husstand én gang (f.eks. på PC). Deretter logger du inn på telefonen med samme brukernavn og passord.
+          </p>
           <label class="field">
             <span>Brukernavn</span>
-            <input type="text" id="syncUsername" class="input" maxlength="32" autocomplete="username" placeholder="f.eks. mathias" />
+            <input type="text" id="syncUsername" class="input lg" maxlength="32" autocomplete="username" placeholder="f.eks. mathias" spellcheck="false" />
           </label>
           <label class="field">
             <span>Passord</span>
-            <input type="password" id="syncPassword" class="input" maxlength="72" autocomplete="current-password" placeholder="Minst 6 tegn" />
+            <input type="password" id="syncPassword" class="input lg" maxlength="72" autocomplete="new-password" placeholder="Minst 6 tegn" />
           </label>
-          <div class="sync-actions">
-            <button type="button" class="btn primary" id="btnSyncLogin">Logg inn</button>
-            <button type="button" class="btn" id="btnSyncSignup">Opprett konto</button>
-          </div>
-          <p class="hint compact" id="syncConfigHint" hidden>Sky-synk er ikke aktiv ennå. Når config er på plass, fungerer innlogging her.</p>
+          <p class="sync-form-error" id="syncFormError" hidden role="alert"></p>
+          <button type="button" class="btn primary lg sync-submit" id="btnSyncSubmit">Opprett husstand</button>
+          <!-- Keep ids for compatibility; hidden, driven by mode + submit -->
+          <button type="button" class="btn primary" id="btnSyncLogin" hidden>Logg inn</button>
+          <button type="button" class="btn" id="btnSyncSignup" hidden>Opprett husstand</button>
+          <p class="hint compact" id="syncConfigHint" hidden>Synk er ikke aktiv ennå. Du kan bruke appen som vanlig – data lagres lokalt.</p>
         </div>
+
         <div id="syncLoggedIn" class="sync-panel" hidden>
           <p class="sync-user-line" id="syncUserLine"></p>
-          <p class="sync-invite-line" id="syncInviteLine" hidden>
-            Invitasjonskode: <strong id="syncInviteCode"></strong>
-            <button type="button" class="btn ghost sync-copy-btn" id="btnSyncCopyInvite">Kopier</button>
-          </p>
-          <label class="field" id="syncJoinField">
-            <span>Bli med i husstand (kode fra PC / partner)</span>
-            <input type="text" id="syncJoinCode" class="input" maxlength="16" autocomplete="off" placeholder="f.eks. AB12CD34" />
-          </label>
-          <div class="sync-actions">
-            <button type="button" class="btn" id="btnSyncJoin">Bli med</button>
+          <div class="sync-invite-card" id="syncInviteLine" hidden>
+            <p class="sync-invite-title">Invitasjonskode til andre enhet</p>
+            <p class="hint compact sync-invite-help">På telefonen: opprett egen husstandskonto <em>eller</em> logg inn med samme brukernavn – eller skriv inn koden under «Bli med».</p>
+            <div class="sync-invite-row">
+              <strong class="sync-invite-code" id="syncInviteCode"></strong>
+              <button type="button" class="btn primary sync-copy-btn" id="btnSyncCopyInvite">Kopier kode</button>
+            </div>
+          </div>
+          <div class="sync-join-block" id="syncJoinField">
+            <label class="field">
+              <span>Bli med i husstand</span>
+              <input type="text" id="syncJoinCode" class="input lg" maxlength="16" autocomplete="off" placeholder="Kode fra PC / partner" spellcheck="false" />
+            </label>
+            <p class="hint compact">Har partneren allerede husstand? Skriv inn invitasjonskoden her.</p>
+            <button type="button" class="btn" id="btnSyncJoin">Bli med med kode</button>
+          </div>
+          <div class="sync-actions sync-actions-logged">
             <button type="button" class="btn primary" id="btnSyncNow">Synk nå</button>
             <button type="button" class="btn ghost" id="btnSyncLogout">Logg ut</button>
           </div>
         </div>
-        <p class="hint compact">Første innlogging på PC laster opp budsjettet. På telefon: samme brukernavn, eller egen konto + invitasjonskode.</p>
+        <p class="hint compact sync-footer-hint">Lokal sikkerhetskopi i nettleseren beholdes alltid. Ingen bankinnlogging.</p>
       </section>
 
       <section class="card compact-card mer-year-card" id="sectionMerYear" aria-labelledby="merYearTitle">
@@ -4618,15 +4758,11 @@ button.cat-group-header {
   <script>
 /**
  * Familiebudsjett – Supabase config (FREE tier, public anon key only).
- *
- * Wake-up: paste Project URL + anon public key from
- * Supabase → Project Settings → API. Never put service_role here.
- *
- * Auth is username + password (no e-mail). See README + supabase-schema.sql.
+ * Never put service_role here.
  */
 window.FAMILIE_BUDGET_SUPABASE = {
-  url: "",
-  anonKey: ""
+  url: "https://cjyqovvrzwiimvafqmqr.supabase.co",
+  anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNqeXFvdnZyendpaW12YWZxbXFyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg3MjY5NTUsImV4cCI6MjEwNDMwMjk1NX0.Pg_3c44BpHGr3InPepDN3yd8LAX1wf1_wH3YRJ6S3u4"
 };
 
 </script>
@@ -6786,14 +6922,14 @@ window.FAMILIE_BUDGET_SUPABASE = {
     if (!configured) {
       return {
         label: "Kun lokalt",
-        detail: "Sky-synk aktiveres når Supabase-config er fylt ut.",
+        detail: "Synk mellom PC og telefon er ikke aktiv ennå. Data lagres lokalt.",
         kind: "local"
       };
     }
     if (!meta.userId && !meta.username) {
       return {
         label: "Kun lokalt",
-        detail: "Logg inn for synk mellom telefon og PC",
+        detail: "Opprett husstand eller logg inn for å synke PC og telefon",
         kind: "local"
       };
     }
@@ -7001,7 +7137,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
   async function api(method, path, body, opts) {
     opts = opts || {};
     var c = getConfig();
-    if (!c.url) throw new Error("Supabase er ikke konfigurert");
+    if (!c.url) throw new Error("Synk er ikke aktiv ennå");
     var url = String(c.url).replace(/\/$/, "") + path;
     var init = { method: method, headers: authHeaders(opts.headers || {}) };
     if (body !== undefined) init.body = JSON.stringify(body);
@@ -7091,7 +7227,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
   }
 
   async function signUp(username, password) {
-    if (!isConfigured()) throw new Error("Supabase er ikke konfigurert");
+    if (!isConfigured()) throw new Error("Synk er ikke aktiv ennå");
     var vu = validateUsername(username);
     if (!vu.ok) throw new Error(vu.error);
     var vp = validatePassword(password);
@@ -7113,7 +7249,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     }
     if (!data.access_token) {
       throw new Error(
-        "Konto opprettet, men mangler sesjon. Slå AV «Confirm email» i Supabase Auth (gratis)."
+        "Konto opprettet, men innlogging feilet. Prøv «Logg inn» om et øyeblikk."
       );
     }
     var session = {
@@ -7134,7 +7270,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
   }
 
   async function signIn(username, password) {
-    if (!isConfigured()) throw new Error("Supabase er ikke konfigurert");
+    if (!isConfigured()) throw new Error("Synk er ikke aktiv ennå");
     var vu = validateUsername(username);
     if (!vu.ok) throw new Error(vu.error);
     var vp = validatePassword(password);
@@ -7294,7 +7430,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     pushTimer = setTimeout(function () {
       pushTimer = null;
       pushNow().then(function (r) {
-        if (r && r.error && host && host.showToast) host.showToast("Kunne ikke synke til sky");
+        if (r && r.error && host && host.showToast) host.showToast("Kunne ikke synke nå");
         if (host && host.onMeta) host.onMeta(loadMeta());
       });
     }, PUSH_DEBOUNCE_MS);
@@ -7355,7 +7491,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
 
         if (decision.action === "conflict" && localHas && differs && !opts.silent) {
           var takeCloud = confirmFn(
-            "Skyen har andre data enn denne enheten.\n\nOK = hent fra sky (anbefalt)\nAvbryt = behold lokal og last opp"
+            "Husstanden har andre data enn denne enheten.\n\nOK = hent fra husstanden (anbefalt)\nAvbryt = behold lokal og last opp"
           );
           if (!takeCloud) {
             meta.keepLocalOnce = true;
@@ -7365,7 +7501,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
           }
         } else if (localHas && differs && decision.action === "pull" && !opts.silent && meta.lastSyncedCloudAt) {
           var okPull = confirmFn(
-            "Finne nyere data i skyen. Erstatte det som ligger lokalt på denne enheten?"
+            "Fant nyere data i husstanden. Erstatte det som ligger lokalt på denne enheten?"
           );
           if (!okPull) return { ok: true, action: "skipped-pull" };
         }
@@ -7380,7 +7516,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
           meta.pendingPush = false;
           clearError(meta);
           saveMeta(meta);
-          if (host.showToast) host.showToast("Hentet fra sky");
+          if (host.showToast) host.showToast("Hentet fra husstanden");
           if (host.onMeta) host.onMeta(meta);
           return { ok: true, action: "pull" };
         }
@@ -7415,7 +7551,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     if (!row) {
       if (host && host.showToast) host.showToast("Oppretter husstand…");
       await createHouseholdWithLocal();
-      if (host && host.showToast) host.showToast("Synket til sky");
+      if (host && host.showToast) host.showToast("Husstand opprettet og synket");
       if (host && host.onMeta) host.onMeta(loadMeta());
       return { loggedIn: true, created: true };
     }
@@ -7442,7 +7578,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     if (localHas && differs) {
       var confirmFn = (host && host.confirmFn) || function (msg) { return window.confirm(msg); };
       var takeCloud = confirmFn(
-        "Du har lokal data som skiller seg fra husstanden.\n\nOK = hent husstandens data fra sky\nAvbryt = behold lokal (lastes opp til husstanden)"
+        "Du har lokal data som skiller seg fra husstanden.\n\nOK = hent husstandens data\nAvbryt = behold lokal (lastes opp til husstanden)"
       );
       if (!takeCloud) {
         await pushNow();
@@ -7459,7 +7595,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
       meta.localChangeAt = meta.lastPullAt;
       clearError(meta);
       saveMeta(meta);
-      if (host.showToast) host.showToast("Hentet fra sky");
+      if (host.showToast) host.showToast("Hentet fra husstanden");
     }
     if (host && host.onMeta) host.onMeta(loadMeta());
     return { ok: true, action: "joined" };
@@ -11264,6 +11400,48 @@ window.FAMILIE_BUDGET_SUPABASE = {
 
 
   // ——— Bind ———
+  var syncAuthMode = "signup";
+
+  function setSyncFormError(msg) {
+    var el = $("#syncFormError");
+    if (!el) return;
+    if (msg) {
+      el.hidden = false;
+      el.textContent = msg;
+    } else {
+      el.hidden = true;
+      el.textContent = "";
+    }
+  }
+
+  function applySyncAuthMode(mode) {
+    syncAuthMode = mode === "login" ? "login" : "signup";
+    var btnSignup = $("#syncModeSignup");
+    var btnLogin = $("#syncModeLogin");
+    var hint = $("#syncModeHint");
+    var submit = $("#btnSyncSubmit");
+    var pw = $("#syncPassword");
+    if (btnSignup) {
+      btnSignup.classList.toggle("is-active", syncAuthMode === "signup");
+      btnSignup.setAttribute("aria-selected", syncAuthMode === "signup" ? "true" : "false");
+    }
+    if (btnLogin) {
+      btnLogin.classList.toggle("is-active", syncAuthMode === "login");
+      btnLogin.setAttribute("aria-selected", syncAuthMode === "login" ? "true" : "false");
+    }
+    if (hint) {
+      hint.textContent = syncAuthMode === "signup"
+        ? "Opprett husstand én gang (f.eks. på PC). Deretter logger du inn på telefonen med samme brukernavn og passord."
+        : "Samme brukernavn og passord på PC og telefon. Budsjettet synkes automatisk.";
+    }
+    if (submit) {
+      submit.textContent = syncAuthMode === "signup" ? "Opprett husstand" : "Logg inn";
+    }
+    if (pw) {
+      pw.setAttribute("autocomplete", syncAuthMode === "signup" ? "new-password" : "current-password");
+    }
+  }
+
   function renderSyncUI() {
     var Cloud = window.FamilieBudsjettCloud;
     var Sync = window.FamilieBudsjettSync;
@@ -11289,11 +11467,16 @@ window.FAMILIE_BUDGET_SUPABASE = {
     var hasUser = !!(meta && meta.userId);
     if (loggedOut) loggedOut.hidden = hasUser;
     if (loggedIn) loggedIn.hidden = !hasUser;
+    applySyncAuthMode(syncAuthMode);
     var userLine = $("#syncUserLine");
     if (userLine) {
-      userLine.textContent = hasUser
-        ? ("Innlogget som @" + (meta.username || "bruker") + (meta.householdName ? " · " + meta.householdName : ""))
-        : "";
+      if (!hasUser) {
+        userLine.textContent = "";
+      } else if (meta.householdName) {
+        userLine.textContent = "Innlogget som @" + (meta.username || "bruker") + " · " + meta.householdName;
+      } else {
+        userLine.textContent = "Innlogget som @" + (meta.username || "bruker");
+      }
     }
     var inviteLine = $("#syncInviteLine");
     var inviteCodeEl = $("#syncInviteCode");
@@ -11304,6 +11487,11 @@ window.FAMILIE_BUDGET_SUPABASE = {
       } else {
         inviteLine.hidden = true;
       }
+    }
+    var joinField = $("#syncJoinField");
+    if (joinField) {
+      // Hide join box when already in a household with invite (second device already synced)
+      joinField.hidden = !!(meta && meta.householdId && meta.inviteCode);
     }
   }
 
@@ -11324,6 +11512,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
 
   function bindSyncUI() {
     var Cloud = window.FamilieBudsjettCloud;
+    applySyncAuthMode("signup");
     renderSyncUI();
     var btnMerSync = $("#btnMerSync");
     if (btnMerSync) {
@@ -11335,27 +11524,89 @@ window.FAMILIE_BUDGET_SUPABASE = {
     }
     function creds() {
       return {
-        username: ($("#syncUsername") && $("#syncUsername").value) || "",
+        username: ($("#syncUsername") && $("#syncUsername").value.trim()) || "",
         password: ($("#syncPassword") && $("#syncPassword").value) || ""
       };
     }
     function runAuth(mode) {
+      setSyncFormError("");
       if (!Cloud || !Cloud.isConfigured || !Cloud.isConfigured()) {
-        showToast("Sky-synk er ikke konfigurert ennå");
+        var msg = "Synk er ikke aktiv ennå. Du kan bruke appen som vanlig – data lagres lokalt.";
+        setSyncFormError(msg);
+        showToast("Synk er ikke aktiv ennå");
         renderSyncUI();
         return;
       }
       var c = creds();
+      if (!c.username) {
+        setSyncFormError("Skriv inn brukernavn");
+        return;
+      }
+      if (!c.password) {
+        setSyncFormError("Skriv inn passord");
+        return;
+      }
+      var submit = $("#btnSyncSubmit");
+      if (submit) {
+        submit.disabled = true;
+        submit.textContent = mode === "signup" ? "Oppretter…" : "Logger inn…";
+      }
       var p = mode === "signup" ? Cloud.signUp(c.username, c.password) : Cloud.signIn(c.username, c.password);
       p.then(function () {
-        showToast(mode === "signup" ? "Konto opprettet" : "Innlogget");
+        showToast(mode === "signup" ? "Husstand opprettet" : "Innlogget");
         return Cloud.afterAuthReady();
       }).then(function () {
+        if ($("#syncPassword")) $("#syncPassword").value = "";
+        setSyncFormError("");
         renderSyncUI();
         render();
       }).catch(function (err) {
-        showToast((err && err.message) || "Innlogging feilet");
+        var m = (err && err.message) || "Innlogging feilet";
+        setSyncFormError(m);
+        showToast(m);
         renderSyncUI();
+      }).then(function () {
+        if (submit) {
+          submit.disabled = false;
+          applySyncAuthMode(syncAuthMode);
+        }
+      });
+    }
+    var modeSignup = $("#syncModeSignup");
+    if (modeSignup) {
+      modeSignup.addEventListener("click", function () {
+        applySyncAuthMode("signup");
+        setSyncFormError("");
+      });
+    }
+    var modeLogin = $("#syncModeLogin");
+    if (modeLogin) {
+      modeLogin.addEventListener("click", function () {
+        applySyncAuthMode("login");
+        setSyncFormError("");
+      });
+    }
+    var btnSubmit = $("#btnSyncSubmit");
+    if (btnSubmit) {
+      btnSubmit.addEventListener("click", function () { runAuth(syncAuthMode); });
+    }
+    var pwEl = $("#syncPassword");
+    if (pwEl) {
+      pwEl.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          runAuth(syncAuthMode);
+        }
+      });
+    }
+    var userEl = $("#syncUsername");
+    if (userEl) {
+      userEl.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          var pw = $("#syncPassword");
+          if (pw) pw.focus();
+        }
       });
     }
     var btnLogin = $("#btnSyncLogin");
@@ -11368,6 +11619,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
         if (!Cloud) return;
         Cloud.signOut().then(function () {
           showToast("Logget ut (lokal data beholdt)");
+          setSyncFormError("");
           renderSyncUI();
         });
       });
@@ -11377,7 +11629,12 @@ window.FAMILIE_BUDGET_SUPABASE = {
       btnJoin.addEventListener("click", function () {
         if (!Cloud) return;
         var code = ($("#syncJoinCode") && $("#syncJoinCode").value) || "";
+        if (!String(code).trim()) {
+          showToast("Skriv inn invitasjonskoden");
+          return;
+        }
         Cloud.joinHouseholdFlow(code).then(function () {
+          showToast("Med i husstanden");
           renderSyncUI();
           render();
         }).catch(function (err) {
@@ -11390,6 +11647,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     if (btnNow) {
       btnNow.addEventListener("click", function () {
         if (!Cloud) return;
+        btnNow.disabled = true;
         Cloud.pullNow().then(function (pulled) {
           if (pulled && pulled.action === "noop") return Cloud.pushNow();
           return pulled;
@@ -11400,6 +11658,8 @@ window.FAMILIE_BUDGET_SUPABASE = {
         }).catch(function (err) {
           showToast((err && err.message) || "Synk feilet");
           renderSyncUI();
+        }).then(function () {
+          btnNow.disabled = false;
         });
       });
     }
@@ -11410,7 +11670,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
         var code = meta.inviteCode || "";
         if (!code) return;
         if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(code).then(function () { showToast("Kode kopiert"); })
+          navigator.clipboard.writeText(code).then(function () { showToast("Invitasjonskode kopiert"); })
             .catch(function () { showToast(code); });
         } else showToast(code);
       });

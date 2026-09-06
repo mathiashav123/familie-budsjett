@@ -3762,6 +3762,48 @@
 
 
   // ——— Bind ———
+  var syncAuthMode = "signup";
+
+  function setSyncFormError(msg) {
+    var el = $("#syncFormError");
+    if (!el) return;
+    if (msg) {
+      el.hidden = false;
+      el.textContent = msg;
+    } else {
+      el.hidden = true;
+      el.textContent = "";
+    }
+  }
+
+  function applySyncAuthMode(mode) {
+    syncAuthMode = mode === "login" ? "login" : "signup";
+    var btnSignup = $("#syncModeSignup");
+    var btnLogin = $("#syncModeLogin");
+    var hint = $("#syncModeHint");
+    var submit = $("#btnSyncSubmit");
+    var pw = $("#syncPassword");
+    if (btnSignup) {
+      btnSignup.classList.toggle("is-active", syncAuthMode === "signup");
+      btnSignup.setAttribute("aria-selected", syncAuthMode === "signup" ? "true" : "false");
+    }
+    if (btnLogin) {
+      btnLogin.classList.toggle("is-active", syncAuthMode === "login");
+      btnLogin.setAttribute("aria-selected", syncAuthMode === "login" ? "true" : "false");
+    }
+    if (hint) {
+      hint.textContent = syncAuthMode === "signup"
+        ? "Opprett husstand én gang (f.eks. på PC). Deretter logger du inn på telefonen med samme brukernavn og passord."
+        : "Samme brukernavn og passord på PC og telefon. Budsjettet synkes automatisk.";
+    }
+    if (submit) {
+      submit.textContent = syncAuthMode === "signup" ? "Opprett husstand" : "Logg inn";
+    }
+    if (pw) {
+      pw.setAttribute("autocomplete", syncAuthMode === "signup" ? "new-password" : "current-password");
+    }
+  }
+
   function renderSyncUI() {
     var Cloud = window.FamilieBudsjettCloud;
     var Sync = window.FamilieBudsjettSync;
@@ -3787,11 +3829,16 @@
     var hasUser = !!(meta && meta.userId);
     if (loggedOut) loggedOut.hidden = hasUser;
     if (loggedIn) loggedIn.hidden = !hasUser;
+    applySyncAuthMode(syncAuthMode);
     var userLine = $("#syncUserLine");
     if (userLine) {
-      userLine.textContent = hasUser
-        ? ("Innlogget som @" + (meta.username || "bruker") + (meta.householdName ? " · " + meta.householdName : ""))
-        : "";
+      if (!hasUser) {
+        userLine.textContent = "";
+      } else if (meta.householdName) {
+        userLine.textContent = "Innlogget som @" + (meta.username || "bruker") + " · " + meta.householdName;
+      } else {
+        userLine.textContent = "Innlogget som @" + (meta.username || "bruker");
+      }
     }
     var inviteLine = $("#syncInviteLine");
     var inviteCodeEl = $("#syncInviteCode");
@@ -3802,6 +3849,11 @@
       } else {
         inviteLine.hidden = true;
       }
+    }
+    var joinField = $("#syncJoinField");
+    if (joinField) {
+      // Hide join box when already in a household with invite (second device already synced)
+      joinField.hidden = !!(meta && meta.householdId && meta.inviteCode);
     }
   }
 
@@ -3822,6 +3874,7 @@
 
   function bindSyncUI() {
     var Cloud = window.FamilieBudsjettCloud;
+    applySyncAuthMode("signup");
     renderSyncUI();
     var btnMerSync = $("#btnMerSync");
     if (btnMerSync) {
@@ -3833,27 +3886,89 @@
     }
     function creds() {
       return {
-        username: ($("#syncUsername") && $("#syncUsername").value) || "",
+        username: ($("#syncUsername") && $("#syncUsername").value.trim()) || "",
         password: ($("#syncPassword") && $("#syncPassword").value) || ""
       };
     }
     function runAuth(mode) {
+      setSyncFormError("");
       if (!Cloud || !Cloud.isConfigured || !Cloud.isConfigured()) {
-        showToast("Sky-synk er ikke konfigurert ennå");
+        var msg = "Synk er ikke aktiv ennå. Du kan bruke appen som vanlig – data lagres lokalt.";
+        setSyncFormError(msg);
+        showToast("Synk er ikke aktiv ennå");
         renderSyncUI();
         return;
       }
       var c = creds();
+      if (!c.username) {
+        setSyncFormError("Skriv inn brukernavn");
+        return;
+      }
+      if (!c.password) {
+        setSyncFormError("Skriv inn passord");
+        return;
+      }
+      var submit = $("#btnSyncSubmit");
+      if (submit) {
+        submit.disabled = true;
+        submit.textContent = mode === "signup" ? "Oppretter…" : "Logger inn…";
+      }
       var p = mode === "signup" ? Cloud.signUp(c.username, c.password) : Cloud.signIn(c.username, c.password);
       p.then(function () {
-        showToast(mode === "signup" ? "Konto opprettet" : "Innlogget");
+        showToast(mode === "signup" ? "Husstand opprettet" : "Innlogget");
         return Cloud.afterAuthReady();
       }).then(function () {
+        if ($("#syncPassword")) $("#syncPassword").value = "";
+        setSyncFormError("");
         renderSyncUI();
         render();
       }).catch(function (err) {
-        showToast((err && err.message) || "Innlogging feilet");
+        var m = (err && err.message) || "Innlogging feilet";
+        setSyncFormError(m);
+        showToast(m);
         renderSyncUI();
+      }).then(function () {
+        if (submit) {
+          submit.disabled = false;
+          applySyncAuthMode(syncAuthMode);
+        }
+      });
+    }
+    var modeSignup = $("#syncModeSignup");
+    if (modeSignup) {
+      modeSignup.addEventListener("click", function () {
+        applySyncAuthMode("signup");
+        setSyncFormError("");
+      });
+    }
+    var modeLogin = $("#syncModeLogin");
+    if (modeLogin) {
+      modeLogin.addEventListener("click", function () {
+        applySyncAuthMode("login");
+        setSyncFormError("");
+      });
+    }
+    var btnSubmit = $("#btnSyncSubmit");
+    if (btnSubmit) {
+      btnSubmit.addEventListener("click", function () { runAuth(syncAuthMode); });
+    }
+    var pwEl = $("#syncPassword");
+    if (pwEl) {
+      pwEl.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          runAuth(syncAuthMode);
+        }
+      });
+    }
+    var userEl = $("#syncUsername");
+    if (userEl) {
+      userEl.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          var pw = $("#syncPassword");
+          if (pw) pw.focus();
+        }
       });
     }
     var btnLogin = $("#btnSyncLogin");
@@ -3866,6 +3981,7 @@
         if (!Cloud) return;
         Cloud.signOut().then(function () {
           showToast("Logget ut (lokal data beholdt)");
+          setSyncFormError("");
           renderSyncUI();
         });
       });
@@ -3875,7 +3991,12 @@
       btnJoin.addEventListener("click", function () {
         if (!Cloud) return;
         var code = ($("#syncJoinCode") && $("#syncJoinCode").value) || "";
+        if (!String(code).trim()) {
+          showToast("Skriv inn invitasjonskoden");
+          return;
+        }
         Cloud.joinHouseholdFlow(code).then(function () {
+          showToast("Med i husstanden");
           renderSyncUI();
           render();
         }).catch(function (err) {
@@ -3888,6 +4009,7 @@
     if (btnNow) {
       btnNow.addEventListener("click", function () {
         if (!Cloud) return;
+        btnNow.disabled = true;
         Cloud.pullNow().then(function (pulled) {
           if (pulled && pulled.action === "noop") return Cloud.pushNow();
           return pulled;
@@ -3898,6 +4020,8 @@
         }).catch(function (err) {
           showToast((err && err.message) || "Synk feilet");
           renderSyncUI();
+        }).then(function () {
+          btnNow.disabled = false;
         });
       });
     }
@@ -3908,7 +4032,7 @@
         var code = meta.inviteCode || "";
         if (!code) return;
         if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(code).then(function () { showToast("Kode kopiert"); })
+          navigator.clipboard.writeText(code).then(function () { showToast("Invitasjonskode kopiert"); })
             .catch(function () { showToast(code); });
         } else showToast(code);
       });
