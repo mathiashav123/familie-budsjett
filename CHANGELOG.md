@@ -1,5 +1,23 @@
 # Endringslogg – Familiebudsjett
 
+## 6. september 2026 (UTC+2) – Husstands-synk (gratis)
+
+### Konto / Synk
+- **Mer → Konto / Synk**: brukernavn + passord (ingen e-post / magic link).
+- Første innlogging oppretter husstand «Familie» og laster opp lokal state.
+- Andre enhet: samme bruker **eller** invitasjonskode → hent sky.
+- Status: Synket / Kun lokalt / Synker… + sist synket.
+- Debounced push ved lagring; pull ved start/fokus. Last-write-wins; konflikt → foreslå sky, behold lokal mulig.
+- localStorage `familie-budsjett-v1` beholdes som cache/backup. Export backup uendret. Ingen bank.
+
+### Backend (gratis Supabase Free)
+- `supabase-schema.sql` + tom `supabase-config.js`.
+- Tynn fetch-klient (ingen betalt tjeneste).
+
+### Tester / deploy
+- `test-sync.mjs` (rene hjelpere). Calc-tester grønne.
+- Pages kan deployes med tom config; synk aktiveres når nøkler fylles.
+
 ## 6. september 2026 (UTC+2) – Planlagt sparing per måned
 
 ### Plan → Sparing (ved lønn)
