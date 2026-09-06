@@ -1,5 +1,17 @@
 # Endringslogg – Familiebudsjett
 
+## 6. september 2026 (UTC+2) – Trygge UX-fikser — sletter ikke data
+
+### Trygge UX-fikser — sletter ikke data
+- **Lagringsnøkkel uendret:** `familie-budsjett-v1`. Kun additive/trygge migreringer. Ingen auto-reset.
+- **Manglende forventet inntekt:** Rolig banner på Plan: «Sett forventet inntekt for [navn]» med hopp til feltet.
+- **Felles % ≠ 100:** Tydelig hint + knapp **Fordel likt (100 %)** / **Normaliser til 100 %**.
+- **Trygg å bruke = 0 med lav saldo:** Klar norsk tekst når saldo-modus ikke dekker gjenstående budsjett.
+- **Arkiver person:** Bekreftelse forklarer at utgifter → Felles, mens inntekter blir i historikken (Logg-filter).
+
+### Simulering
+- `sim-10y.mjs`: syntetisk 10-års husstandsliv (2020–2029) – berører ikke live localStorage.
+
 ## 6. september 2026 (UTC+2) – Plan-kalkulator + Familie/Personer
 
 ### Plan – kalkulator på forventet inntekt

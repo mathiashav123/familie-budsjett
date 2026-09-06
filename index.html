@@ -3259,7 +3259,61 @@ button.cat-group-header {
   font-size: .72rem;
 }
 
-</style>
+
+/* ——— Safe UX nudges (Phase 1) ——— */
+.ux-nudge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .55rem .75rem;
+  margin: 0 0 .85rem;
+  padding: .75rem .9rem;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #ecfdf5, #f0fdfa);
+  border: 1px solid rgba(15, 118, 110, 0.22);
+  box-shadow: var(--shadow);
+}
+.ux-nudge p {
+  margin: 0;
+  flex: 1 1 12rem;
+  font-size: .92rem;
+  line-height: 1.35;
+  color: var(--text);
+}
+.ux-nudge .btn {
+  flex: 0 0 auto;
+}
+.plan-person.needs-income {
+  outline: 2px solid rgba(15, 118, 110, 0.35);
+  outline-offset: 2px;
+  border-radius: 12px;
+}
+.fordeling-block.has-bad-sum {
+  border-color: rgba(217, 119, 6, 0.55);
+  background: #fffbeb;
+}
+.fordeling-sum.warn {
+  color: var(--orange);
+  font-weight: 700;
+}
+.fordeling-fix-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .4rem;
+  margin-top: .15rem;
+}
+.fordeling-fix-actions .btn {
+  min-height: 36px;
+  font-size: .78rem;
+  font-weight: 700;
+}
+.safe-spend-hint.is-saldo-short {
+  color: var(--orange);
+  font-weight: 600;
+}
+
+  </style>
 </head>
 <body>
   <a class="skip-link" href="#main">Hopp til innhold</a>
@@ -3326,6 +3380,8 @@ button.cat-group-header {
         <span class="plan-safe-label">Trygg å bruke</span>
         <strong id="planSafeMiniValue">—</strong>
       </div>
+
+      <div id="planMissingIncome" class="ux-nudge" hidden role="status"></div>
 
       <div class="toolbar plan-toolbar">
         <button type="button" class="btn secondary" id="btnCopyBudget" title="Kopier budsjettbeløp og forventet inntekt fra forrige måned">
@@ -4039,6 +4095,39 @@ button.cat-group-header {
     var amt = Number(budgetOrActual) || 0;
     if (!amt) return 0;
     return (amt * fellesSharePercent(cat, personId, people)) / 100;
+  }
+
+
+  /**
+   * Rescale active-people split percentages to sum 100.
+   * If all zero / empty → equal split. Last person gets remainder øre.
+   */
+  function normalizeSplitTo100(split, people) {
+    var active = activePeople(people);
+    var out = {};
+    if (!active.length) return out;
+    var sum = 0;
+    active.forEach(function (p) {
+      var v =
+        split && split[p.id] != null && split[p.id] !== ""
+          ? Number(split[p.id])
+          : 0;
+      if (!Number.isFinite(v) || v < 0) v = 0;
+      out[p.id] = v;
+      sum += v;
+    });
+    if (sum <= 0) return equalSplit(people);
+    var running = 0;
+    active.forEach(function (p, i) {
+      if (i === active.length - 1) {
+        out[p.id] = Math.round((100 - running) * 100) / 100;
+      } else {
+        var n = Math.round((out[p.id] / sum) * 10000) / 100;
+        out[p.id] = n;
+        running += n;
+      }
+    });
+    return out;
   }
 
   /**
@@ -5195,6 +5284,7 @@ button.cat-group-header {
     fellesSharePercent: fellesSharePercent,
     fellesShare: fellesShare,
     setCategorySplit: setCategorySplit,
+    normalizeSplitTo100: normalizeSplitTo100,
     ensureCategorySplits: ensureCategorySplits,
     isEqualSplit: isEqualSplit,
     splitSum: splitSum,
@@ -5228,7 +5318,7 @@ button.cat-group-header {
   };
 });
 
-</script>
+  </script>
   <script>
 /**
  * Familiebudsjett – multi-person
@@ -6146,6 +6236,7 @@ button.cat-group-header {
     $("#familyEmpty").hidden = c.hasAnyData;
 
     renderPlannedIncome(m, c);
+    renderMissingIncomeBanner(m);
     renderSafeSpend(c);
     renderHealth(c);
     renderVsPrev(c);
@@ -6258,8 +6349,13 @@ button.cat-group-header {
         const personCalc = (c.byPerson && c.byPerson[person.id]) || { lønn: 0, ekstra: 0 };
         const lønnKey = person.id + "-lønn";
         const ekstraKey = person.id + "-ekstra";
+        const hasAnyPlan =
+          (pi.lønn != null && pi.lønn !== "") ||
+          (pi.ekstra != null && pi.ekstra !== "");
         return (
-          '<div class="plan-person" data-plan-person="' +
+          '<div class="plan-person' +
+          (hasAnyPlan ? "" : " needs-income") +
+          '" data-plan-person="' +
           escapeAttr(person.id) +
           '"><h3>' +
           escapeHtml(person.name) +
@@ -6299,6 +6395,72 @@ button.cat-group-header {
         try { inp.focus({ preventScroll: true }); } catch (e) { /* */ }
       }
     }
+  }
+
+
+  function peopleMissingPlannedIncome(m) {
+    ensureMonthShape(m);
+    return activePeopleList().filter(function (person) {
+      const pi = (m.plannedIncome && m.plannedIncome[person.id]) || {};
+      const hasLonn = pi.lønn != null && pi.lønn !== "";
+      const hasEkstra = pi.ekstra != null && pi.ekstra !== "";
+      return !hasLonn && !hasEkstra;
+    });
+  }
+
+  function renderMissingIncomeBanner(m) {
+    const el = $("#planMissingIncome");
+    if (!el) return;
+    const missing = peopleMissingPlannedIncome(m);
+    if (!missing.length) {
+      el.hidden = true;
+      el.innerHTML = "";
+      return;
+    }
+    el.hidden = false;
+    const names = missing.map(function (p) { return escapeHtml(p.name); }).join(", ");
+    const focusId = missing[0].id;
+    const label =
+      missing.length === 1
+        ? "Sett forventet inntekt for " + names
+        : "Sett forventet inntekt for " + names;
+    el.innerHTML =
+      "<p>" +
+      label +
+      "</p>" +
+      '<button type="button" class="btn secondary sm" data-focus-plan-income="' +
+      escapeAttr(focusId) +
+      '">Gå til inntekt</button>';
+  }
+
+  function focusPlanIncomeForPerson(personId) {
+    applyMainTab("plan");
+    state.settings.mainTab = "plan";
+    save();
+    requestAnimationFrame(function () {
+      const block = document.querySelector(
+        '#planIncomeGrid [data-plan-person="' + String(personId).replace(/"/g, "") + '"]'
+      );
+      if (block) {
+        try {
+          block.scrollIntoView({ behavior: "smooth", block: "center" });
+        } catch (e) {
+          block.scrollIntoView(true);
+        }
+      }
+      const inp = document.querySelector(
+        '#planIncomeGrid [data-plan-inc="' +
+          String(personId).replace(/"/g, "") +
+          '-lønn"]'
+      );
+      if (inp) {
+        try {
+          inp.focus({ preventScroll: true });
+        } catch (e2) {
+          try { inp.focus(); } catch (e3) { /* */ }
+        }
+      }
+    });
   }
 
   function renderPersonGrid(c) {
@@ -6384,7 +6546,7 @@ button.cat-group-header {
           '" maxlength="40" autocomplete="off" aria-label="Navn på person" /></label>' +
           (archived ? '<span class="tag people-tag">Arkivert</span>' : "") +
           (hasData && !archived
-            ? '<p class="people-card-hint">Har registrerte tall – fjerning arkiverer og flytter eierskap til Felles.</p>'
+            ? '<p class="people-card-hint">Har registrerte tall – fjerning arkiverer, flytter utgifter til Felles; inntekter blir i historikken.</p>'
             : "") +
           '<div class="people-card-actions">' +
           actions +
@@ -6652,15 +6814,27 @@ button.cat-group-header {
       const wantSaldo =
         !c || c.useSaldoInSafeToSpend !== false;
       if (!show) {
+        hintEl.classList.remove("is-saldo-short");
         hintEl.textContent = wantSaldo
           ? "Sett brukssaldo for mer treffsikkert tall – eller plan-formel: forventet inn minus brukt minus faste igjen."
           : "Det du trygt kan bruke nå: forventet inntekt minus det du har brukt, minus faste utgifter som gjenstår.";
       } else if (fromSaldo) {
-        if (amount <= 0 && raw < 0) {
+        const planHead =
+          c && typeof c.safeToSpendPlan === "number" ? c.safeToSpendPlan : 0;
+        const totalBruk =
+          c && typeof c.totalBruk === "number" ? c.totalBruk : 0;
+        const saldoShort =
+          amount <= 0 &&
+          (planHead > 0 || (remAll > 0 && remAll > totalBruk));
+        hintEl.classList.toggle("is-saldo-short", !!saldoShort || (amount <= 0 && raw < 0));
+        if (amount <= 0 && (raw < 0 || saldoShort)) {
           hintEl.textContent =
-            "Saldo dekker ikke gjenstående budsjett" +
+            "Saldo på bruk dekker ikke gjenstående budsjett" +
             (buf > 0 ? " + buffer" : "") +
-            ". Hold igjen litt – det ordner seg.";
+            (planHead > 0
+              ? " (plan-modus ville vist ca. " + formatNOK(planHead) + ")"
+              : "") +
+            ". Oppdater saldo eller plan.";
         } else if (amount <= 0) {
           hintEl.textContent =
             "Ingen fri margin på bruk akkurat nå (gjenstående budsjett" +
@@ -6677,6 +6851,7 @@ button.cat-group-header {
         }
       } else {
         // Plan formula (toggle off or no bruk)
+        hintEl.classList.remove("is-saldo-short");
         let base;
         if (amount <= 0 && raw < 0) {
           base =
@@ -7305,7 +7480,11 @@ button.cat-group-header {
     const people = activePeopleList();
     const split = Calc.getCategorySplit(cat, state.people);
     const sum = Calc.splitSum(split, state.people);
-    const sumOk = Math.abs(sum - 100) < 0.051;
+    const sumOk = Math.abs(sum - 100) < 0.1;
+    const allZero = people.every(function (p) {
+      const v = split[p.id];
+      return !v || Number(v) === 0;
+    });
     let rows = people
       .map(function (p) {
         const pct = split[p.id] != null ? split[p.id] : 0;
@@ -7341,8 +7520,23 @@ button.cat-group-header {
         );
       })
       .join("");
+    const fixLabel = allZero
+      ? "Fordel likt (100 %)"
+      : "Normaliser til 100 %";
+    const fixHtml = sumOk
+      ? ""
+      : '<div class="fordeling-fix-actions">' +
+        '<button type="button" class="btn secondary sm" data-normalize-split="' +
+        escapeAttr(cat.id) +
+        '">' +
+        fixLabel +
+        "</button>" +
+        '<span class="hint compact">Andelene må summere til 100 %.</span>' +
+        "</div>";
     return (
-      '<div class="fordeling-block" data-fordeling-cat="' +
+      '<div class="fordeling-block' +
+      (sumOk ? "" : " has-bad-sum") +
+      '" data-fordeling-cat="' +
       escapeAttr(cat.id) +
       '">' +
       '<div class="fordeling-label">Fordeling</div>' +
@@ -7352,8 +7546,10 @@ button.cat-group-header {
       '">' +
       (sumOk
         ? "Sum " + formatNum(sum) + " %"
-        : "Sum " + formatNum(sum) + " % — bør være 100 %") +
-      "</div></div>"
+        : "Sum " + formatNum(sum) + " % — må være 100 %") +
+      "</div>" +
+      fixHtml +
+      "</div>"
     );
   }
 
@@ -8758,11 +8954,13 @@ button.cat-group-header {
       sum = Math.round(sum * 100) / 100;
       const el = block.querySelector(".fordeling-sum");
       if (!el) return;
-      const ok = Math.abs(sum - 100) < 0.051;
+      const ok = Math.abs(sum - 100) < 0.1;
       el.classList.toggle("warn", !ok);
       el.textContent = ok
         ? "Sum " + formatNum(sum) + " %"
-        : "Sum " + formatNum(sum) + " % — bør være 100 %";
+        : "Sum " + formatNum(sum) + " % — må være 100 %";
+      const blockWrap = el.closest(".fordeling-block");
+      if (blockWrap) blockWrap.classList.toggle("has-bad-sum", !ok);
     }
     $("#categoryList").addEventListener("input", function (e) {
       const inp = e.target.closest("[data-split-cat]");
@@ -8773,6 +8971,32 @@ button.cat-group-header {
       const inp = e.target.closest("[data-split-cat]");
       if (!inp) return;
       commitSplitFromDom(inp.getAttribute("data-split-cat"));
+    });
+    $("#categoryList").addEventListener("click", function (e) {
+      const btn = e.target.closest("[data-normalize-split]");
+      if (!btn) return;
+      const catId = btn.getAttribute("data-normalize-split");
+      const cat = catById(catId);
+      if (!cat) return;
+      const inputs = $$('#categoryList [data-split-cat="' + catId + '"]');
+      const raw = {};
+      let sum = 0;
+      inputs.forEach(function (inp) {
+        const pid = inp.getAttribute("data-split-person");
+        let n = Number(String(inp.value || "").trim().replace(",", "."));
+        if (!Number.isFinite(n) || n < 0) n = 0;
+        raw[pid] = n;
+        sum += n;
+      });
+      const next = Calc.normalizeSplitTo100(raw, state.people);
+      Calc.setCategorySplit(cat, next, state.people);
+      save();
+      render();
+      showToast(
+        sum <= 0
+          ? "Fordelt likt (100 %)"
+          : "Normalisert til 100 %"
+      );
     });
 
     // Tx click → edit
@@ -8793,6 +9017,11 @@ button.cat-group-header {
 
     // Person actions
     document.body.addEventListener("click", function (e) {
+      const focusInc = e.target.closest("[data-focus-plan-income]");
+      if (focusInc) {
+        focusPlanIncomeForPerson(focusInc.getAttribute("data-focus-plan-income"));
+        return;
+      }
       const addInc = e.target.closest("[data-add-income]");
       if (addInc) {
         openIncome(addInc.getAttribute("data-add-income"), null);
@@ -9126,7 +9355,7 @@ button.cat-group-header {
               !confirm(
                 "Fjerne " +
                   person.name +
-                  "?\n\nPersonen arkiveres (skjules). Utgifter og plan merket på personen flyttes til Felles."
+                  "?\n\nPersonen arkiveres (skjules). Utgifter og kategorier flyttes til Felles. Inntekter blir stående på personen i historikken (synlig i Logg-filter)."
               )
             )
               return;
@@ -9137,7 +9366,10 @@ button.cat-group-header {
             save();
             renderPeopleManage();
             render();
-            showToast(person.name + " arkivert – data til Felles");
+            showToast(
+              person.name +
+                " arkivert – utgifter til Felles. Inntekter synes fortsatt i Logg."
+            );
           } else {
             if (!confirm("Fjerne " + person.name + " permanent? Ingen registrerte tall.")) return;
             state.people = state.people.filter(function (x) { return x.id !== id; });
@@ -9163,7 +9395,7 @@ button.cat-group-header {
                 !confirm(
                   "Arkivere " +
                     person.name +
-                    "? Utgifter merket på personen blir flyttet til Felles. Personen skjules fra oversikter."
+                    "?\n\nUtgifter og kategorier flyttes til Felles. Inntekter blir stående på personen i historikken (synlig i Logg-filter). Personen skjules fra oversikter."
                 )
               )
                 return;
@@ -9310,6 +9542,6 @@ button.cat-group-header {
   }
 })();
 
-</script>
+  </script>
 </body>
 </html>
