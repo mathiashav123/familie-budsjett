@@ -1,5 +1,22 @@
 # Endringslogg – Familiebudsjett
 
+## 6. september 2026 (UTC+2) – Sparing-seksjon
+
+### Mer → Sparing
+- Ny snarvei **Sparing** under Mer (egen seksjon – uten å trenge i bunnfanene / «Kjøpt noe»).
+- Faner **Samlet / Mathias / Andrea** (samme chip-mønster som Inn/ut).
+- **Nå**: spare saldo fra Kontoer (utenfor Trygg å bruke).
+- **Denne måneden**: sum av loggførte spareinnskudd i valgt måned.
+- **I år**: sum spareinnskudd i valgt kalenderår.
+- **Totalt**: alle lagrede spareinnskudd (alle måneder).
+- **+ Spareinnskudd** gjenbruker eksisterende sparing-dialog (beløp, hvem, dato, notat).
+- Ingen tips, benchmarks eller sparingsmål (kun «kommer senere»).
+
+### Formel / data
+- `sparingStats` + `sumSavingsForMonth` i calc-core.
+- Bruker eksisterende `balances[].spare` og `months[].savings[]`.
+- Additiv setting `sparingView` (standard `samlet`). Lagringsnøkkel uendret: **`familie-budsjett-v1`**.
+
 ## 6. september 2026 (UTC+2) – Trygg å bruke per person
 
 ### Trygg å bruke følger Inn/Ut-fanen

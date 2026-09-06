@@ -3550,6 +3550,107 @@ button.cat-group-header {
 .year-table td.ok { color: var(--teal, #0f766e); }
 .year-table td.bad { color: var(--orange, #b45309); }
 
+
+/* ——— Sparing (Mer) ——— */
+.mer-sparing-card .sparing-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .5rem;
+  margin: .55rem 0 .35rem;
+}
+.sparing-metric {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: .55rem .65rem;
+  display: flex;
+  flex-direction: column;
+  gap: .12rem;
+  min-width: 0;
+}
+.sparing-metric.is-hero {
+  grid-column: 1 / -1;
+  background: var(--teal-bg, #e6f4f1);
+  border-color: #b7e0d8;
+}
+.sparing-metric.is-muted {
+  opacity: .92;
+}
+.sparing-metric-label {
+  font-size: .7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  color: var(--muted);
+}
+.sparing-metric-value {
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.2;
+}
+.sparing-metric.is-hero .sparing-metric-value {
+  font-size: 1.45rem;
+  color: var(--teal-dark, #0b5f59);
+}
+.sparing-metric-hint {
+  font-size: .72rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+.sparing-actions {
+  display: flex;
+  gap: .5rem;
+  margin: .55rem 0 .35rem;
+}
+.sparing-actions .btn {
+  flex: 1;
+  min-height: 2.75rem;
+  justify-content: center;
+  font-weight: 700;
+}
+.sparing-list {
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+  margin-top: .35rem;
+}
+.sparing-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: .15rem .75rem;
+  align-items: baseline;
+  padding: .55rem .65rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.sparing-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: .1rem;
+  min-width: 0;
+}
+.sparing-row-who {
+  font-weight: 700;
+  font-size: .92rem;
+}
+.sparing-row-meta {
+  font-size: .75rem;
+  color: var(--muted);
+}
+.sparing-row-amt {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--teal-dark, #0b5f59);
+  white-space: nowrap;
+}
+.sparing-later {
+  margin-top: .75rem;
+  font-style: italic;
+}
+
 </style>
 </head>
 <body>
@@ -3861,11 +3962,12 @@ button.cat-group-header {
         <div class="card-head">
           <h2 id="merTitle">Mer</h2>
         </div>
-        <p class="hint compact">Snarveier til familie, innstillinger og demo-data.</p>
+        <p class="hint compact">Snarveier til sparing, familie, år, innstillinger og demo-data.</p>
         <div class="mer-actions">
           <button type="button" class="btn primary mer-btn" id="btnNewCatMer">+ Ny kategori</button>
           <button type="button" class="btn mer-btn" id="btnMerPeople">Familie / Personer</button>
           <button type="button" class="btn mer-btn" id="btnMerYear">År</button>
+          <button type="button" class="btn primary mer-btn" id="btnMerSparing">Sparing</button>
           <button type="button" class="btn mer-btn" id="btnMerSettings">Innstillinger</button>
           <button type="button" class="btn primary mer-btn" id="btnMerBackup">Ta backup</button>
           <button type="button" class="btn mer-btn mer-btn-excel" id="btnFillExcel">Fyll budsjett fra Excel</button>
@@ -3902,6 +4004,43 @@ button.cat-group-header {
             <tbody id="yearOverviewBody"></tbody>
           </table>
         </div>
+      </section>
+
+
+      <section class="card compact-card mer-sparing-card" id="sectionMerSparing" aria-labelledby="merSparingTitle">
+        <div class="card-head">
+          <h2 id="merSparingTitle">Sparing</h2>
+        </div>
+        <p class="hint compact">Spare saldo nå, og loggførte spareinnskudd denne måneden / i år. Ingen tips eller sammenligninger.</p>
+        <div class="view-tabs" id="sparingTabs" role="tablist" aria-label="Visning Sparing"></div>
+        <div class="sparing-metrics" id="sparingMetrics" aria-live="polite">
+          <div class="sparing-metric is-hero">
+            <span class="sparing-metric-label">Nå</span>
+            <strong class="sparing-metric-value" id="sparingNaa">—</strong>
+            <span class="sparing-metric-hint" id="sparingNaaHint">Spare saldo</span>
+          </div>
+          <div class="sparing-metric">
+            <span class="sparing-metric-label">Denne måneden</span>
+            <strong class="sparing-metric-value" id="sparingMonth">—</strong>
+            <span class="sparing-metric-hint">Loggførte innskudd</span>
+          </div>
+          <div class="sparing-metric">
+            <span class="sparing-metric-label">I år</span>
+            <strong class="sparing-metric-value" id="sparingYear">—</strong>
+            <span class="sparing-metric-hint" id="sparingYearHint">2026</span>
+          </div>
+          <div class="sparing-metric is-muted">
+            <span class="sparing-metric-label">Totalt</span>
+            <strong class="sparing-metric-value" id="sparingTotal">—</strong>
+            <span class="sparing-metric-hint">Alle loggførte innskudd</span>
+          </div>
+        </div>
+        <div class="sparing-actions">
+          <button type="button" class="btn primary" id="btnSparingAdd">+ Spareinnskudd</button>
+        </div>
+        <p class="hint compact" id="sparingEmptyHint" hidden>Ingen spareinnskudd logget ennå. Trykk «+ Spareinnskudd», eller sett spare saldo under Oversikt → Kontoer.</p>
+        <div id="sparingList" class="sparing-list" aria-label="Spareinnskudd denne måneden"></div>
+        <p class="hint compact sparing-later">Mål / sparingstargets – kommer senere.</p>
       </section>
 
       <section class="card compact-card mer-people-card" id="sectionMerPeople" aria-labelledby="merPeopleTitle">
@@ -4574,7 +4713,8 @@ button.cat-group-header {
           copyExpectedToNewMonths: true,
           mainTab: "oversikt",
           useSaldoInSafeToSpend: true,
-          spendBuffer: 0
+          spendBuffer: 0,
+          sparingView: "samlet"
         }
       };
     }
@@ -4748,6 +4888,8 @@ button.cat-group-header {
           var n = Number(b);
           return Number.isFinite(n) && n >= 0 ? n : 0;
         })(),
+        sparingView:
+          (parsed.settings && parsed.settings.sparingView) || "samlet",
         pendingBalancesMigrationToast:
           migratedFromSaldo ||
           !!(
@@ -5875,6 +6017,101 @@ button.cat-group-header {
     }
   }
 
+
+  /**
+   * Sum logged spareinnskudd (m.savings) for one month, optional person filter.
+   * personId null/undefined/"samlet" = all people.
+   */
+  function sumSavingsForMonth(m, personId) {
+    if (!m || !Array.isArray(m.savings)) return 0;
+    return sumAmounts(m.savings, function (s) {
+      if (personId == null || personId === "" || personId === "samlet") return true;
+      return s.person === personId;
+    });
+  }
+
+  /**
+   * Sparing overview metrics (no tips/benchmarks).
+   * - naa: current spare saldo from balances (manual)
+   * - denneManeden: sum of logged savings in the viewed month
+   * - iAar: sum of logged savings in the viewed calendar year
+   * - totalt: sum of logged savings across all stored months
+   */
+  function sparingStats(months, year, monthIndex, people) {
+    var y = Number(year);
+    var mi = Number(monthIndex);
+    if (!Number.isFinite(mi) || mi < 0) mi = 0;
+    if (mi > 11) mi = 11;
+    var key =
+      y + "-" + String(mi + 1).padStart(2, "0");
+    var monthsMap = months || {};
+    var m = monthsMap[key] || {
+      balances: {},
+      savings: []
+    };
+    ensureBalancesShape(m, people);
+    var active = activePeople(people);
+    var byPerson = {};
+    var samlet = {
+      naa: 0,
+      hasNaa: false,
+      denneManeden: 0,
+      iAar: 0,
+      totalt: 0
+    };
+
+    function sumYearForPerson(personId) {
+      var sum = 0;
+      for (var month = 0; month < 12; month++) {
+        var k =
+          y + "-" + String(month + 1).padStart(2, "0");
+        sum += sumSavingsForMonth(monthsMap[k], personId);
+      }
+      return sum;
+    }
+
+    function sumAllForPerson(personId) {
+      var sum = 0;
+      Object.keys(monthsMap).forEach(function (k) {
+        sum += sumSavingsForMonth(monthsMap[k], personId);
+      });
+      return sum;
+    }
+
+    active.forEach(function (p) {
+      var bal = (m.balances && m.balances[p.id]) || {};
+      var spare =
+        bal.spare == null || bal.spare === "" ? null : Number(bal.spare);
+      var hasNaa = spare != null && !Number.isNaN(spare);
+      var naa = hasNaa ? spare : 0;
+      var denne = sumSavingsForMonth(m, p.id);
+      var iAar = sumYearForPerson(p.id);
+      var totalt = sumAllForPerson(p.id);
+      byPerson[p.id] = {
+        naa: naa,
+        hasNaa: hasNaa,
+        denneManeden: denne,
+        iAar: iAar,
+        totalt: totalt
+      };
+      if (hasNaa) {
+        samlet.naa += naa;
+        samlet.hasNaa = true;
+      }
+      samlet.denneManeden += denne;
+      samlet.iAar += iAar;
+      samlet.totalt += totalt;
+    });
+
+    return {
+      year: y,
+      month: mi,
+      key: key,
+      byPerson: byPerson,
+      samlet: samlet
+    };
+  }
+
   /**
    * Year overview: planInn / planUt / actualUt / tilOvers per month + totals.
    * tilOvers = planInn − planUt (planned remainder).
@@ -5968,6 +6205,8 @@ button.cat-group-header {
     cloneBudgetLinesTree: cloneBudgetLinesTree,
     copyBudgetLinesFrom: copyBudgetLinesFrom,
     yearRollup: yearRollup,
+    sumSavingsForMonth: sumSavingsForMonth,
+    sparingStats: sparingStats,
     actualForCategory: actualForCategory,
     actualForCategoryOwner: actualForCategoryOwner,
     calcPerson: calcPerson,
@@ -6144,7 +6383,8 @@ button.cat-group-header {
         copyExpectedToNewMonths: true,
         mainTab: "oversikt",
         useSaldoInSafeToSpend: true,
-        spendBuffer: 0
+        spendBuffer: 0,
+        sparingView: "samlet"
       }
     };
   }
@@ -6845,6 +7085,10 @@ button.cat-group-header {
     if (view !== "samlet" && !activePeopleList().some(function (person) { return person.id === view; })) {
       state.settings.innUtView = "samlet";
     }
+    const sparingView = state.settings.sparingView || "samlet";
+    if (sparingView !== "samlet" && !activePeopleList().some(function (person) { return person.id === sparingView; })) {
+      state.settings.sparingView = "samlet";
+    }
 
     $("#monthLabel").textContent = MONTHS[state.view.month] + " " + state.view.year;
     applyMainTab(state.settings.mainTab || "oversikt");
@@ -6925,6 +7169,7 @@ button.cat-group-header {
     renderCategories(m, c);
     renderTransactions(m);
     renderYearOverview();
+    renderSparing();
     renderReminder(m);
     renderPeopleManage();
     updateStorageInfo();
@@ -8618,6 +8863,118 @@ button.cat-group-header {
     }
   }
 
+
+  function renderSparingTabs() {
+    const tabs = $("#sparingTabs");
+    if (!tabs) return;
+    const view = state.settings.sparingView || "samlet";
+    let html =
+      '<button type="button" class="view-tab' +
+      (view === "samlet" ? " active" : "") +
+      '" role="tab" aria-selected="' +
+      (view === "samlet" ? "true" : "false") +
+      '" data-sparing-view="samlet">Samlet</button>';
+    activePeopleList().forEach(function (person) {
+      const on = view === person.id;
+      html +=
+        '<button type="button" class="view-tab' +
+        (on ? " active" : "") +
+        '" role="tab" aria-selected="' +
+        (on ? "true" : "false") +
+        '" data-sparing-view="' +
+        escapeAttr(person.id) +
+        '">' +
+        escapeHtml(person.name) +
+        "</button>";
+    });
+    tabs.innerHTML = html;
+  }
+
+  function renderSparing() {
+    const section = $("#sectionMerSparing");
+    if (!section) return;
+    renderSparingTabs();
+    const stats = Calc.sparingStats(
+      state.months,
+      state.view.year,
+      state.view.month,
+      state.people
+    );
+    const view = state.settings.sparingView || "samlet";
+    const slice =
+      view === "samlet"
+        ? stats.samlet
+        : (stats.byPerson && stats.byPerson[view]) || {
+            naa: 0,
+            hasNaa: false,
+            denneManeden: 0,
+            iAar: 0,
+            totalt: 0
+          };
+
+    const naaEl = $("#sparingNaa");
+    const monthEl = $("#sparingMonth");
+    const yearEl = $("#sparingYear");
+    const totalEl = $("#sparingTotal");
+    const naaHint = $("#sparingNaaHint");
+    const yearHint = $("#sparingYearHint");
+
+    if (naaEl) {
+      naaEl.textContent = slice.hasNaa ? formatNOK(slice.naa) : "—";
+    }
+    if (monthEl) monthEl.textContent = formatNOK(slice.denneManeden || 0);
+    if (yearEl) yearEl.textContent = formatNOK(slice.iAar || 0);
+    if (totalEl) totalEl.textContent = formatNOK(slice.totalt || 0);
+    if (naaHint) {
+      naaHint.textContent =
+        view === "samlet"
+          ? "Sum spare saldo (Oversikt → Kontoer)"
+          : "Spare saldo for " + nameOf(view);
+    }
+    if (yearHint) yearHint.textContent = String(state.view.year);
+
+    const m = getMonth();
+    ensureMonthShape(m);
+    const list = $("#sparingList");
+    const emptyHint = $("#sparingEmptyHint");
+    let rows = (m.savings || []).slice();
+    if (view !== "samlet") {
+      rows = rows.filter(function (s) { return s.person === view; });
+    }
+    rows.sort(function (a, b) {
+      const da = a.date || "";
+      const db = b.date || "";
+      if (da !== db) return db.localeCompare(da);
+      return (b.id || "").localeCompare(a.id || "");
+    });
+    if (list) {
+      if (!rows.length) {
+        list.innerHTML = "";
+      } else {
+        list.innerHTML = rows
+          .map(function (s) {
+            const note = (s.note || "").trim();
+            return (
+              '<button type="button" class="sparing-row" data-edit-saving="' +
+              escapeAttr(s.id) +
+              '"><span class="sparing-row-main"><span class="sparing-row-who">' +
+              escapeHtml(nameOf(s.person)) +
+              '</span><span class="sparing-row-meta">' +
+              escapeHtml(s.date || "") +
+              (note ? " · " + escapeHtml(note) : "") +
+              '</span></span><span class="sparing-row-amt">' +
+              formatNOK(s.amount) +
+              "</span></button>"
+            );
+          })
+          .join("");
+      }
+    }
+    if (emptyHint) {
+      emptyHint.hidden = rows.length > 0 || (slice.denneManeden || 0) > 0;
+    }
+  }
+
   function allTxForMonth(m) {
     const items = [];
     m.expenses.forEach(function (e) {
@@ -9932,6 +10289,58 @@ button.cat-group-header {
       });
     }
 
+    const btnMerSparing = $("#btnMerSparing");
+    if (btnMerSparing) {
+      btnMerSparing.addEventListener("click", function () {
+        applyMainTab("mer");
+        save();
+        render();
+        setTimeout(function () {
+          const el = $("#sectionMerSparing");
+          if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 60);
+      });
+    }
+
+    const sparingTabs = $("#sparingTabs");
+    if (sparingTabs) {
+      sparingTabs.addEventListener("click", function (e) {
+        const btn = e.target.closest("[data-sparing-view]");
+        if (!btn) return;
+        state.settings.sparingView = btn.getAttribute("data-sparing-view");
+        save();
+        render();
+      });
+    }
+
+    const btnSparingAdd = $("#btnSparingAdd");
+    if (btnSparingAdd) {
+      btnSparingAdd.addEventListener("click", function () {
+        const view = state.settings.sparingView || "samlet";
+        const people = activePeopleList();
+        let personId = view !== "samlet" ? view : null;
+        if (!personId || !people.some(function (p) { return p.id === personId; })) {
+          personId = people[0] ? people[0].id : null;
+        }
+        if (!personId) {
+          showToast("Legg til en person først");
+          return;
+        }
+        openSaving(personId, null);
+      });
+    }
+
+    const sparingList = $("#sparingList");
+    if (sparingList) {
+      sparingList.addEventListener("click", function (e) {
+        const btn = e.target.closest("[data-edit-saving]");
+        if (!btn) return;
+        const id = btn.getAttribute("data-edit-saving");
+        const tx = findTx("saving", id);
+        if (tx) openSaving(tx.person, tx);
+      });
+    }
+
     const yPrev = $("#yearOverviewPrev");
     const yNext = $("#yearOverviewNext");
     if (yPrev) {
@@ -10725,6 +11134,7 @@ button.cat-group-header {
             Calc.reassignPersonData(state, id, "felles");
             person.archived = true;
             if (state.settings.innUtView === id) state.settings.innUtView = "samlet";
+            if (state.settings.sparingView === id) state.settings.sparingView = "samlet";
             Calc.ensureCategorySplits(state.categories, state.people);
             save();
             renderPeopleManage();
@@ -10768,6 +11178,7 @@ button.cat-group-header {
             }
             person.archived = true;
             if (state.settings.innUtView === id) state.settings.innUtView = "samlet";
+            if (state.settings.sparingView === id) state.settings.sparingView = "samlet";
             showToast(person.name + " arkivert");
           } else {
             person.archived = false;
