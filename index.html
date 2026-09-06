@@ -3313,7 +3313,174 @@ button.cat-group-header {
   font-weight: 600;
 }
 
-  </style>
+
+/* ——— Underlinjer (kategori) ——— */
+.cat-lines-block {
+  margin-top: .45rem;
+  padding: .45rem .55rem;
+  background: var(--bg-soft);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+}
+.cat-lines-label {
+  font-size: .72rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .02em;
+}
+.cat-lines-hint { margin: 0; }
+.cat-line-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .35rem;
+}
+.cat-line-name {
+  flex: 1 1 7rem;
+  min-width: 0;
+  padding: .4rem .5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: .88rem;
+  background: var(--card);
+  min-height: 36px;
+}
+.cat-line-amt-wrap {
+  display: flex;
+  align-items: center;
+  gap: .25rem;
+  flex: 0 1 auto;
+}
+.cat-line-amount {
+  width: 5.2rem;
+  padding: .4rem .45rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: .9rem;
+  text-align: right;
+  background: var(--card);
+  min-height: 36px;
+}
+.cat-line-del {
+  color: var(--muted);
+  min-width: 2rem;
+}
+.cat-budget-row.is-derived input[readonly] {
+  background: var(--bg-soft);
+  color: var(--muted);
+  cursor: default;
+}
+
+/* ——— Årsoversikt ——— */
+.mer-year-card .year-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+.year-nav {
+  display: flex;
+  align-items: center;
+  gap: .25rem;
+}
+.year-overview-label {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-width: 3.2rem;
+  text-align: center;
+}
+.year-totals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .45rem;
+  margin: .55rem 0 .4rem;
+}
+@media (min-width: 520px) {
+  .year-totals { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+.year-total-card {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: .45rem .55rem;
+  display: flex;
+  flex-direction: column;
+  gap: .15rem;
+}
+.year-total-card span {
+  font-size: .7rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .02em;
+}
+.year-total-card strong {
+  font-size: .95rem;
+  font-variant-numeric: tabular-nums;
+}
+.year-total-card.is-pos strong { color: var(--teal, #0f766e); }
+.year-total-card.is-neg strong { color: var(--orange, #b45309); }
+.year-bars { margin: .35rem 0 .5rem; }
+.year-bars-legend {
+  display: flex;
+  gap: .85rem;
+  font-size: .7rem;
+  color: var(--muted);
+  margin-top: .2rem;
+}
+.year-bars-legend .leg::before {
+  content: "";
+  display: inline-block;
+  width: .55rem;
+  height: .55rem;
+  border-radius: 2px;
+  margin-right: .3rem;
+  vertical-align: middle;
+}
+.year-bars-legend .leg.plan::before { background: #0f766e; opacity: .55; }
+.year-bars-legend .leg.actual::before { background: #b45309; opacity: .75; }
+.year-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 -.15rem;
+}
+.year-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .82rem;
+  font-variant-numeric: tabular-nums;
+}
+.year-table th,
+.year-table td {
+  padding: .4rem .35rem;
+  text-align: right;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.year-table th:first-child,
+.year-table td:first-child {
+  text-align: left;
+  font-weight: 600;
+}
+.year-table th {
+  font-size: .68rem;
+  text-transform: uppercase;
+  letter-spacing: .02em;
+  color: var(--muted);
+  font-weight: 600;
+}
+.year-table tbody tr { cursor: pointer; }
+.year-table tbody tr:active,
+.year-table tbody tr:hover { background: var(--bg-soft); }
+.year-table tr.muted td { color: var(--muted); opacity: .75; }
+.year-table td.ok { color: var(--teal, #0f766e); }
+.year-table td.bad { color: var(--orange, #b45309); }
+
+</style>
 </head>
 <body>
   <a class="skip-link" href="#main">Hopp til innhold</a>
@@ -3605,6 +3772,10 @@ button.cat-group-header {
             <option value="income">Inntekter</option>
             <option value="saving">Sparing</option>
           </select>
+          <select id="txScope" class="select" title="Periode">
+            <option value="month">Denne måneden</option>
+            <option value="year">Hele året</option>
+          </select>
         </div>
         <div id="txList" class="tx-list"></div>
         <div id="txEmpty" class="empty" hidden>
@@ -3624,6 +3795,7 @@ button.cat-group-header {
         <div class="mer-actions">
           <button type="button" class="btn primary mer-btn" id="btnNewCatMer">+ Ny kategori</button>
           <button type="button" class="btn mer-btn" id="btnMerPeople">Familie / Personer</button>
+          <button type="button" class="btn mer-btn" id="btnMerYear">År</button>
           <button type="button" class="btn mer-btn" id="btnMerSettings">Innstillinger</button>
           <button type="button" class="btn primary mer-btn" id="btnMerBackup">Ta backup</button>
           <button type="button" class="btn mer-btn mer-btn-excel" id="btnFillExcel">Fyll budsjett fra Excel</button>
@@ -3632,6 +3804,34 @@ button.cat-group-header {
         </div>
         <p class="hint compact" id="merExcelHint">«Fyll budsjett fra Excel» oppretter manglende kategorier (med riktig eier) og setter forventet inntekt/utgifter for alle 12 måneder: <strong>Felles</strong> = Lån/Strøm/Internett/Forsikring, personlige variable under Mathias/Andrea, Mobil under Mathias. Lager ikke fake kjøp eller saldo.</p>
         <p class="hint compact">Hold ⠿ og dra for å endre kategori-rekkefølge på Plan (velg «Egen rekkefølge») eller under Administrer.</p>
+      </section>
+
+      <section class="card compact-card mer-year-card" id="sectionMerYear" aria-labelledby="merYearTitle">
+        <div class="card-head year-head">
+          <h2 id="merYearTitle">År</h2>
+          <div class="year-nav" role="group" aria-label="Velg år">
+            <button type="button" class="icon-btn" id="yearOverviewPrev" aria-label="Forrige år">‹</button>
+            <span id="yearOverviewLabel" class="year-overview-label">2026</span>
+            <button type="button" class="icon-btn" id="yearOverviewNext" aria-label="Neste år">›</button>
+          </div>
+        </div>
+        <p class="hint compact">Plan inn / plan ut / faktisk ut / til overs per måned. Hjelper deg å se året under ett.</p>
+        <div id="yearOverviewBars" class="year-bars" aria-hidden="true"></div>
+        <div id="yearOverviewTotals" class="year-totals"></div>
+        <div class="year-table-wrap">
+          <table class="year-table" id="yearOverviewTable">
+            <thead>
+              <tr>
+                <th>Mnd</th>
+                <th>Plan inn</th>
+                <th>Plan ut</th>
+                <th>Faktisk ut</th>
+                <th>Til overs</th>
+              </tr>
+            </thead>
+            <tbody id="yearOverviewBody"></tbody>
+          </table>
+        </div>
       </section>
 
       <section class="card compact-card mer-people-card" id="sectionMerPeople" aria-labelledby="merPeopleTitle">
@@ -4263,6 +4463,7 @@ button.cat-group-header {
 
   function ensureMonthShape(m, people) {
     if (!m.budgets || typeof m.budgets !== "object") m.budgets = {};
+    if (!m.budgetLines || typeof m.budgetLines !== "object") m.budgetLines = {};
     if (!Array.isArray(m.incomes)) m.incomes = [];
     if (!Array.isArray(m.savings)) m.savings = [];
     if (!Array.isArray(m.expenses)) m.expenses = [];
@@ -4350,6 +4551,7 @@ button.cat-group-header {
           src.budgets && typeof src.budgets === "object"
             ? Object.assign({}, src.budgets)
             : {},
+        budgetLines: cloneBudgetLinesTree(src.budgetLines),
         plannedIncome: {},
         incomes: [],
         savings: [],
@@ -4524,7 +4726,125 @@ button.cat-group-header {
     return cur;
   }
 
-  function budgetForOwner(m, catId, ownerId) {
+  function normalizeBudgetLine(line) {
+    if (!line || typeof line !== "object") return null;
+    var amt = line.amount;
+    var n =
+      amt == null || amt === ""
+        ? 0
+        : Number(amt);
+    if (Number.isNaN(n)) n = 0;
+    return {
+      id: line.id || uid(),
+      name: line.name != null ? String(line.name) : "",
+      amount: n
+    };
+  }
+
+  function cloneBudgetLinesTree(src) {
+    if (!src || typeof src !== "object") return {};
+    var out = {};
+    Object.keys(src).forEach(function (catId) {
+      var byOwner = src[catId];
+      if (!byOwner || typeof byOwner !== "object") return;
+      var owners = {};
+      Object.keys(byOwner).forEach(function (ownerId) {
+        var arr = byOwner[ownerId];
+        if (!Array.isArray(arr) || !arr.length) return;
+        var lines = arr
+          .map(normalizeBudgetLine)
+          .filter(Boolean);
+        if (lines.length) owners[ownerId] = lines;
+      });
+      if (Object.keys(owners).length) out[catId] = owners;
+    });
+    return out;
+  }
+
+  function getBudgetLines(m, catId, ownerId) {
+    var bl = m && m.budgetLines;
+    if (!bl || typeof bl !== "object") return [];
+    var byCat = bl[catId];
+    if (!byCat || typeof byCat !== "object") return [];
+    var arr = byCat[ownerId];
+    if (!Array.isArray(arr)) return [];
+    return arr.map(normalizeBudgetLine).filter(Boolean);
+  }
+
+  function hasBudgetLines(m, catId, ownerId) {
+    return getBudgetLines(m, catId, ownerId).length > 0;
+  }
+
+  function sumBudgetLines(lines) {
+    var sum = 0;
+    (lines || []).forEach(function (l) {
+      if (!l) return;
+      sum += Number(l.amount) || 0;
+    });
+    return sum;
+  }
+
+  /**
+   * Replace underlinjer for cat+owner. Empty/null clears lines (budget number kept).
+   * When lines exist, syncs budgets[catId][owner] = sum(lines).
+   */
+  function setBudgetLines(m, catId, ownerId, lines) {
+    if (!m.budgetLines || typeof m.budgetLines !== "object") m.budgetLines = {};
+    if (!m.budgetLines[catId] || typeof m.budgetLines[catId] !== "object") {
+      m.budgetLines[catId] = {};
+    }
+    var normalized = (lines || []).map(normalizeBudgetLine).filter(Boolean);
+    if (!normalized.length) {
+      delete m.budgetLines[catId][ownerId];
+      if (!Object.keys(m.budgetLines[catId]).length) {
+        delete m.budgetLines[catId];
+      }
+      return;
+    }
+    m.budgetLines[catId][ownerId] = normalized;
+    setBudgetForOwnerRaw(m, catId, ownerId, sumBudgetLines(normalized));
+  }
+
+  function syncBudgetFromLines(m, catId, ownerId) {
+    var lines = getBudgetLines(m, catId, ownerId);
+    if (!lines.length) return;
+    setBudgetForOwnerRaw(m, catId, ownerId, sumBudgetLines(lines));
+  }
+
+  function copyBudgetLinesFrom(sourceMonth, targetMonth) {
+    if (!sourceMonth || !targetMonth) return;
+    var cloned = cloneBudgetLinesTree(sourceMonth.budgetLines);
+    targetMonth.budgetLines = cloned;
+    // Keep budgets in sync with lines where present
+    Object.keys(cloned).forEach(function (catId) {
+      Object.keys(cloned[catId]).forEach(function (ownerId) {
+        syncBudgetFromLines(targetMonth, catId, ownerId);
+      });
+    });
+  }
+
+  function budgetOwnersForCat(m, catId) {
+    var owners = {};
+    var entry = m && m.budgets && m.budgets[catId];
+    if (isBudgetValueSet(entry)) {
+      if (typeof entry !== "object") {
+        owners.felles = true;
+      } else {
+        Object.keys(entry).forEach(function (k) {
+          owners[k] = true;
+        });
+      }
+    }
+    var bl = m && m.budgetLines && m.budgetLines[catId];
+    if (bl && typeof bl === "object") {
+      Object.keys(bl).forEach(function (k) {
+        owners[k] = true;
+      });
+    }
+    return Object.keys(owners);
+  }
+
+  function budgetForOwnerRaw(m, catId, ownerId) {
     var entry = m.budgets && m.budgets[catId];
     if (!isBudgetValueSet(entry)) return 0;
     if (typeof entry !== "object") {
@@ -4534,19 +4854,29 @@ button.cat-group-header {
     return v == null || v === "" ? 0 : Number(v) || 0;
   }
 
+  function budgetForOwner(m, catId, ownerId) {
+    var lines = getBudgetLines(m, catId, ownerId);
+    if (lines.length) return sumBudgetLines(lines);
+    return budgetForOwnerRaw(m, catId, ownerId);
+  }
+
   /** Household total for one category (all owners summed). */
   function budgetFor(m, catId) {
-    var entry = m.budgets && m.budgets[catId];
-    if (!isBudgetValueSet(entry)) return 0;
-    if (typeof entry !== "object") return Number(entry) || 0;
+    var owners = budgetOwnersForCat(m, catId);
+    if (!owners.length) {
+      var entry = m.budgets && m.budgets[catId];
+      if (!isBudgetValueSet(entry)) return 0;
+      if (typeof entry !== "object") return Number(entry) || 0;
+      return 0;
+    }
     var sum = 0;
-    Object.keys(entry).forEach(function (k) {
-      if (isBudgetValueSet(entry[k])) sum += Number(entry[k]) || 0;
+    owners.forEach(function (oid) {
+      sum += budgetForOwner(m, catId, oid);
     });
     return sum;
   }
 
-  function setBudgetForOwner(m, catId, ownerId, value) {
+  function setBudgetForOwnerRaw(m, catId, ownerId, value) {
     var obj = ensureBudgetObject(m, catId);
     if (value == null || value === "") {
       delete obj[ownerId];
@@ -4556,6 +4886,14 @@ button.cat-group-header {
     if (!budgetEntryHasValue(obj)) {
       delete m.budgets[catId];
     }
+  }
+
+  function setBudgetForOwner(m, catId, ownerId, value) {
+    // Manual total edit: if lines exist, clear them so total becomes source of truth
+    if (hasBudgetLines(m, catId, ownerId)) {
+      setBudgetLines(m, catId, ownerId, []);
+    }
+    setBudgetForOwnerRaw(m, catId, ownerId, value);
   }
 
   function actualForCategory(m, catId, catName) {
@@ -5012,6 +5350,7 @@ button.cat-group-header {
         targetMonth.budgets[id] = cloned;
       }
     });
+    copyBudgetLinesFrom(sourceMonth, targetMonth);
     ensureMonthShape(targetMonth, people);
     ensureMonthShape(sourceMonth, people);
     var pi = sourceMonth.plannedIncome || {};
@@ -5050,6 +5389,7 @@ button.cat-group-header {
       months[key] = {
         balances: {},
         budgets: {},
+        budgetLines: {},
         plannedIncome: {},
         incomes: [],
         savings: [],
@@ -5109,6 +5449,19 @@ button.cat-group-header {
       ) {
         m.budgets[cat.id] = cloneBudgetEntry(src.budgets[cat.id]);
         any = true;
+      }
+      // Carry underlinjer for autofill cats when target has none
+      if (src.budgetLines && src.budgetLines[cat.id]) {
+        var srcOwners = src.budgetLines[cat.id];
+        Object.keys(srcOwners).forEach(function (oid) {
+          if (!hasBudgetLines(m, cat.id, oid) && Array.isArray(srcOwners[oid]) && srcOwners[oid].length) {
+            if (!m.budgetLines) m.budgetLines = {};
+            if (!m.budgetLines[cat.id]) m.budgetLines[cat.id] = {};
+            m.budgetLines[cat.id][oid] = srcOwners[oid].map(normalizeBudgetLine).filter(Boolean);
+            syncBudgetFromLines(m, cat.id, oid);
+            any = true;
+          }
+        });
       }
     });
     ensureMonthShape(m, people);
@@ -5263,6 +5616,50 @@ button.cat-group-header {
     }
   }
 
+  /**
+   * Year overview: planInn / planUt / actualUt / tilOvers per month + totals.
+   * tilOvers = planInn − planUt (planned remainder).
+   */
+  function yearRollup(months, year, people, categories, settings) {
+    var rows = [];
+    var totals = { planInn: 0, planUt: 0, actualUt: 0, tilOvers: 0, actualInn: 0 };
+    var y = Number(year);
+    for (var month = 0; month < 12; month++) {
+      var key =
+        y + "-" + String(month + 1).padStart(2, "0");
+      var m = (months && months[key]) || {
+        balances: {},
+        budgets: {},
+        budgetLines: {},
+        plannedIncome: {},
+        incomes: [],
+        savings: [],
+        expenses: []
+      };
+      var c = calcFamily(m, people, categories, settings);
+      var planInn = c.planInn || 0;
+      var planUt = c.plannedTotal || 0;
+      var actualUt = c.samletUtgifter || 0;
+      var actualInn = c.samletInntekt || 0;
+      var tilOvers = planInn - planUt;
+      rows.push({
+        month: month,
+        key: key,
+        planInn: planInn,
+        planUt: planUt,
+        actualUt: actualUt,
+        actualInn: actualInn,
+        tilOvers: tilOvers
+      });
+      totals.planInn += planInn;
+      totals.planUt += planUt;
+      totals.actualUt += actualUt;
+      totals.actualInn += actualInn;
+      totals.tilOvers += tilOvers;
+    }
+    return { year: y, months: rows, totals: totals };
+  }
+
   /** True if string looks like an arithmetic expression (not a plain number). */
   function looksLikeAmountExpression(input) {
     if (input == null) return false;
@@ -5300,6 +5697,14 @@ button.cat-group-header {
     setBudgetForOwner: setBudgetForOwner,
     cloneBudgetEntry: cloneBudgetEntry,
     budgetEntryHasValue: budgetEntryHasValue,
+    getBudgetLines: getBudgetLines,
+    hasBudgetLines: hasBudgetLines,
+    sumBudgetLines: sumBudgetLines,
+    setBudgetLines: setBudgetLines,
+    syncBudgetFromLines: syncBudgetFromLines,
+    cloneBudgetLinesTree: cloneBudgetLinesTree,
+    copyBudgetLinesFrom: copyBudgetLinesFrom,
+    yearRollup: yearRollup,
     actualForCategory: actualForCategory,
     actualForCategoryOwner: actualForCategoryOwner,
     calcPerson: calcPerson,
@@ -5318,8 +5723,6 @@ button.cat-group-header {
   };
 });
 
-  </script>
-  <script>
 /**
  * Familiebudsjett – multi-person
  * localStorage: familie-budsjett-v1 (migrates a/b → people[])
@@ -5451,6 +5854,7 @@ button.cat-group-header {
     return {
       balances: {},
       budgets: {},
+      budgetLines: {},
       plannedIncome: {},
       incomes: [],
       savings: [],
@@ -5570,6 +5974,8 @@ button.cat-group-header {
   // Ephemeral UI (not persisted): collapsed category groups + expanded row
   let catGroupsOpen = {}; // person/felles section keys → open (default true)
   let expandedCatId = null;
+  let yearOverviewYear = null; // null → follow state.view.year
+  let loggScope = "month"; // "month" | "year"
 
   function load() {
     try {
@@ -6170,6 +6576,8 @@ button.cat-group-header {
 
     $("#monthLabel").textContent = MONTHS[state.view.month] + " " + state.view.year;
     applyMainTab(state.settings.mainTab || "oversikt");
+    const txScopeSel = $("#txScope");
+    if (txScopeSel) txScopeSel.value = loggScope === "year" ? "year" : "month";
 
     const heroTitle = $("#budgetHeroTitle");
     if (heroTitle) {
@@ -6244,6 +6652,7 @@ button.cat-group-header {
     renderChart(c);
     renderCategories(m, c);
     renderTransactions(m);
+    renderYearOverview();
     renderReminder(m);
     renderPeopleManage();
     updateStorageInfo();
@@ -7320,6 +7729,79 @@ button.cat-group-header {
     }, 60);
   }
 
+  function renderCatLinesBlock(m, s) {
+    if (s.readOnlyShare) return "";
+    const lines = Calc.getBudgetLines(m, s.cat.id, s.ownerId);
+    const hasLines = lines.length > 0;
+    const sum = Calc.sumBudgetLines(lines);
+    const rows = lines
+      .map(function (line) {
+        const calcKey = "line|" + s.cat.id + "|" + s.ownerId + "|" + line.id;
+        const amt =
+          line.amount != null && line.amount !== ""
+            ? String(line.amount).replace(".", ",")
+            : "";
+        return (
+          '<div class="cat-line-row" data-line-id="' +
+          escapeAttr(line.id) +
+          '">' +
+          '<input type="text" class="cat-line-name" maxlength="40" data-line-name="' +
+          escapeAttr(line.id) +
+          '" data-line-cat="' +
+          escapeAttr(s.cat.id) +
+          '" data-line-owner="' +
+          escapeAttr(s.ownerId) +
+          '" value="' +
+          escapeAttr(line.name || "") +
+          '" placeholder="Navn (f.eks. Netflix)" autocomplete="off" aria-label="Navn på underlinje" />' +
+          '<div class="cat-line-amt-wrap">' +
+          '<input type="text" inputmode="decimal" class="cat-line-amount amount-expr" data-line-amount="' +
+          escapeAttr(line.id) +
+          '" data-line-cat="' +
+          escapeAttr(s.cat.id) +
+          '" data-line-owner="' +
+          escapeAttr(s.ownerId) +
+          '" data-calc-input-key="' +
+          escapeAttr(calcKey) +
+          '" value="' +
+          escapeAttr(amt) +
+          '" placeholder="0" autocomplete="off" aria-label="Beløp underlinje" />' +
+          '<span class="unit">kr</span>' +
+          '<button type="button" class="btn ghost xs calc-toggle" data-calc-panel="planIncCalc" data-calc-for="' +
+          escapeAttr(calcKey) +
+          '" aria-expanded="false" aria-controls="planIncCalc">Kalkulator</button>' +
+          "</div>" +
+          '<button type="button" class="btn ghost xs cat-line-del" data-line-del="' +
+          escapeAttr(line.id) +
+          '" data-line-cat="' +
+          escapeAttr(s.cat.id) +
+          '" data-line-owner="' +
+          escapeAttr(s.ownerId) +
+          '" aria-label="Slett underlinje">×</button>' +
+          "</div>"
+        );
+      })
+      .join("");
+    return (
+      '<div class="cat-lines-block" data-lines-cat="' +
+      escapeAttr(s.cat.id) +
+      '" data-lines-owner="' +
+      escapeAttr(s.ownerId) +
+      '">' +
+      '<div class="cat-lines-label">Underlinjer' +
+      (hasLines ? " · sum " + formatNOK(sum) : "") +
+      "</div>" +
+      '<p class="hint compact cat-lines-hint">Valgfritt: del opp forventet (f.eks. Netflix, Spotify). Summen blir kategoriens forventet.</p>' +
+      rows +
+      '<button type="button" class="btn secondary sm" data-line-add="' +
+      escapeAttr(s.cat.id) +
+      '" data-line-owner="' +
+      escapeAttr(s.ownerId) +
+      '">+ Linje</button>' +
+      "</div>"
+    );
+  }
+
   function renderCatOwnerRow(m, s) {
     const planned = s.planned;
     const actual = s.actual;
@@ -7360,6 +7842,11 @@ button.cat-group-header {
       hasSet = true;
     }
     const budgetVal = hasSet ? String(raw).replace(".", ",") : "";
+    const catLines = Calc.getBudgetLines(m, s.cat.id, s.ownerId);
+    const linesDrive = catLines.length > 0;
+    const displayBudgetVal = linesDrive
+      ? String(Calc.sumBudgetLines(catLines)).replace(".", ",")
+      : budgetVal;
 
     const expandKey = (s.readOnlyShare ? "share:" : "") + s.ownerId + ":" + s.cat.id;
     const expanded = expandedCatId === expandKey;
@@ -7449,21 +7936,28 @@ button.cat-group-header {
           "</span></div>" +
           (s.readOnlyShare
             ? ""
-            : '<div class="cat-budget-row">' +
-              "<label>Forventet</label>" +
+            : '<div class="cat-budget-row' +
+              (linesDrive ? " is-derived" : "") +
+              '">' +
+              "<label>Forventet" +
+              (linesDrive ? " (sum)" : "") +
+              "</label>" +
               '<input type="text" inputmode="decimal" data-budget="' +
               escapeAttr(s.cat.id) +
               '" data-budget-owner="' +
               escapeAttr(s.ownerId) +
               '" value="' +
-              escapeAttr(budgetVal) +
-              '" placeholder="0" autocomplete="off" aria-label="Forventet ' +
+              escapeAttr(displayBudgetVal) +
+              '" placeholder="0" autocomplete="off"' +
+              (linesDrive ? " readonly" : "") +
+              ' aria-label="Forventet ' +
               escapeAttr(s.cat.name) +
               " (" +
               escapeAttr(ownerLabel) +
               ')" />' +
               '<span class="unit">kr</span>' +
-              "</div>") +
+              "</div>" +
+              renderCatLinesBlock(m, s)) +
           fordelingHtml +
           '<div class="progress ' +
           progClass +
@@ -7558,6 +8052,136 @@ button.cat-group-header {
     return String(x).replace(".", ",");
   }
 
+  function getYearOverviewYear() {
+    return yearOverviewYear != null ? yearOverviewYear : state.view.year;
+  }
+
+  function renderYearOverview() {
+    const section = $("#sectionMerYear");
+    if (!section) return;
+    const y = getYearOverviewYear();
+    const label = $("#yearOverviewLabel");
+    if (label) label.textContent = String(y);
+    const roll = Calc.yearRollup(
+      state.months,
+      y,
+      state.people,
+      state.categories,
+      state.settings || {}
+    );
+    const t = roll.totals;
+    const totalsEl = $("#yearOverviewTotals");
+    if (totalsEl) {
+      totalsEl.innerHTML =
+        '<div class="year-total-card"><span>Plan inn</span><strong>' +
+        formatNOK(t.planInn) +
+        "</strong></div>" +
+        '<div class="year-total-card"><span>Plan ut</span><strong>' +
+        formatNOK(t.planUt) +
+        "</strong></div>" +
+        '<div class="year-total-card"><span>Faktisk ut</span><strong>' +
+        formatNOK(t.actualUt) +
+        "</strong></div>" +
+        '<div class="year-total-card' +
+        (t.tilOvers < 0 ? " is-neg" : " is-pos") +
+        '"><span>Til overs</span><strong>' +
+        formatNOK(t.tilOvers) +
+        "</strong></div>";
+    }
+    const body = $("#yearOverviewBody");
+    if (body) {
+      body.innerHTML = roll.months
+        .map(function (row) {
+          const name = MONTHS[row.month].slice(0, 3);
+          const cls = row.tilOvers < 0 ? "neg" : row.planInn || row.planUt || row.actualUt ? "" : "muted";
+          return (
+            '<tr class="' +
+            cls +
+            '" data-jump-month="' +
+            row.month +
+            '" data-jump-year="' +
+            y +
+            '">' +
+            "<td>" +
+            escapeHtml(name) +
+            "</td>" +
+            "<td>" +
+            formatNOK(row.planInn) +
+            "</td>" +
+            "<td>" +
+            formatNOK(row.planUt) +
+            "</td>" +
+            "<td>" +
+            formatNOK(row.actualUt) +
+            "</td>" +
+            '<td class="' +
+            (row.tilOvers < 0 ? "bad" : "ok") +
+            '">' +
+            formatNOK(row.tilOvers) +
+            "</td>" +
+            "</tr>"
+          );
+        })
+        .join("");
+    }
+    const bars = $("#yearOverviewBars");
+    if (bars) {
+      const maxV = Math.max(
+        1,
+        ...roll.months.map(function (r) {
+          return Math.max(r.planUt || 0, r.actualUt || 0, r.planInn || 0);
+        })
+      );
+      const w = 300;
+      const h = 56;
+      const gap = 2;
+      const groupW = (w - gap * 11) / 12;
+      let svg =
+        '<svg viewBox="0 0 ' +
+        w +
+        " " +
+        h +
+        '" width="100%" height="' +
+        h +
+        '" role="img" aria-label="Søylediagram for året">' +
+        '<rect x="0" y="0" width="' +
+        w +
+        '" height="' +
+        h +
+        '" fill="transparent"/>';
+      roll.months.forEach(function (row, i) {
+        const x = i * (groupW + gap);
+        const planH = Math.round(((row.planUt || 0) / maxV) * (h - 4));
+        const actH = Math.round(((row.actualUt || 0) / maxV) * (h - 4));
+        const bw = Math.max(2, (groupW - 2) / 2);
+        svg +=
+          '<rect x="' +
+          x +
+          '" y="' +
+          (h - planH) +
+          '" width="' +
+          bw +
+          '" height="' +
+          planH +
+          '" rx="1" fill="#0f766e" opacity="0.45"/>';
+        svg +=
+          '<rect x="' +
+          (x + bw + 1) +
+          '" y="' +
+          (h - actH) +
+          '" width="' +
+          bw +
+          '" height="' +
+          actH +
+          '" rx="1" fill="#b45309" opacity="0.7"/>';
+      });
+      svg += "</svg>";
+      bars.innerHTML =
+        svg +
+        '<div class="year-bars-legend"><span class="leg plan">Plan ut</span><span class="leg actual">Faktisk ut</span></div>';
+    }
+  }
+
   function allTxForMonth(m) {
     const items = [];
     m.expenses.forEach(function (e) {
@@ -7611,8 +8235,25 @@ button.cat-group-header {
     const empty = $("#txEmpty");
     const q = ($("#txSearch").value || "").trim().toLowerCase();
     const filter = $("#txFilter").value || "all";
+    const scopeEl = $("#txScope");
+    if (scopeEl) loggScope = scopeEl.value === "year" ? "year" : "month";
 
-    let items = allTxForMonth(m);
+    let items = [];
+    if (loggScope === "year") {
+      const y = state.view.year;
+      for (let mo = 0; mo < 12; mo++) {
+        const key = monthKey(y, mo);
+        const mm = state.months[key];
+        if (!mm) continue;
+        ensureMonthShape(mm);
+        allTxForMonth(mm).forEach(function (t) {
+          t._monthKey = key;
+          items.push(t);
+        });
+      }
+    } else {
+      items = allTxForMonth(m);
+    }
     if (filter !== "all") {
       items = items.filter(function (t) { return t.kind === filter; });
     }
@@ -7626,7 +8267,7 @@ button.cat-group-header {
     if (!items.length) {
       list.innerHTML = "";
       empty.hidden = false;
-      if (q || filter !== "all") {
+      if (q || filter !== "all" || loggScope === "year") {
         empty.querySelector("p").textContent = "Ingen treff for filteret.";
       } else {
         empty.querySelector("p").textContent = "Ingen transaksjoner denne måneden ennå.";
@@ -7642,6 +8283,7 @@ button.cat-group-header {
           t.label +
           " · " +
           t.who +
+          (t._monthKey ? " · " + t._monthKey : "") +
           (t.date ? " · " + formatDateNb(t.date) : "");
         const sign = t.kind === "expense" ? "" : t.kind === "saving" ? "" : "";
         return (
@@ -8322,31 +8964,17 @@ button.cat-group-header {
       const key = monthKey(state.view.year, state.view.month);
       const prevKey = prevMonthKey(state.view.year, state.view.month);
       const prev = state.months[prevKey];
-      if (!prev || !prev.budgets || !Object.keys(prev.budgets).length) {
+      const prevHasBudgets = prev && prev.budgets && Object.keys(prev.budgets).length;
+      const prevHasLines = prev && prev.budgetLines && Object.keys(prev.budgetLines).length;
+      if (!prev || (!prevHasBudgets && !prevHasLines)) {
         showToast("Ingen budsjett i forrige måned å kopiere");
         return;
       }
       const m = getMonth();
-      Object.keys(prev.budgets).forEach(function (id) {
-        const cloned = Calc.cloneBudgetEntry(prev.budgets[id]);
-        if (cloned) m.budgets[id] = cloned;
-        else delete m.budgets[id];
-      });
-      if (prev.plannedIncome) {
-        ensureMonthShape(m);
-        activePeopleList().forEach(function (person) {
-          const pid = person.id;
-          if (!prev.plannedIncome[pid]) return;
-          ["lønn", "ekstra"].forEach(function (t) {
-            if (prev.plannedIncome[pid][t] != null) {
-              m.plannedIncome[pid][t] = prev.plannedIncome[pid][t];
-            }
-          });
-        });
-      }
+      Calc.copyExpectedFrom(prev, m, state.people);
       save();
       render();
-      showToast("Budsjett og forventet inntekt kopiert");
+      showToast("Budsjett, underlinjer og forventet inntekt kopiert");
     });
 
     $("#sortSelect").addEventListener("change", function () {
@@ -8541,6 +9169,10 @@ button.cat-group-header {
 
     function findPlanIncInput(key) {
       if (!key) return null;
+      const byCalc = document.querySelectorAll("[data-calc-input-key]");
+      for (let i = 0; i < byCalc.length; i++) {
+        if (byCalc[i].getAttribute("data-calc-input-key") === key) return byCalc[i];
+      }
       const nodes = document.querySelectorAll("[data-plan-inc]");
       for (let i = 0; i < nodes.length; i++) {
         if (nodes[i].getAttribute("data-plan-inc") === key) return nodes[i];
@@ -8590,8 +9222,15 @@ button.cat-group-header {
       if (panelId === "planIncCalc") {
         if (!calcFor) return;
         panel.dataset.calcFor = calcFor;
-        const inpPlace = document.querySelector('[data-plan-inc="' + calcFor.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"]');
-        const field = inpPlace && inpPlace.closest(".field");
+        const esc = calcFor.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+        let inpPlace = document.querySelector('[data-calc-input-key="' + esc + '"]');
+        if (!inpPlace) {
+          inpPlace = document.querySelector('[data-plan-inc="' + esc + '"]');
+        }
+        const field =
+          (inpPlace && inpPlace.closest(".cat-line-amt-wrap")) ||
+          (inpPlace && inpPlace.closest(".field")) ||
+          (inpPlace && inpPlace.closest(".cat-line-row"));
         if (field && field.parentNode) {
           field.parentNode.insertBefore(panel, field.nextSibling);
         } else {
@@ -8712,7 +9351,7 @@ button.cat-group-header {
       // Plan / budsjett / saldo: also resolve expressions in the field
       const t = e.target;
       if (!t || !t.matches) return;
-      if (t.matches("[data-plan-inc], [data-budget], input[data-bal]")) {
+      if (t.matches("[data-plan-inc], [data-budget], [data-line-amount], input[data-bal]")) {
         resolveAmountField(t);
       }
     }, true);
@@ -8720,7 +9359,7 @@ button.cat-group-header {
       if (e.key !== "Enter") return;
       const t = e.target;
       if (!t || !t.matches) return;
-      if (t.classList.contains("amount-expr") || t.matches("[data-plan-inc], [data-budget]")) {
+      if (t.classList.contains("amount-expr") || t.matches("[data-plan-inc], [data-budget], [data-line-amount]")) {
         resolveAmountField(t);
         // Let form submit / blur handlers run after
       }
@@ -8755,6 +9394,48 @@ button.cat-group-header {
     $("#settingsClose").addEventListener("click", function () { closeDlg("#dlgSettings"); });
 
     // Mer tab shortcuts
+    const btnMerYear = $("#btnMerYear");
+    if (btnMerYear) {
+      btnMerYear.addEventListener("click", function () {
+        applyMainTab("mer");
+        save();
+        render();
+        setTimeout(function () {
+          const el = $("#sectionMerYear");
+          if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 60);
+      });
+    }
+
+    const yPrev = $("#yearOverviewPrev");
+    const yNext = $("#yearOverviewNext");
+    if (yPrev) {
+      yPrev.addEventListener("click", function () {
+        yearOverviewYear = getYearOverviewYear() - 1;
+        renderYearOverview();
+      });
+    }
+    if (yNext) {
+      yNext.addEventListener("click", function () {
+        yearOverviewYear = getYearOverviewYear() + 1;
+        renderYearOverview();
+      });
+    }
+    const yearBody = $("#yearOverviewBody");
+    if (yearBody) {
+      yearBody.addEventListener("click", function (e) {
+        const tr = e.target.closest("tr[data-jump-month]");
+        if (!tr) return;
+        state.view = {
+          year: parseInt(tr.getAttribute("data-jump-year"), 10),
+          month: parseInt(tr.getAttribute("data-jump-month"), 10)
+        };
+        save();
+        applyMainTab("oversikt");
+        render();
+      });
+    }
+
     const btnMerPeople = $("#btnMerPeople");
     if (btnMerPeople) {
       btnMerPeople.addEventListener("click", function () {
@@ -8904,8 +9585,10 @@ button.cat-group-header {
 
     // Budget inputs (delegated) — per owner
     $("#categoryList").addEventListener("change", function (e) {
+      if (e.target.closest("[data-line-name], [data-line-amount]")) return;
       const input = e.target.closest("[data-budget]");
       if (!input) return;
+      if (input.readOnly || input.hasAttribute("readonly")) return;
       const id = input.getAttribute("data-budget");
       const owner = input.getAttribute("data-budget-owner") || "felles";
       const m = getMonth();
@@ -8921,7 +9604,100 @@ button.cat-group-header {
       if (e.key === "Enter" && e.target.matches("[data-split-cat]")) {
         e.target.blur();
       }
+      if (
+        e.key === "Enter" &&
+        (e.target.matches("[data-line-name]") || e.target.matches("[data-line-amount]"))
+      ) {
+        e.target.blur();
+      }
     });
+
+
+    function commitLinesFromDom(catId, ownerId) {
+      const m = getMonth();
+      const root = document.querySelector(
+        '#categoryList [data-lines-cat="' +
+          catId +
+          '"][data-lines-owner="' +
+          ownerId +
+          '"]'
+      );
+      if (!root) return;
+      const rows = root.querySelectorAll(".cat-line-row");
+      const lines = [];
+      rows.forEach(function (row) {
+        const id = row.getAttribute("data-line-id");
+        const nameInp = row.querySelector("[data-line-name]");
+        const amtInp = row.querySelector("[data-line-amount]");
+        lines.push({
+          id: id || uid(),
+          name: nameInp ? nameInp.value : "",
+          amount: amtInp ? parseAmount(amtInp.value) : 0
+        });
+      });
+      Calc.setBudgetLines(m, catId, ownerId, lines);
+      save();
+      render();
+    }
+
+    $("#categoryList").addEventListener("click", function (e) {
+      const addBtn = e.target.closest("[data-line-add]");
+      if (addBtn) {
+        e.preventDefault();
+        const catId = addBtn.getAttribute("data-line-add");
+        const ownerId = addBtn.getAttribute("data-line-owner") || "felles";
+        const m = getMonth();
+        const lines = Calc.getBudgetLines(m, catId, ownerId).slice();
+        if (!lines.length) {
+          const cur = budgetForOwner(m, catId, ownerId);
+          lines.push({ id: uid(), name: "", amount: cur > 0 ? cur : 0 });
+        } else {
+          lines.push({ id: uid(), name: "", amount: 0 });
+        }
+        Calc.setBudgetLines(m, catId, ownerId, lines);
+        save();
+        render();
+        setTimeout(function () {
+          const last = document.querySelector(
+            '#categoryList [data-lines-cat="' +
+              catId +
+              '"][data-lines-owner="' +
+              ownerId +
+              '"] .cat-line-row:last-child .cat-line-name'
+          );
+          if (last) {
+            try { last.focus({ preventScroll: true }); } catch (err) { last.focus(); }
+          }
+        }, 40);
+        return;
+      }
+      const delBtn = e.target.closest("[data-line-del]");
+      if (delBtn) {
+        e.preventDefault();
+        const lineId = delBtn.getAttribute("data-line-del");
+        const catId = delBtn.getAttribute("data-line-cat");
+        const ownerId = delBtn.getAttribute("data-line-owner") || "felles";
+        const m = getMonth();
+        const next = Calc.getBudgetLines(m, catId, ownerId).filter(function (l) {
+          return l.id !== lineId;
+        });
+        Calc.setBudgetLines(m, catId, ownerId, next);
+        save();
+        render();
+      }
+    });
+
+    function onLineField(e) {
+      const nameInp = e.target.closest("[data-line-name]");
+      const amtInp = e.target.closest("[data-line-amount]");
+      const inp = nameInp || amtInp;
+      if (!inp) return;
+      commitLinesFromDom(
+        inp.getAttribute("data-line-cat"),
+        inp.getAttribute("data-line-owner") || "felles"
+      );
+    }
+    $("#categoryList").addEventListener("change", onLineField);
 
     // Felles fordeling % (delegated)
     function commitSplitFromDom(catId) {
@@ -9014,6 +9790,13 @@ button.cat-group-header {
 
     $("#txSearch").addEventListener("input", function () { renderTransactions(getMonth()); });
     $("#txFilter").addEventListener("change", function () { renderTransactions(getMonth()); });
+    const txScope = $("#txScope");
+    if (txScope) {
+      txScope.addEventListener("change", function () {
+        loggScope = txScope.value === "year" ? "year" : "month";
+        renderTransactions(getMonth());
+      });
+    }
 
     // Person actions
     document.body.addEventListener("click", function (e) {

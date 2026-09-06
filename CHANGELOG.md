@@ -1,5 +1,21 @@
 # Endringslogg – Familiebudsjett
 
+## 6. september 2026 (UTC+2) – Årsoversikt + underlinjer
+
+### Feature A — År
+- **Mer → År**: velg år, tabell med plan inn / plan ut / faktisk ut / til overs per måned.
+- Årstotaler + enkel SVG-søylediagram (plan ut vs faktisk ut), uten ekstra biblioteker.
+- Trykk på en månedrad for å hoppe dit. Valgfritt **Hele året** i Logg-filter.
+
+### Feature B — Underlinjer
+- Utvid en kategori → **+ Linje** for abonnement o.l. (navn + beløp, slett, kalkulator).
+- Når underlinjer finnes, er **Forventet** = summen (skrivebeskyttet); linjene styrer budsjetttallet.
+- Lagres additivt som `budgetLines` per måned. Gammel `budgets[catId][owner]=tall` fungerer uendret uten linjer.
+- Carry-forward / «Kopier budsjett» kopierer også underlinjer. Excel-fyll lar linjer stå tomme.
+
+### Datasikkerhet
+- Lagringsnøkkel uendret: **`familie-budsjett-v1`**. Kun additiv migrering. Ingen auto-reset.
+
 ## 6. september 2026 (UTC+2) – Trygge UX-fikser — sletter ikke data
 
 ### Trygge UX-fikser — sletter ikke data
