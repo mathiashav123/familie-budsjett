@@ -1,5 +1,21 @@
 # Endringslogg – Familiebudsjett
 
+## 6. september 2026 (UTC+2) – Planlagt sparing per måned
+
+### Plan → Sparing (ved lønn)
+- Nytt felt **Sparing** under Lønn/Ekstra for hver person: beløp du vil sette av hver måned (f.eks. 3000 kr).
+- Hint: «Beløp du vil sette av hver måned».
+- Lagres additivt som `plannedIncome[personId].sparing` (samme objekt som lønn/ekstra). **Ikke** inntekt – teller ikke i planInn.
+- Videreføres til nye måneder på samme måte som lønn/ekstra.
+
+### Sparing-fanen
+- Ny metrikk **Planlagt denne måneden** (per person / Samlet) fra Plan-feltet.
+- Ved **+ Nytt sparemål**: forhåndsutfyller «per måned» fra planlagt sparing (hvis satt). Sparemål beholdes som før.
+
+### Datasikkerhet
+- Lagringsnøkkel uendret: **`familie-budsjett-v1`**. Kun additivt felt. Ingen wipe.
+
+
 ## 6. september 2026 (UTC+2) – Sparing-fane + sparemål
 
 ### Sparing som bunnfane

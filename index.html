@@ -1234,6 +1234,22 @@ code {
 .input-affix.green input { color: var(--green); }
 .input-affix.green span { color: var(--green); }
 .input-affix.green:focus-within { border-color: var(--green); }
+
+/* Planlagt sparing (Plan → inntekt-grid) */
+.plan-person .input-affix.spare {
+  border-color: #c7d2fe;
+  background: #eef2ff;
+}
+.plan-person .input-affix.spare input { color: #4338ca; }
+.plan-person .input-affix.spare span { color: #4338ca; }
+.plan-person .input-affix.spare:focus-within { border-color: #4338ca; }
+.plan-sparing-hint {
+  display: block;
+  margin-top: .2rem;
+  font-size: .72rem;
+  color: var(--muted);
+}
+
 .plan-inc-input {
   font-size: 1.25rem !important;
   font-weight: 750 !important;
@@ -4059,6 +4075,11 @@ button.cat-group-header {
             <span class="sparing-metric-hint">Loggførte innskudd</span>
           </div>
           <div class="sparing-metric">
+            <span class="sparing-metric-label">Planlagt denne måneden</span>
+            <strong class="sparing-metric-value" id="sparingPlanlagt">—</strong>
+            <span class="sparing-metric-hint" id="sparingPlanlagtHint">Fra Plan → Sparing</span>
+          </div>
+          <div class="sparing-metric">
             <span class="sparing-metric-label">I år</span>
             <strong class="sparing-metric-value" id="sparingYear">—</strong>
             <span class="sparing-metric-hint" id="sparingYearHint">2026</span>
@@ -4739,6 +4760,13 @@ button.cat-group-header {
     });
   }
 
+  /** Additive plannedIncome fields per person (income + standing monthly saving plan). */
+  var PLANNED_INCOME_FIELDS = ["lønn", "ekstra", "sparing"];
+
+  function emptyPlannedIncomeBlock() {
+    return { lønn: null, ekstra: null, sparing: null };
+  }
+
   function ensurePlannedIncomeShape(m, people) {
     if (!m.plannedIncome || typeof m.plannedIncome !== "object") {
       m.plannedIncome = {};
@@ -4754,10 +4782,11 @@ button.cat-group-header {
     }
     (people || []).forEach(function (p) {
       if (!m.plannedIncome[p.id] || typeof m.plannedIncome[p.id] !== "object") {
-        m.plannedIncome[p.id] = { lønn: null, ekstra: null };
+        m.plannedIncome[p.id] = emptyPlannedIncomeBlock();
       }
-      if (!("lønn" in m.plannedIncome[p.id])) m.plannedIncome[p.id].lønn = null;
-      if (!("ekstra" in m.plannedIncome[p.id])) m.plannedIncome[p.id].ekstra = null;
+      PLANNED_INCOME_FIELDS.forEach(function (f) {
+        if (!(f in m.plannedIncome[p.id])) m.plannedIncome[p.id][f] = null;
+      });
     });
   }
 
@@ -4951,7 +4980,9 @@ button.cat-group-header {
           lønn:
             pi[k] && pi[k].lønn != null ? pi[k].lønn : null,
           ekstra:
-            pi[k] && pi[k].ekstra != null ? pi[k].ekstra : null
+            pi[k] && pi[k].ekstra != null ? pi[k].ekstra : null,
+          sparing:
+            pi[k] && pi[k].sparing != null ? pi[k].sparing : null
         };
       });
 
@@ -5043,6 +5074,19 @@ button.cat-group-header {
     var block = m.plannedIncome && m.plannedIncome[personId];
     var v = block && block[type];
     return v == null || v === "" ? 0 : Number(v) || 0;
+  }
+
+  /** Standing planned monthly saving (Plan → Sparing). Not income. */
+  function plannedSparingFor(m, personId) {
+    return plannedIncomeFor(m, personId, "sparing");
+  }
+
+  function plannedSparingTotal(m, people) {
+    var sum = 0;
+    activePeople(people).forEach(function (p) {
+      sum += plannedSparingFor(m, p.id);
+    });
+    return sum;
   }
 
   /**
@@ -5897,9 +5941,9 @@ button.cat-group-header {
     var pi = sourceMonth.plannedIncome || {};
     Object.keys(pi).forEach(function (pid) {
       if (!targetMonth.plannedIncome[pid]) {
-        targetMonth.plannedIncome[pid] = { lønn: null, ekstra: null };
+        targetMonth.plannedIncome[pid] = emptyPlannedIncomeBlock();
       }
-      ["lønn", "ekstra"].forEach(function (t) {
+      PLANNED_INCOME_FIELDS.forEach(function (t) {
         if (pi[pid] && pi[pid][t] != null && pi[pid][t] !== "") {
           targetMonth.plannedIncome[pid][t] = pi[pid][t];
         }
@@ -6010,9 +6054,9 @@ button.cat-group-header {
     var pi = src.plannedIncome || {};
     Object.keys(pi).forEach(function (pid) {
       if (!m.plannedIncome[pid]) {
-        m.plannedIncome[pid] = { lønn: null, ekstra: null };
+        m.plannedIncome[pid] = emptyPlannedIncomeBlock();
       }
-      ["lønn", "ekstra"].forEach(function (t) {
+      PLANNED_INCOME_FIELDS.forEach(function (t) {
         if (
           pi[pid] &&
           pi[pid][t] != null &&
@@ -6047,10 +6091,7 @@ button.cat-group-header {
       });
       // Keep incomes on person if archiving — only reassign expenses to felles by default
       if (m.plannedIncome && m.plannedIncome[fromId] && toOwner !== "felles") {
-        m.plannedIncome[toOwner] = m.plannedIncome[toOwner] || {
-          lønn: null,
-          ekstra: null
-        };
+        m.plannedIncome[toOwner] = m.plannedIncome[toOwner] || emptyPlannedIncomeBlock();
       }
     });
     (state.categories || []).forEach(function (c) {
@@ -6303,6 +6344,7 @@ button.cat-group-header {
       naa: 0,
       hasNaa: false,
       denneManeden: 0,
+      planlagt: 0,
       iAar: 0,
       totalt: 0
     };
@@ -6334,10 +6376,12 @@ button.cat-group-header {
       var denne = sumSavingsForMonth(m, p.id);
       var iAar = sumYearForPerson(p.id);
       var totalt = sumAllForPerson(p.id);
+      var planlagt = plannedSparingFor(m, p.id);
       byPerson[p.id] = {
         naa: naa,
         hasNaa: hasNaa,
         denneManeden: denne,
+        planlagt: planlagt,
         iAar: iAar,
         totalt: totalt
       };
@@ -6346,6 +6390,7 @@ button.cat-group-header {
         samlet.hasNaa = true;
       }
       samlet.denneManeden += denne;
+      samlet.planlagt += planlagt;
       samlet.iAar += iAar;
       samlet.totalt += totalt;
     });
@@ -6435,6 +6480,10 @@ button.cat-group-header {
     findNearestPreviousWithBalances: findNearestPreviousWithBalances,
     migrateState: migrateState,
     plannedIncomeFor: plannedIncomeFor,
+    plannedSparingFor: plannedSparingFor,
+    plannedSparingTotal: plannedSparingTotal,
+    emptyPlannedIncomeBlock: emptyPlannedIncomeBlock,
+    PLANNED_INCOME_FIELDS: PLANNED_INCOME_FIELDS,
     budgetFor: budgetFor,
     budgetForOwner: budgetForOwner,
     setBudgetForOwner: setBudgetForOwner,
@@ -6477,7 +6526,7 @@ button.cat-group-header {
   };
 });
 
-</script>
+  </script>
   <script>
 /**
  * Familiebudsjett – multi-person
@@ -7297,13 +7346,17 @@ button.cat-group-header {
       const m = state.months[key];
       Calc.ensureMonthShape(m, people);
 
+      const prev1 = (m.plannedIncome && m.plannedIncome[id1]) || {};
+      const prev2 = (m.plannedIncome && m.plannedIncome[id2]) || {};
       m.plannedIncome[id1] = {
         lønn: EXCEL_PLANNED_INCOME.p1.lønn,
-        ekstra: EXCEL_PLANNED_INCOME.p1.ekstra
+        ekstra: EXCEL_PLANNED_INCOME.p1.ekstra,
+        sparing: prev1.sparing != null ? prev1.sparing : null
       };
       m.plannedIncome[id2] = {
         lønn: EXCEL_PLANNED_INCOME.p2.lønn,
-        ekstra: EXCEL_PLANNED_INCOME.p2.ekstra
+        ekstra: EXCEL_PLANNED_INCOME.p2.ekstra,
+        sparing: prev2.sparing != null ? prev2.sparing : null
       };
 
       Object.keys(excelCatIds).forEach(function (cid) {
@@ -7536,6 +7589,7 @@ button.cat-group-header {
         const personCalc = (c.byPerson && c.byPerson[person.id]) || { lønn: 0, ekstra: 0 };
         const lønnKey = person.id + "-lønn";
         const ekstraKey = person.id + "-ekstra";
+        const sparingKey = person.id + "-sparing";
         const hasAnyPlan =
           (pi.lønn != null && pi.lønn !== "") ||
           (pi.ekstra != null && pi.ekstra !== "");
@@ -7567,6 +7621,21 @@ button.cat-group-header {
           '" placeholder="0" autocomplete="off" class="plan-inc-input" value="' +
           escapeAttr(formatPlanInput(pi.ekstra)) +
           '" /><span>kr</span></div></label>' +
+          '<label class="field"><div class="field-label-row"><span>Sparing</span>' +
+          '<button type="button" class="btn ghost xs calc-toggle" data-calc-panel="planIncCalc" data-calc-for="' +
+          escapeAttr(sparingKey) +
+          '" aria-expanded="false" aria-controls="planIncCalc">Kalkulator</button></div>' +
+          '<div class="input-affix spare">' +
+          '<input type="text" inputmode="decimal" data-plan-inc="' +
+          escapeAttr(sparingKey) +
+          '" placeholder="0" autocomplete="off" class="plan-inc-input" title="Beløp du vil sette av hver måned" aria-describedby="planSparingHint-' +
+          escapeAttr(person.id) +
+          '" value="' +
+          escapeAttr(formatPlanInput(pi.sparing)) +
+          '" /><span>kr</span></div>' +
+          '<span class="hint compact plan-sparing-hint" id="planSparingHint-' +
+          escapeAttr(person.id) +
+          '">Beløp du vil sette av hver måned</span></label>' +
           '<div class="plan-vs"><span>Faktisk: <strong data-plan-actual="' +
           escapeAttr(person.id) +
           '">' +
@@ -9169,6 +9238,7 @@ button.cat-group-header {
             naa: 0,
             hasNaa: false,
             denneManeden: 0,
+            planlagt: 0,
             iAar: 0,
             totalt: 0
           };
@@ -9184,6 +9254,15 @@ button.cat-group-header {
       naaEl.textContent = slice.hasNaa ? formatNOK(slice.naa) : "—";
     }
     if (monthEl) monthEl.textContent = formatNOK(slice.denneManeden || 0);
+    const planlagtEl = $("#sparingPlanlagt");
+    if (planlagtEl) planlagtEl.textContent = formatNOK(slice.planlagt || 0);
+    const planlagtHint = $("#sparingPlanlagtHint");
+    if (planlagtHint) {
+      planlagtHint.textContent =
+        view === "samlet"
+          ? "Fra Plan → Sparing (alle)"
+          : "Fra Plan → Sparing · " + nameOf(view);
+    }
     if (yearEl) yearEl.textContent = formatNOK(slice.iAar || 0);
     if (totalEl) totalEl.textContent = formatNOK(slice.totalt || 0);
     if (naaHint) {
@@ -9273,11 +9352,32 @@ button.cat-group-header {
     $("#goalId").value = edit ? edit.id : "";
     $("#goalName").value = edit ? edit.name || "" : "";
     $("#goalTarget").value = edit ? String(edit.target).replace(".", ",") : "";
-    $("#goalMonthly").value = edit ? String(edit.monthly).replace(".", ",") : "";
+    let monthlyPrefill = "";
+    if (edit) {
+      monthlyPrefill = String(edit.monthly).replace(".", ",");
+    } else {
+      const m = getMonth();
+      ensureMonthShape(m);
+      const view = state.settings.sparingView || "samlet";
+      let planned = 0;
+      if (view !== "samlet" && view !== "felles") {
+        planned = Calc.plannedSparingFor(m, view);
+      } else {
+        planned = Calc.plannedSparingTotal(m, state.people);
+      }
+      if (planned > 0) monthlyPrefill = String(planned).replace(".", ",");
+    }
+    $("#goalMonthly").value = monthlyPrefill;
     $("#goalSaved").value = edit
       ? String(edit.saved != null ? edit.saved : 0).replace(".", ",")
       : "0";
-    fillGoalWhoSeg(edit ? edit.person : "samlet");
+    const defaultWho =
+      edit
+        ? edit.person
+        : (state.settings.sparingView && state.settings.sparingView !== "samlet"
+            ? state.settings.sparingView
+            : "samlet");
+    fillGoalWhoSeg(defaultWho);
     $("#goalDelete").hidden = !edit;
     openDlg("#dlgGoal");
     setTimeout(function () { $("#goalName").focus(); }, 50);
@@ -10887,7 +10987,7 @@ button.cat-group-header {
       const type = key.slice(dash + 1);
       const m = getMonth();
       ensureMonthShape(m);
-      if (!m.plannedIncome[person]) m.plannedIncome[person] = { lønn: null, ekstra: null };
+      if (!m.plannedIncome[person]) m.plannedIncome[person] = Calc.emptyPlannedIncomeBlock ? Calc.emptyPlannedIncomeBlock() : { lønn: null, ekstra: null, sparing: null };
       const v = parseAmount(input.value);
       m.plannedIncome[person][type] = v;
       save();
@@ -11782,6 +11882,6 @@ button.cat-group-header {
   }
 })();
 
-</script>
+  </script>
 </body>
 </html>
