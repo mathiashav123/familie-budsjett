@@ -3049,7 +3049,113 @@ button.cat-group-header {
   outline-offset: 2px;
 }
 
-  </style>
+
+/* ——— Beløp-kalkulator ——— */
+.field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+.field-label-row > span {
+  font-size: .85rem;
+  font-weight: 650;
+  color: var(--muted);
+}
+.calc-toggle {
+  flex-shrink: 0;
+  min-height: 32px;
+  padding: .25rem .55rem;
+  font-size: .75rem;
+  font-weight: 700;
+}
+.calc-toggle[aria-expanded="true"] {
+  background: var(--teal-bg, #ccfbf1);
+  color: #0f766e;
+  border-color: #5eead4;
+}
+
+.amount-calc {
+  background: #f0fdfa;
+  border: 1.5px solid #99f6e4;
+  border-radius: var(--radius-sm, 12px);
+  padding: .65rem;
+  margin: .1rem 0 .35rem;
+  display: grid;
+  gap: .5rem;
+}
+.amount-calc[hidden] {
+  display: none !important;
+}
+.amount-calc-display {
+  background: #fff;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  min-height: 48px;
+  padding: .55rem .75rem;
+  font-size: 1.35rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  word-break: break-all;
+  color: var(--text);
+}
+.amount-calc-pad {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: .4rem;
+}
+.calc-key {
+  appearance: none;
+  border: 1.5px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  border-radius: 12px;
+  min-height: 48px;
+  font-size: 1.15rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.calc-key:active {
+  transform: scale(0.97);
+  background: #e2e8f0;
+}
+.calc-key.calc-op {
+  background: #ecfeff;
+  color: #0e7490;
+  font-weight: 800;
+}
+.calc-key.calc-eq {
+  background: #0f766e;
+  color: #fff;
+  border-color: #0f766e;
+  grid-column: span 1;
+}
+.calc-key.calc-c {
+  background: #fff7ed;
+  color: #9a3412;
+  border-color: #fdba74;
+}
+.calc-use {
+  grid-column: span 2;
+  min-height: 48px;
+  font-size: 1rem;
+  font-weight: 800;
+  border-radius: 12px;
+}
+.amount-calc-hint {
+  margin: 0;
+  text-align: center;
+}
+.amount-calc-pad .calc-eq {
+  /* = sits with C and Bruk on last row: keys are 16 + use spans 2 = need layout */
+}
+/* Last row: = | C | Bruk(span 2) — already in DOM order after + */
+
+</style>
 </head>
 <body>
   <a class="skip-link" href="#main">Hopp til innhold</a>
@@ -3371,9 +3477,37 @@ button.cat-group-header {
       <div class="modal-body stack">
         <input type="hidden" id="expId" />
         <label class="field">
-          <span>Beløp (kr)</span>
-          <input id="expAmount" class="input lg" type="text" inputmode="decimal" placeholder="0" required autocomplete="off" />
+          <div class="field-label-row">
+            <span>Beløp (kr)</span>
+            <button type="button" class="btn ghost xs calc-toggle" data-calc-panel="expCalc" aria-expanded="false" aria-controls="expCalc">Kalkulator</button>
+          </div>
+          <input id="expAmount" class="input lg amount-expr" type="text" inputmode="decimal" placeholder="0 eller 199+49" required autocomplete="off" />
         </label>
+        <div class="amount-calc" id="expCalc" hidden>
+          <div class="amount-calc-display" data-calc-display aria-live="polite">0</div>
+          <div class="amount-calc-pad" role="group" aria-label="Kalkulator">
+            <button type="button" class="calc-key" data-calc-key="7">7</button>
+            <button type="button" class="calc-key" data-calc-key="8">8</button>
+            <button type="button" class="calc-key" data-calc-key="9">9</button>
+            <button type="button" class="calc-key calc-op" data-calc-key="÷">÷</button>
+            <button type="button" class="calc-key" data-calc-key="4">4</button>
+            <button type="button" class="calc-key" data-calc-key="5">5</button>
+            <button type="button" class="calc-key" data-calc-key="6">6</button>
+            <button type="button" class="calc-key calc-op" data-calc-key="×">×</button>
+            <button type="button" class="calc-key" data-calc-key="1">1</button>
+            <button type="button" class="calc-key" data-calc-key="2">2</button>
+            <button type="button" class="calc-key" data-calc-key="3">3</button>
+            <button type="button" class="calc-key calc-op" data-calc-key="−">−</button>
+            <button type="button" class="calc-key" data-calc-key="0">0</button>
+            <button type="button" class="calc-key" data-calc-key=",">,</button>
+            <button type="button" class="calc-key" data-calc-key="⌫" aria-label="Slett">⌫</button>
+            <button type="button" class="calc-key calc-op" data-calc-key="+">+</button>
+            <button type="button" class="calc-key calc-eq" data-calc-key="=">=</button>
+            <button type="button" class="calc-key calc-c" data-calc-key="C">C</button>
+            <button type="button" class="btn primary calc-use" data-calc-use>Bruk</button>
+          </div>
+          <p class="hint compact amount-calc-hint">Eller skriv direkte i beløp, f.eks. 199+49</p>
+        </div>
         <div class="amount-chips" id="expAmountChips" role="group" aria-label="Hurtigbeløp">
           <button type="button" class="amount-chip" data-amount="50">50</button>
           <button type="button" class="amount-chip" data-amount="100">100</button>
@@ -3428,9 +3562,38 @@ button.cat-group-header {
           </select>
         </label>
         <label class="field">
-          <span>Beløp (kr)</span>
-          <input id="incAmount" class="input lg" type="text" inputmode="decimal" placeholder="0" required autocomplete="off" />
+          <div class="field-label-row">
+            <span>Beløp (kr)</span>
+            <button type="button" class="btn ghost xs calc-toggle" data-calc-panel="incCalc" aria-expanded="false" aria-controls="incCalc">Kalkulator</button>
+          </div>
+          <input id="incAmount" class="input lg amount-expr" type="text" inputmode="decimal" placeholder="0 eller 1000+500" required autocomplete="off" />
         </label>
+        <div class="amount-calc" id="incCalc" hidden>
+          <div class="amount-calc-display" data-calc-display aria-live="polite">0</div>
+          <div class="amount-calc-pad" role="group" aria-label="Kalkulator">
+            <button type="button" class="calc-key" data-calc-key="7">7</button>
+            <button type="button" class="calc-key" data-calc-key="8">8</button>
+            <button type="button" class="calc-key" data-calc-key="9">9</button>
+            <button type="button" class="calc-key calc-op" data-calc-key="÷">÷</button>
+            <button type="button" class="calc-key" data-calc-key="4">4</button>
+            <button type="button" class="calc-key" data-calc-key="5">5</button>
+            <button type="button" class="calc-key" data-calc-key="6">6</button>
+            <button type="button" class="calc-key calc-op" data-calc-key="×">×</button>
+            <button type="button" class="calc-key" data-calc-key="1">1</button>
+            <button type="button" class="calc-key" data-calc-key="2">2</button>
+            <button type="button" class="calc-key" data-calc-key="3">3</button>
+            <button type="button" class="calc-key calc-op" data-calc-key="−">−</button>
+            <button type="button" class="calc-key" data-calc-key="0">0</button>
+            <button type="button" class="calc-key" data-calc-key=",">,</button>
+            <button type="button" class="calc-key" data-calc-key="⌫" aria-label="Slett">⌫</button>
+            <button type="button" class="calc-key calc-op" data-calc-key="+">+</button>
+            <button type="button" class="calc-key calc-eq" data-calc-key="=">=</button>
+            <button type="button" class="calc-key calc-c" data-calc-key="C">C</button>
+            <button type="button" class="btn primary calc-use" data-calc-use>Bruk</button>
+          </div>
+          <p class="hint compact amount-calc-hint">Eller skriv direkte i beløp, f.eks. 199+49</p>
+        </div>
+
         <label class="field">
           <span>Dato</span>
           <input id="incDate" class="input" type="date" required />
@@ -3459,9 +3622,38 @@ button.cat-group-header {
         <input type="hidden" id="savId" />
         <input type="hidden" id="savPerson" />
         <label class="field">
-          <span>Beløp (kr)</span>
-          <input id="savAmount" class="input lg" type="text" inputmode="decimal" placeholder="0" required autocomplete="off" />
+          <div class="field-label-row">
+            <span>Beløp (kr)</span>
+            <button type="button" class="btn ghost xs calc-toggle" data-calc-panel="savCalc" aria-expanded="false" aria-controls="savCalc">Kalkulator</button>
+          </div>
+          <input id="savAmount" class="input lg amount-expr" type="text" inputmode="decimal" placeholder="0 eller 500+250" required autocomplete="off" />
         </label>
+        <div class="amount-calc" id="savCalc" hidden>
+          <div class="amount-calc-display" data-calc-display aria-live="polite">0</div>
+          <div class="amount-calc-pad" role="group" aria-label="Kalkulator">
+            <button type="button" class="calc-key" data-calc-key="7">7</button>
+            <button type="button" class="calc-key" data-calc-key="8">8</button>
+            <button type="button" class="calc-key" data-calc-key="9">9</button>
+            <button type="button" class="calc-key calc-op" data-calc-key="÷">÷</button>
+            <button type="button" class="calc-key" data-calc-key="4">4</button>
+            <button type="button" class="calc-key" data-calc-key="5">5</button>
+            <button type="button" class="calc-key" data-calc-key="6">6</button>
+            <button type="button" class="calc-key calc-op" data-calc-key="×">×</button>
+            <button type="button" class="calc-key" data-calc-key="1">1</button>
+            <button type="button" class="calc-key" data-calc-key="2">2</button>
+            <button type="button" class="calc-key" data-calc-key="3">3</button>
+            <button type="button" class="calc-key calc-op" data-calc-key="−">−</button>
+            <button type="button" class="calc-key" data-calc-key="0">0</button>
+            <button type="button" class="calc-key" data-calc-key=",">,</button>
+            <button type="button" class="calc-key" data-calc-key="⌫" aria-label="Slett">⌫</button>
+            <button type="button" class="calc-key calc-op" data-calc-key="+">+</button>
+            <button type="button" class="calc-key calc-eq" data-calc-key="=">=</button>
+            <button type="button" class="calc-key calc-c" data-calc-key="C">C</button>
+            <button type="button" class="btn primary calc-use" data-calc-use>Bruk</button>
+          </div>
+          <p class="hint compact amount-calc-hint">Eller skriv direkte i beløp, f.eks. 199+49</p>
+        </div>
+
         <label class="field">
           <span>Dato</span>
           <input id="savDate" class="input" type="date" required />
@@ -4737,6 +4929,112 @@ button.cat-group-header {
     });
   }
 
+
+  /**
+   * Safe amount expression evaluator.
+   * Allows only numbers, + - * / parentheses, and Norwegian comma decimals.
+   * No arbitrary JS eval.
+   * @returns {number|null}
+   */
+  function evalAmountExpression(input) {
+    if (input == null) return null;
+    var s = String(input).trim();
+    if (!s) return null;
+    s = s.replace(/\s+/g, "")
+      .replace(/kr/gi, "")
+      .replace(/×/g, "*")
+      .replace(/·/g, "*")
+      .replace(/÷/g, "/")
+      .replace(/−/g, "-")
+      .replace(/,/g, ".");
+    // Reject anything outside whitelist (digits, ops, parens, dot)
+    if (!/^[\d.+\-*/()]+$/.test(s)) return null;
+    // Reject consecutive dots / empty
+    if (s.indexOf("..") >= 0) return null;
+
+    var i = 0;
+    function peek() {
+      return s.charAt(i) || "";
+    }
+    function consume() {
+      return s.charAt(i++) || "";
+    }
+
+    function parseExpr() {
+      var v = parseTerm();
+      while (peek() === "+" || peek() === "-") {
+        var op = consume();
+        var r = parseTerm();
+        v = op === "+" ? v + r : v - r;
+      }
+      return v;
+    }
+
+    function parseTerm() {
+      var v = parseFactor();
+      while (peek() === "*" || peek() === "/") {
+        var op = consume();
+        var r = parseFactor();
+        if (op === "*") v = v * r;
+        else {
+          if (r === 0) throw new Error("div0");
+          v = v / r;
+        }
+      }
+      return v;
+    }
+
+    function parseFactor() {
+      if (peek() === "+") {
+        consume();
+        return parseFactor();
+      }
+      if (peek() === "-") {
+        consume();
+        return -parseFactor();
+      }
+      if (peek() === "(") {
+        consume();
+        var v = parseExpr();
+        if (peek() !== ")") throw new Error("paren");
+        consume();
+        return v;
+      }
+      return parseNumber();
+    }
+
+    function parseNumber() {
+      var start = i;
+      while (peek() >= "0" && peek() <= "9") consume();
+      if (peek() === ".") {
+        consume();
+        while (peek() >= "0" && peek() <= "9") consume();
+      }
+      if (start === i) throw new Error("num");
+      var n = Number(s.slice(start, i));
+      if (!Number.isFinite(n)) throw new Error("num");
+      return n;
+    }
+
+    try {
+      var result = parseExpr();
+      if (i !== s.length) return null;
+      if (!Number.isFinite(result)) return null;
+      // Normalize -0
+      if (Object.is(result, -0)) result = 0;
+      return result;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /** True if string looks like an arithmetic expression (not a plain number). */
+  function looksLikeAmountExpression(input) {
+    if (input == null) return false;
+    var s = String(input);
+    return /[+\-*/×÷()]/.test(s) || /[−]/.test(s);
+  }
+
   return {
     ID_A: ID_A,
     ID_B: ID_B,
@@ -4778,11 +5076,13 @@ button.cat-group-header {
     shiftMonthKey: shiftMonthKey,
     findNearestPreviousWithExpected: findNearestPreviousWithExpected,
     copyExpectedFrom: copyExpectedFrom,
-    ensureMonthExpected: ensureMonthExpected
+    ensureMonthExpected: ensureMonthExpected,
+    evalAmountExpression: evalAmountExpression,
+    looksLikeAmountExpression: looksLikeAmountExpression
   };
 });
 
-  </script>
+</script>
   <script>
 /**
  * Familiebudsjett – multi-person
@@ -4963,7 +5263,14 @@ button.cat-group-header {
 
   function parseAmount(str) {
     if (str == null || str === "") return null;
-    let s = String(str).trim().replace(/\s/g, "").replace(/kr/gi, "");
+    const raw = String(str).trim();
+    if (!raw) return null;
+    // Expressions like 199+49+12 (safe parser – no arbitrary JS)
+    if (Calc.looksLikeAmountExpression(raw)) {
+      const expr = Calc.evalAmountExpression(raw);
+      if (expr != null) return expr;
+    }
+    let s = raw.replace(/\s/g, "").replace(/kr/gi, "");
     // Accept both comma and dot; if both present, assume European (dot thousands, comma decimal)
     if (s.indexOf(",") >= 0 && s.indexOf(".") >= 0) {
       if (s.lastIndexOf(",") > s.lastIndexOf(".")) {
@@ -4976,6 +5283,24 @@ button.cat-group-header {
     }
     const n = parseFloat(s);
     return Number.isFinite(n) ? n : null;
+  }
+
+  /** Format a number for amount inputs (Norwegian comma, no thousands). */
+  function formatAmountInput(n) {
+    if (n == null || !Number.isFinite(n)) return "";
+    const rounded = Math.round(n * 100) / 100;
+    return String(rounded).replace(".", ",");
+  }
+
+  /** Evaluate expression in an amount field and write back the result. */
+  function resolveAmountField(el) {
+    if (!el) return null;
+    const raw = el.value;
+    const n = parseAmount(raw);
+    if (n != null && Calc.looksLikeAmountExpression(raw)) {
+      el.value = formatAmountInput(n);
+    }
+    return n;
   }
 
   function escapeHtml(s) {
@@ -7178,6 +7503,11 @@ button.cat-group-header {
     $("#expenseTitle").textContent = edit ? "Rediger kjøp" : "Kjøpt noe";
     $("#expId").value = edit ? edit.id : "";
     $("#expAmount").value = edit ? String(edit.amount).replace(".", ",") : "";
+    const _expCalc = $("#expCalc");
+    if (_expCalc) _expCalc.hidden = true;
+    $$('.calc-toggle[data-calc-panel="expCalc"]').forEach(function (b) {
+      b.setAttribute("aria-expanded", "false");
+    });
     $$(".amount-chip").forEach(function (c) {
       const v = c.getAttribute("data-amount");
       const cur = edit ? String(edit.amount) : "";
@@ -7215,6 +7545,11 @@ button.cat-group-header {
     $("#incId").value = edit ? edit.id : "";
     $("#incPerson").value = edit ? edit.person : person;
     $("#incAmount").value = edit ? String(edit.amount).replace(".", ",") : "";
+    const _incCalc = $("#incCalc");
+    if (_incCalc) _incCalc.hidden = true;
+    $$('.calc-toggle[data-calc-panel="incCalc"]').forEach(function (b) {
+      b.setAttribute("aria-expanded", "false");
+    });
     $("#incNote").value = edit ? edit.note || "" : "";
     $("#incDate").value = edit ? edit.date || todayISO() : todayISO();
     $("#incType").value = edit ? edit.type || "lønn" : "lønn";
@@ -7230,6 +7565,11 @@ button.cat-group-header {
     $("#savId").value = edit ? edit.id : "";
     $("#savPerson").value = edit ? edit.person : person;
     $("#savAmount").value = edit ? String(edit.amount).replace(".", ",") : "";
+    const _savCalc = $("#savCalc");
+    if (_savCalc) _savCalc.hidden = true;
+    $$('.calc-toggle[data-calc-panel="savCalc"]').forEach(function (b) {
+      b.setAttribute("aria-expanded", "false");
+    });
     $("#savNote").value = edit ? edit.note || "" : "";
     $("#savDate").value = edit ? edit.date || todayISO() : todayISO();
     $("#savDelete").hidden = !edit;
@@ -7751,6 +8091,160 @@ button.cat-group-header {
         try { inp.focus({ preventScroll: true }); } catch (err) { inp.focus(); }
       });
     }
+
+    // ——— Beløp-kalkulator (pad + uttrykk i felt) ———
+    const CALC_TARGET = {
+      expCalc: "expAmount",
+      incCalc: "incAmount",
+      savCalc: "savAmount"
+    };
+
+    function getCalcDisplay(panel) {
+      return panel ? panel.querySelector("[data-calc-display]") : null;
+    }
+
+    function setCalcExpr(panel, expr) {
+      const d = getCalcDisplay(panel);
+      if (!d) return;
+      d.textContent = expr === "" ? "0" : expr;
+      d.dataset.expr = expr;
+    }
+
+    function getCalcExpr(panel) {
+      const d = getCalcDisplay(panel);
+      if (!d) return "";
+      return d.dataset.expr != null ? d.dataset.expr : (d.textContent === "0" ? "" : d.textContent);
+    }
+
+    function closeCalcPanel(panelId) {
+      const panel = panelId ? document.getElementById(panelId) : null;
+      if (panel) panel.hidden = true;
+      $$('.calc-toggle[data-calc-panel="' + (panelId || "") + '"]').forEach(function (b) {
+        b.setAttribute("aria-expanded", "false");
+      });
+    }
+
+    function openCalcPanel(panelId) {
+      const panel = document.getElementById(panelId);
+      if (!panel) return;
+      // Close other calc panels in same dialog flow
+      Object.keys(CALC_TARGET).forEach(function (id) {
+        if (id !== panelId) closeCalcPanel(id);
+      });
+      panel.hidden = false;
+      const targetId = CALC_TARGET[panelId];
+      const inp = targetId ? document.getElementById(targetId) : null;
+      const seed = inp && inp.value ? String(inp.value).trim() : "";
+      setCalcExpr(panel, seed);
+      $$('.calc-toggle[data-calc-panel="' + panelId + '"]').forEach(function (b) {
+        b.setAttribute("aria-expanded", "true");
+      });
+    }
+
+    function toggleCalcPanel(panelId) {
+      const panel = document.getElementById(panelId);
+      if (!panel) return;
+      if (panel.hidden) openCalcPanel(panelId);
+      else closeCalcPanel(panelId);
+    }
+
+    function appendCalcKey(panel, key) {
+      let expr = getCalcExpr(panel);
+      if (key === "C") {
+        setCalcExpr(panel, "");
+        return;
+      }
+      if (key === "⌫") {
+        setCalcExpr(panel, expr.slice(0, -1));
+        return;
+      }
+      if (key === "=") {
+        const n = Calc.evalAmountExpression(expr || "0");
+        if (n == null) {
+          showToast("Ugyldig regnestykke");
+          return;
+        }
+        setCalcExpr(panel, formatAmountInput(n));
+        return;
+      }
+      // Map display ops already use × ÷ − ,
+      if (key === "," || key === ".") {
+        // allow comma after digit; avoid double decimal in current number chunk
+        const chunk = (expr.split(/[+\-×÷*/()]/).pop() || "");
+        if (chunk.indexOf(",") >= 0 || chunk.indexOf(".") >= 0) return;
+        setCalcExpr(panel, expr + ",");
+        return;
+      }
+      setCalcExpr(panel, expr + key);
+    }
+
+    function useCalcResult(panelId) {
+      const panel = document.getElementById(panelId);
+      if (!panel) return;
+      let expr = getCalcExpr(panel);
+      let n = Calc.evalAmountExpression(expr);
+      if (n == null) n = parseAmount(expr);
+      if (n == null) {
+        showToast("Ugyldig beløp");
+        return;
+      }
+      const targetId = CALC_TARGET[panelId];
+      const inp = targetId ? document.getElementById(targetId) : null;
+      if (inp) {
+        inp.value = formatAmountInput(n);
+        $$(".amount-chip").forEach(function (c) { c.classList.remove("is-active"); });
+        try { inp.focus({ preventScroll: true }); } catch (err) { /* */ }
+      }
+      closeCalcPanel(panelId);
+    }
+
+    document.addEventListener("click", function (e) {
+      const toggle = e.target.closest(".calc-toggle");
+      if (toggle) {
+        e.preventDefault();
+        const id = toggle.getAttribute("data-calc-panel");
+        if (id) toggleCalcPanel(id);
+        return;
+      }
+      const useBtn = e.target.closest("[data-calc-use]");
+      if (useBtn) {
+        e.preventDefault();
+        const panel = useBtn.closest(".amount-calc");
+        if (panel && panel.id) useCalcResult(panel.id);
+        return;
+      }
+      const keyBtn = e.target.closest("[data-calc-key]");
+      if (keyBtn) {
+        e.preventDefault();
+        const panel = keyBtn.closest(".amount-calc");
+        if (!panel) return;
+        appendCalcKey(panel, keyBtn.getAttribute("data-calc-key"));
+      }
+    });
+
+    // Evaluate expressions in amount fields on blur / Enter
+    function onAmountExprCommit(el) {
+      if (!el || !el.classList || !el.classList.contains("amount-expr")) return;
+      resolveAmountField(el);
+    }
+    document.addEventListener("blur", function (e) {
+      onAmountExprCommit(e.target);
+      // Plan / budsjett / saldo: also resolve expressions in the field
+      const t = e.target;
+      if (!t || !t.matches) return;
+      if (t.matches("[data-plan-inc], [data-budget], input[data-bal]")) {
+        resolveAmountField(t);
+      }
+    }, true);
+    document.addEventListener("keydown", function (e) {
+      if (e.key !== "Enter") return;
+      const t = e.target;
+      if (!t || !t.matches) return;
+      if (t.classList.contains("amount-expr") || t.matches("[data-plan-inc], [data-budget]")) {
+        resolveAmountField(t);
+        // Let form submit / blur handlers run after
+      }
+    });
     $("#reminderDismiss").addEventListener("click", function () {
       state.settings.reminderDismissedDate = todayISO();
       save();
@@ -8028,6 +8522,7 @@ button.cat-group-header {
     $("#expCancel").addEventListener("click", function () { closeDlg("#dlgExpense"); });
     $("#formExpense").addEventListener("submit", function (e) {
       e.preventDefault();
+      resolveAmountField($("#expAmount"));
       const amount = parseAmount($("#expAmount").value);
       if (amount == null || amount <= 0) {
         showToast("Skriv inn et beløp");
@@ -8100,6 +8595,7 @@ button.cat-group-header {
     $("#incCancel").addEventListener("click", function () { closeDlg("#dlgIncome"); });
     $("#formIncome").addEventListener("submit", function (e) {
       e.preventDefault();
+      resolveAmountField($("#incAmount"));
       const amount = parseAmount($("#incAmount").value);
       if (amount == null || amount <= 0) {
         showToast("Skriv inn et beløp");
@@ -8143,6 +8639,7 @@ button.cat-group-header {
     $("#savCancel").addEventListener("click", function () { closeDlg("#dlgSaving"); });
     $("#formSaving").addEventListener("submit", function (e) {
       e.preventDefault();
+      resolveAmountField($("#savAmount"));
       const amount = parseAmount($("#savAmount").value);
       if (amount == null || amount <= 0) {
         showToast("Skriv inn et beløp");
@@ -8466,6 +8963,6 @@ button.cat-group-header {
   }
 })();
 
-  </script>
+</script>
 </body>
 </html>
