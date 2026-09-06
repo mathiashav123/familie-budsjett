@@ -3375,6 +3375,57 @@ button.cat-group-header {
   cursor: default;
 }
 
+.cat-line-interval-label,
+.cat-line-month-label {
+  display: flex;
+  flex-direction: column;
+  gap: .15rem;
+  font-size: .68rem;
+  font-weight: 600;
+  color: var(--muted);
+  flex: 1 1 6.5rem;
+  min-width: 5.5rem;
+}
+.cat-line-interval,
+.cat-line-month {
+  font-size: .85rem;
+  font-weight: 500;
+  color: var(--text);
+  padding: .35rem .4rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  min-height: 36px;
+}
+.cat-line-extra {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: .45rem .7rem;
+  padding: .15rem 0 .1rem;
+}
+.cat-line-mode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem .75rem;
+  align-items: center;
+}
+.cat-line-mode-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  font-size: .82rem;
+  font-weight: 500;
+  color: var(--text);
+}
+.cat-line-interval-hint,
+.cat-line-contrib {
+  margin: 0;
+  flex: 1 1 100%;
+}
+
+
 /* ——— Årsoversikt ——— */
 .mer-year-card .year-head {
   display: flex;
@@ -3480,7 +3531,7 @@ button.cat-group-header {
 .year-table td.ok { color: var(--teal, #0f766e); }
 .year-table td.bad { color: var(--orange, #b45309); }
 
-</style>
+  </style>
 </head>
 <body>
   <a class="skip-link" href="#main">Hopp til innhold</a>
@@ -4726,6 +4777,15 @@ button.cat-group-header {
     return cur;
   }
 
+  function monthIndexFromKey(key) {
+    if (!key || typeof key !== "string") return null;
+    var parts = key.split("-");
+    if (parts.length < 2) return null;
+    var mo = Number(parts[1]);
+    if (!Number.isFinite(mo) || mo < 1 || mo > 12) return null;
+    return mo - 1;
+  }
+
   function normalizeBudgetLine(line) {
     if (!line || typeof line !== "object") return null;
     var amt = line.amount;
@@ -4734,11 +4794,73 @@ button.cat-group-header {
         ? 0
         : Number(amt);
     if (Number.isNaN(n)) n = 0;
-    return {
+    var interval = line.interval;
+    if (interval !== "year" && interval !== "quarter" && interval !== "month") {
+      interval = "month";
+    }
+    var mode = line.mode;
+    if (mode !== "once" && mode !== "spread") {
+      mode = "spread";
+    }
+    var month = line.month;
+    if (month == null || month === "") {
+      month = 0;
+    } else {
+      month = Number(month);
+      if (!Number.isFinite(month)) month = 0;
+      month = Math.max(0, Math.min(11, Math.floor(month)));
+    }
+    var out = {
       id: line.id || uid(),
       name: line.name != null ? String(line.name) : "",
       amount: n
     };
+    // Additive: only persist non-default interval fields (legacy lines stay {id,name,amount})
+    if (interval !== "month") {
+      out.interval = interval;
+      out.mode = mode;
+      out.month = month;
+    }
+    return out;
+  }
+
+  /**
+   * Monthly contribution of one underlinje for a viewed calendar month (0–11).
+   * month = legacy full amount every month.
+   * year + spread → amount/12; year + once → full amount only in line.month.
+   * quarter + spread → amount/3; quarter + once → full amount in months with same quarter slot.
+   */
+  function lineMonthlyContribution(line, monthIndex) {
+    if (!line) return 0;
+    var amt = Number(line.amount) || 0;
+    var interval = line.interval || "month";
+    if (interval === "month") return amt;
+    var mode = line.mode || "spread";
+    var payMonth = line.month;
+    if (payMonth == null || payMonth === "") payMonth = 0;
+    else {
+      payMonth = Number(payMonth);
+      if (!Number.isFinite(payMonth)) payMonth = 0;
+      payMonth = Math.max(0, Math.min(11, Math.floor(payMonth)));
+    }
+    var mi = monthIndex;
+    if (mi == null || mi === "") {
+      // Without a viewed month: spread still smooths; once cannot land → 0
+      if (mode === "once") return 0;
+      return interval === "year" ? amt / 12 : amt / 3;
+    }
+    mi = Number(mi);
+    if (!Number.isFinite(mi)) mi = 0;
+    mi = Math.max(0, Math.min(11, Math.floor(mi)));
+    if (interval === "year") {
+      if (mode === "once") return mi === payMonth ? amt : 0;
+      return amt / 12;
+    }
+    if (interval === "quarter") {
+      if (mode === "once") return mi % 3 === payMonth % 3 ? amt : 0;
+      return amt / 3;
+    }
+    return amt;
   }
 
   function cloneBudgetLinesTree(src) {
@@ -4775,7 +4897,17 @@ button.cat-group-header {
     return getBudgetLines(m, catId, ownerId).length > 0;
   }
 
-  function sumBudgetLines(lines) {
+  function sumBudgetLines(lines, monthIndex) {
+    var sum = 0;
+    (lines || []).forEach(function (l) {
+      if (!l) return;
+      sum += lineMonthlyContribution(l, monthIndex);
+    });
+    return sum;
+  }
+
+  /** Raw stored amounts (ignores interval) – for display of yearly/quarter prices. */
+  function sumBudgetLinesRaw(lines) {
     var sum = 0;
     (lines || []).forEach(function (l) {
       if (!l) return;
@@ -4788,7 +4920,7 @@ button.cat-group-header {
    * Replace underlinjer for cat+owner. Empty/null clears lines (budget number kept).
    * When lines exist, syncs budgets[catId][owner] = sum(lines).
    */
-  function setBudgetLines(m, catId, ownerId, lines) {
+  function setBudgetLines(m, catId, ownerId, lines, monthIndex) {
     if (!m.budgetLines || typeof m.budgetLines !== "object") m.budgetLines = {};
     if (!m.budgetLines[catId] || typeof m.budgetLines[catId] !== "object") {
       m.budgetLines[catId] = {};
@@ -4802,23 +4934,33 @@ button.cat-group-header {
       return;
     }
     m.budgetLines[catId][ownerId] = normalized;
-    setBudgetForOwnerRaw(m, catId, ownerId, sumBudgetLines(normalized));
+    setBudgetForOwnerRaw(
+      m,
+      catId,
+      ownerId,
+      sumBudgetLines(normalized, monthIndex)
+    );
   }
 
-  function syncBudgetFromLines(m, catId, ownerId) {
+  function syncBudgetFromLines(m, catId, ownerId, monthIndex) {
     var lines = getBudgetLines(m, catId, ownerId);
     if (!lines.length) return;
-    setBudgetForOwnerRaw(m, catId, ownerId, sumBudgetLines(lines));
+    setBudgetForOwnerRaw(
+      m,
+      catId,
+      ownerId,
+      sumBudgetLines(lines, monthIndex)
+    );
   }
 
-  function copyBudgetLinesFrom(sourceMonth, targetMonth) {
+  function copyBudgetLinesFrom(sourceMonth, targetMonth, monthIndex) {
     if (!sourceMonth || !targetMonth) return;
     var cloned = cloneBudgetLinesTree(sourceMonth.budgetLines);
     targetMonth.budgetLines = cloned;
-    // Keep budgets in sync with lines where present
+    // Keep budgets in sync with lines where present (monthly contribution for target month)
     Object.keys(cloned).forEach(function (catId) {
       Object.keys(cloned[catId]).forEach(function (ownerId) {
-        syncBudgetFromLines(targetMonth, catId, ownerId);
+        syncBudgetFromLines(targetMonth, catId, ownerId, monthIndex);
       });
     });
   }
@@ -4854,14 +4996,14 @@ button.cat-group-header {
     return v == null || v === "" ? 0 : Number(v) || 0;
   }
 
-  function budgetForOwner(m, catId, ownerId) {
+  function budgetForOwner(m, catId, ownerId, monthIndex) {
     var lines = getBudgetLines(m, catId, ownerId);
-    if (lines.length) return sumBudgetLines(lines);
+    if (lines.length) return sumBudgetLines(lines, monthIndex);
     return budgetForOwnerRaw(m, catId, ownerId);
   }
 
   /** Household total for one category (all owners summed). */
-  function budgetFor(m, catId) {
+  function budgetFor(m, catId, monthIndex) {
     var owners = budgetOwnersForCat(m, catId);
     if (!owners.length) {
       var entry = m.budgets && m.budgets[catId];
@@ -4871,7 +5013,7 @@ button.cat-group-header {
     }
     var sum = 0;
     owners.forEach(function (oid) {
-      sum += budgetForOwner(m, catId, oid);
+      sum += budgetForOwner(m, catId, oid, monthIndex);
     });
     return sum;
   }
@@ -5016,28 +5158,28 @@ button.cat-group-header {
    * + %-share of Felles-section budgets (budgets[cat].felles).
    * Does NOT use category.owner for expected amounts (budget keys are the source).
    */
-  function plannedUtForPerson(m, personId, categories, people) {
+  function plannedUtForPerson(m, personId, categories, people, monthIndex) {
     var own = 0;
     var felles = 0;
     (categories || []).forEach(function (cat) {
       if (cat.archived) return;
-      own += budgetForOwner(m, cat.id, personId);
-      var fb = budgetForOwner(m, cat.id, "felles");
+      own += budgetForOwner(m, cat.id, personId, monthIndex);
+      var fb = budgetForOwner(m, cat.id, "felles", monthIndex);
       felles += fellesShare(cat, personId, people, fb);
     });
     return own + felles;
   }
 
-  function plannedUtFelles(m, categories) {
+  function plannedUtFelles(m, categories, monthIndex) {
     var sum = 0;
     (categories || []).forEach(function (cat) {
       if (cat.archived) return;
-      sum += budgetForOwner(m, cat.id, "felles");
+      sum += budgetForOwner(m, cat.id, "felles", monthIndex);
     });
     return sum;
   }
 
-  function calcFamily(m, people, categories, settings) {
+  function calcFamily(m, people, categories, settings, monthIndex) {
     var active = activePeople(people);
     var n = Math.max(1, active.length);
     ensureMonthShape(m, people);
@@ -5046,7 +5188,7 @@ button.cat-group-header {
     var byPerson = {};
     active.forEach(function (p) {
       var cp = calcPerson(m, p.id, people, categories);
-      cp.planUt = plannedUtForPerson(m, p.id, categories, people);
+      cp.planUt = plannedUtForPerson(m, p.id, categories, people, monthIndex);
       cp.netPlan = cp.planInn - cp.planUt;
       byPerson[p.id] = cp;
     });
@@ -5110,13 +5252,13 @@ button.cat-group-header {
       return !c.archived;
     });
     var catStats = activeCats.map(function (cat) {
-      var planned = budgetFor(m, cat.id);
+      var planned = budgetFor(m, cat.id, monthIndex);
       var actual = actualForCategory(m, cat.id, cat.name);
       plannedTotal += planned;
       actualBudgeted += actual;
-      var plannedByOwner = { felles: budgetForOwner(m, cat.id, "felles") };
+      var plannedByOwner = { felles: budgetForOwner(m, cat.id, "felles", monthIndex) };
       active.forEach(function (p) {
-        plannedByOwner[p.id] = budgetForOwner(m, cat.id, p.id);
+        plannedByOwner[p.id] = budgetForOwner(m, cat.id, p.id, monthIndex);
       });
       return {
         cat: cat,
@@ -5205,7 +5347,7 @@ button.cat-group-header {
       forventet: forventet,
       planInn: planInn,
       plannedTotal: plannedTotal,
-      planUtFelles: plannedUtFelles(m, categories),
+      planUtFelles: plannedUtFelles(m, categories, monthIndex),
       actualBudgeted: actualBudgeted,
       netPlan: netPlan,
       netActual: netActual,
@@ -5340,7 +5482,7 @@ button.cat-group-header {
    * Copy ALL category budgets + planned income from source → target.
    * Used when opening an empty month (carry-forward).
    */
-  function copyExpectedFrom(sourceMonth, targetMonth, people) {
+  function copyExpectedFrom(sourceMonth, targetMonth, people, monthIndex) {
     if (!sourceMonth || !targetMonth) return targetMonth;
     targetMonth.budgets = targetMonth.budgets || {};
     var srcBudgets = sourceMonth.budgets || {};
@@ -5350,7 +5492,7 @@ button.cat-group-header {
         targetMonth.budgets[id] = cloned;
       }
     });
-    copyBudgetLinesFrom(sourceMonth, targetMonth);
+    copyBudgetLinesFrom(sourceMonth, targetMonth, monthIndex);
     ensureMonthShape(targetMonth, people);
     ensureMonthShape(sourceMonth, people);
     var pi = sourceMonth.plannedIncome || {};
@@ -5427,7 +5569,7 @@ button.cat-group-header {
     }
     var src = months[srcKey];
     if (copyAll) {
-      copyExpectedFrom(src, m, people);
+      copyExpectedFrom(src, m, people, monthIndexFromKey(key));
       if (!monthHasBalances(m)) {
         var balKey = findNearestPreviousWithBalances(
           months,
@@ -5458,7 +5600,7 @@ button.cat-group-header {
             if (!m.budgetLines) m.budgetLines = {};
             if (!m.budgetLines[cat.id]) m.budgetLines[cat.id] = {};
             m.budgetLines[cat.id][oid] = srcOwners[oid].map(normalizeBudgetLine).filter(Boolean);
-            syncBudgetFromLines(m, cat.id, oid);
+            syncBudgetFromLines(m, cat.id, oid, monthIndexFromKey(key));
             any = true;
           }
         });
@@ -5636,7 +5778,7 @@ button.cat-group-header {
         savings: [],
         expenses: []
       };
-      var c = calcFamily(m, people, categories, settings);
+      var c = calcFamily(m, people, categories, settings, month);
       var planInn = c.planInn || 0;
       var planUt = c.plannedTotal || 0;
       var actualUt = c.samletUtgifter || 0;
@@ -5700,6 +5842,10 @@ button.cat-group-header {
     getBudgetLines: getBudgetLines,
     hasBudgetLines: hasBudgetLines,
     sumBudgetLines: sumBudgetLines,
+    sumBudgetLinesRaw: sumBudgetLinesRaw,
+    lineMonthlyContribution: lineMonthlyContribution,
+    monthIndexFromKey: monthIndexFromKey,
+    normalizeBudgetLine: normalizeBudgetLine,
     setBudgetLines: setBudgetLines,
     syncBudgetFromLines: syncBudgetFromLines,
     cloneBudgetLinesTree: cloneBudgetLinesTree,
@@ -5723,6 +5869,8 @@ button.cat-group-header {
   };
 });
 
+  </script>
+  <script>
 /**
  * Familiebudsjett – multi-person
  * localStorage: familie-budsjett-v1 (migrates a/b → people[])
@@ -6039,15 +6187,21 @@ button.cat-group-header {
 
   // ——— Calculations (via calc-core) ———
   function calcFamily(m) {
-    return Calc.calcFamily(m, state.people, state.categories, state.settings || {});
+    return Calc.calcFamily(
+      m,
+      state.people,
+      state.categories,
+      state.settings || {},
+      state.view.month
+    );
   }
 
   function budgetFor(m, catId) {
-    return Calc.budgetFor(m, catId);
+    return Calc.budgetFor(m, catId, state.view.month);
   }
 
   function budgetForOwner(m, catId, ownerId) {
-    return Calc.budgetForOwner(m, catId, ownerId);
+    return Calc.budgetForOwner(m, catId, ownerId, state.view.month);
   }
 
   function setBudgetForOwner(m, catId, ownerId, value) {
@@ -7733,13 +7887,104 @@ button.cat-group-header {
     if (s.readOnlyShare) return "";
     const lines = Calc.getBudgetLines(m, s.cat.id, s.ownerId);
     const hasLines = lines.length > 0;
-    const sum = Calc.sumBudgetLines(lines);
+    const sumMonthly = Calc.sumBudgetLines(lines, state.view.month);
+    const monthOpts = MONTHS.map(function (name, i) {
+      return { i: i, name: name };
+    });
     const rows = lines
       .map(function (line) {
         const calcKey = "line|" + s.cat.id + "|" + s.ownerId + "|" + line.id;
         const amt =
           line.amount != null && line.amount !== ""
             ? String(line.amount).replace(".", ",")
+            : "";
+        const interval = line.interval || "month";
+        const mode = line.mode || "spread";
+        const payMonth = line.month != null ? Number(line.month) : 0;
+        const unit =
+          interval === "year" ? "kr/år" : interval === "quarter" ? "kr/kv" : "kr";
+        const showExtra = interval === "year" || interval === "quarter";
+        const monthlyHint = Calc.lineMonthlyContribution(line, state.view.month);
+        let hintHtml = "";
+        if (showExtra && mode === "spread") {
+          const raw = Number(line.amount) || 0;
+          const per = interval === "year" ? raw / 12 : raw / 3;
+          const period = interval === "year" ? "år" : "kvartal";
+          hintHtml =
+            '<p class="hint compact cat-line-interval-hint">' +
+            escapeHtml(formatNOK(raw)) +
+            "/" +
+            period +
+            " ≈ " +
+            escapeHtml(formatNOK(per)) +
+            "/mnd</p>";
+        } else if (showExtra && mode === "once") {
+          hintHtml =
+            '<p class="hint compact cat-line-interval-hint">Telles ' +
+            escapeHtml(formatNOK(Number(line.amount) || 0)) +
+            " i " +
+            escapeHtml(MONTHS[payMonth] || "") +
+            (interval === "quarter" ? " (og samme kvartalsmåned)" : "") +
+            "</p>";
+        }
+        const monthSelect =
+          '<label class="cat-line-month-label">Betales i' +
+          '<select class="cat-line-month" data-line-month="' +
+          escapeAttr(line.id) +
+          '" data-line-cat="' +
+          escapeAttr(s.cat.id) +
+          '" data-line-owner="' +
+          escapeAttr(s.ownerId) +
+          '" aria-label="Betalingsmåned">' +
+          monthOpts
+            .map(function (o) {
+              return (
+                '<option value="' +
+                o.i +
+                '"' +
+                (o.i === payMonth ? " selected" : "") +
+                ">" +
+                escapeHtml(o.name) +
+                "</option>"
+              );
+            })
+            .join("") +
+          "</select></label>";
+        const modeRadios =
+          '<div class="cat-line-mode" role="radiogroup" aria-label="Hvordan telles i månedsbudsjett">' +
+          '<label class="cat-line-mode-opt"><input type="radio" name="line-mode-' +
+          escapeAttr(line.id) +
+          '" data-line-mode="' +
+          escapeAttr(line.id) +
+          '" data-line-cat="' +
+          escapeAttr(s.cat.id) +
+          '" data-line-owner="' +
+          escapeAttr(s.ownerId) +
+          '" value="spread"' +
+          (mode === "spread" ? " checked" : "") +
+          " /> Fordel</label>" +
+          '<label class="cat-line-mode-opt"><input type="radio" name="line-mode-' +
+          escapeAttr(line.id) +
+          '" data-line-mode="' +
+          escapeAttr(line.id) +
+          '" data-line-cat="' +
+          escapeAttr(s.cat.id) +
+          '" data-line-owner="' +
+          escapeAttr(s.ownerId) +
+          '" value="once"' +
+          (mode === "once" ? " checked" : "") +
+          " /> I måned</label>" +
+          "</div>";
+        const extra =
+          showExtra
+            ? '<div class="cat-line-extra">' +
+              modeRadios +
+              monthSelect +
+              hintHtml +
+              '<p class="hint compact cat-line-contrib">Denne måneden: ' +
+              escapeHtml(formatNOK(monthlyHint)) +
+              "</p>" +
+              "</div>"
             : "";
         return (
           '<div class="cat-line-row" data-line-id="' +
@@ -7766,11 +8011,32 @@ button.cat-group-header {
           '" value="' +
           escapeAttr(amt) +
           '" placeholder="0" autocomplete="off" aria-label="Beløp underlinje" />' +
-          '<span class="unit">kr</span>' +
+          '<span class="unit">' +
+          escapeHtml(unit) +
+          "</span>" +
           '<button type="button" class="btn ghost xs calc-toggle" data-calc-panel="planIncCalc" data-calc-for="' +
           escapeAttr(calcKey) +
           '" aria-expanded="false" aria-controls="planIncCalc">Kalkulator</button>' +
           "</div>" +
+          '<label class="cat-line-interval-label">Intervall' +
+          '<select class="cat-line-interval" data-line-interval="' +
+          escapeAttr(line.id) +
+          '" data-line-cat="' +
+          escapeAttr(s.cat.id) +
+          '" data-line-owner="' +
+          escapeAttr(s.ownerId) +
+          '" aria-label="Intervall">' +
+          '<option value="month"' +
+          (interval === "month" ? " selected" : "") +
+          ">Månedlig</option>" +
+          '<option value="year"' +
+          (interval === "year" ? " selected" : "") +
+          ">Årlig</option>" +
+          '<option value="quarter"' +
+          (interval === "quarter" ? " selected" : "") +
+          ">Kvartalsvis</option>" +
+          "</select></label>" +
+          extra +
           '<button type="button" class="btn ghost xs cat-line-del" data-line-del="' +
           escapeAttr(line.id) +
           '" data-line-cat="' +
@@ -7789,9 +8055,9 @@ button.cat-group-header {
       escapeAttr(s.ownerId) +
       '">' +
       '<div class="cat-lines-label">Underlinjer' +
-      (hasLines ? " · sum " + formatNOK(sum) : "") +
+      (hasLines ? " · " + formatNOK(sumMonthly) + " denne mnd" : "") +
       "</div>" +
-      '<p class="hint compact cat-lines-hint">Valgfritt: del opp forventet (f.eks. Netflix, Spotify). Summen blir kategoriens forventet.</p>' +
+      '<p class="hint compact cat-lines-hint">Valgfritt: del opp forventet (f.eks. Netflix, Spotify). Årlige/kvartalsvise beløp fordeles eller telles i valgt måned.</p>' +
       rows +
       '<button type="button" class="btn secondary sm" data-line-add="' +
       escapeAttr(s.cat.id) +
@@ -7845,7 +8111,7 @@ button.cat-group-header {
     const catLines = Calc.getBudgetLines(m, s.cat.id, s.ownerId);
     const linesDrive = catLines.length > 0;
     const displayBudgetVal = linesDrive
-      ? String(Calc.sumBudgetLines(catLines)).replace(".", ",")
+      ? String(Calc.sumBudgetLines(catLines, state.view.month)).replace(".", ",")
       : budgetVal;
 
     const expandKey = (s.readOnlyShare ? "share:" : "") + s.ownerId + ":" + s.cat.id;
@@ -8971,7 +9237,7 @@ button.cat-group-header {
         return;
       }
       const m = getMonth();
-      Calc.copyExpectedFrom(prev, m, state.people);
+      Calc.copyExpectedFrom(prev, m, state.people, state.view.month);
       save();
       render();
       showToast("Budsjett, underlinjer og forventet inntekt kopiert");
@@ -9629,13 +9895,26 @@ button.cat-group-header {
         const id = row.getAttribute("data-line-id");
         const nameInp = row.querySelector("[data-line-name]");
         const amtInp = row.querySelector("[data-line-amount]");
-        lines.push({
+        const intSel = row.querySelector("[data-line-interval]");
+        const monthSel = row.querySelector("[data-line-month]");
+        const modeInp = row.querySelector("[data-line-mode]:checked");
+        const interval = intSel ? intSel.value : "month";
+        const mode = modeInp ? modeInp.value : "spread";
+        let month = monthSel ? Number(monthSel.value) : 0;
+        if (!Number.isFinite(month)) month = 0;
+        const entry = {
           id: id || uid(),
           name: nameInp ? nameInp.value : "",
           amount: amtInp ? parseAmount(amtInp.value) : 0
-        });
+        };
+        if (interval === "year" || interval === "quarter") {
+          entry.interval = interval;
+          entry.mode = mode === "once" ? "once" : "spread";
+          entry.month = Math.max(0, Math.min(11, Math.floor(month)));
+        }
+        lines.push(entry);
       });
-      Calc.setBudgetLines(m, catId, ownerId, lines);
+      Calc.setBudgetLines(m, catId, ownerId, lines, state.view.month);
       save();
       render();
     }
@@ -9654,7 +9933,7 @@ button.cat-group-header {
         } else {
           lines.push({ id: uid(), name: "", amount: 0 });
         }
-        Calc.setBudgetLines(m, catId, ownerId, lines);
+        Calc.setBudgetLines(m, catId, ownerId, lines, state.view.month);
         save();
         render();
         setTimeout(function () {
@@ -9681,7 +9960,7 @@ button.cat-group-header {
         const next = Calc.getBudgetLines(m, catId, ownerId).filter(function (l) {
           return l.id !== lineId;
         });
-        Calc.setBudgetLines(m, catId, ownerId, next);
+        Calc.setBudgetLines(m, catId, ownerId, next, state.view.month);
         save();
         render();
       }
@@ -9690,7 +9969,10 @@ button.cat-group-header {
     function onLineField(e) {
       const nameInp = e.target.closest("[data-line-name]");
       const amtInp = e.target.closest("[data-line-amount]");
-      const inp = nameInp || amtInp;
+      const intSel = e.target.closest("[data-line-interval]");
+      const monthSel = e.target.closest("[data-line-month]");
+      const modeInp = e.target.closest("[data-line-mode]");
+      const inp = nameInp || amtInp || intSel || monthSel || modeInp;
       if (!inp) return;
       commitLinesFromDom(
         inp.getAttribute("data-line-cat"),

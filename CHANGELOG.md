@@ -1,5 +1,18 @@
 # Endringslogg – Familiebudsjett
 
+## 6. september 2026 (UTC+2) – Årlige/kvartalsvise underlinjer
+
+### Intervall på underlinjer
+- Hver underlinje kan være **Månedlig** (standard), **Årlig** eller **Kvartalsvis**.
+- Ved Årlig/Kvartalsvis: velg **Fordel** (beløp /12 eller /3 hver måned) eller **I måned** (fullt beløp kun i valgt måned).
+- **Betales i**-månedsvelger (Januar–Desember) vises alltid for Årlig/Kvartalsvis – også ved Fordel (lagres for senere påminnelser).
+- Kategoriens forventet / planUt = sum av hver linjes **månedlige bidrag** for den måneden du ser på.
+- Hint: «1199 kr/år ≈ 100 kr/mnd» ved Fordel.
+
+### Datasikkerhet
+- Additive felt på linjer: `interval`, `mode`, `month`. Manglende felt = månedlig (gammel data uendret).
+- Lagringsnøkkel uendret: **`familie-budsjett-v1`**. Ingen auto-reset. Carry-forward kopierer intervallfeltene.
+
 ## 6. september 2026 (UTC+2) – Årsoversikt + underlinjer
 
 ### Feature A — År
