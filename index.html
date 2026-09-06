@@ -5213,6 +5213,30 @@ button.cat-group-header {
     return sum;
   }
 
+
+  /**
+   * Remaining budget attributed to one person:
+   * own max(0, planned−actual) + %-share of felles remaining (same splits as planUt).
+   * fastOnly → only categories with type === "fast".
+   */
+  function remainingBudgetForPerson(m, personId, people, categories, monthIndex, fastOnly) {
+    var sum = 0;
+    (categories || []).forEach(function (cat) {
+      if (!cat || cat.archived) return;
+      if (fastOnly && cat.type !== "fast") return;
+      var ownPlanned = budgetForOwner(m, cat.id, personId, monthIndex);
+      var ownActual = actualForCategoryOwner(m, cat.id, cat.name, personId);
+      sum += Math.max(0, (ownPlanned || 0) - (ownActual || 0));
+      var fellesPlanned = budgetForOwner(m, cat.id, "felles", monthIndex);
+      var fellesActual = actualForCategoryOwner(m, cat.id, cat.name, "felles");
+      var remFelles = Math.max(0, (fellesPlanned || 0) - (fellesActual || 0));
+      if (remFelles) {
+        sum += fellesShare(cat, personId, people, remFelles);
+      }
+    });
+    return sum;
+  }
+
   function calcFamily(m, people, categories, settings, monthIndex) {
     var active = activePeople(people);
     var n = Math.max(1, active.length);
@@ -5350,6 +5374,65 @@ button.cat-group-header {
       safeToSpendRaw = safeToSpendSaldoRaw;
       safeToSpend = safeToSpendSaldo;
     }
+
+    // Per-person Trygg å bruke (same mode rules; buffer split equally by people count)
+    var bufferShareEach = n > 0 ? spendBuffer / n : 0;
+    active.forEach(function (p) {
+      var cp = byPerson[p.id];
+      var bal = balanceByPerson[p.id] || {};
+      var personBruk = bal.bruk;
+      var hasPersonBruk =
+        personBruk != null && Number.isFinite(Number(personBruk));
+      var brukN = hasPersonBruk ? Number(personBruk) : 0;
+
+      var remAllP = remainingBudgetForPerson(
+        m,
+        p.id,
+        people,
+        categories,
+        monthIndex,
+        false
+      );
+      var remFastP = remainingBudgetForPerson(
+        m,
+        p.id,
+        people,
+        categories,
+        monthIndex,
+        true
+      );
+
+      var planRawP = (cp.planInn || 0) - (cp.utgifter || 0) - remFastP;
+      var planSafeP = Math.max(0, planRawP);
+
+      var saldoRawP = null;
+      var saldoSafeP = null;
+      if (hasPersonBruk) {
+        saldoRawP = brukN - remAllP - bufferShareEach;
+        saldoSafeP = Math.max(0, saldoRawP);
+      }
+
+      var modeP = "plan";
+      var rawP = planRawP;
+      var safeP = planSafeP;
+      if (useSaldo && hasPersonBruk) {
+        modeP = "saldo";
+        rawP = saldoRawP;
+        safeP = saldoSafeP;
+      }
+
+      cp.remainingBudgetAll = remAllP;
+      cp.remainingFastBudgets = remFastP;
+      cp.spendBufferShare = bufferShareEach;
+      cp.hasBrukBalance = hasPersonBruk;
+      cp.safeToSpendMode = modeP;
+      cp.safeToSpendPlanRaw = planRawP;
+      cp.safeToSpendPlan = planSafeP;
+      cp.safeToSpendSaldoRaw = saldoRawP;
+      cp.safeToSpendSaldo = saldoSafeP;
+      cp.safeToSpendRaw = rawP;
+      cp.safeToSpend = safeP;
+    });
 
     // Etter lønn (plan) = nå på bruk + forventet inn − forventet ut
     var etterLonn = hasBruk ? totalBruk + planInn - plannedTotal : null;
@@ -5888,6 +5971,7 @@ button.cat-group-header {
     actualForCategory: actualForCategory,
     actualForCategoryOwner: actualForCategoryOwner,
     calcPerson: calcPerson,
+    remainingBudgetForPerson: remainingBudgetForPerson,
     plannedUtForPerson: plannedUtForPerson,
     plannedUtFelles: plannedUtFelles,
     calcFamily: calcFamily,
@@ -7372,18 +7456,73 @@ button.cat-group-header {
     const titleEl = $("#safeSpendTitle");
     const mini = $("#planSafeMini");
     const miniVal = $("#planSafeMiniValue");
-    const amount = c && typeof c.safeToSpend === "number" ? c.safeToSpend : 0;
-    const raw = c && typeof c.safeToSpendRaw === "number" ? c.safeToSpendRaw : 0;
-    const mode = (c && c.safeToSpendMode) || "plan";
-    const fromSaldo = mode === "saldo";
-    const show =
-      !!(c && (c.hasPlannedIncome || c.hasBudgets || c.samletUtgifter > 0 || c.hasBrukBalances));
+    const miniLabel = mini && mini.querySelector(".plan-safe-label");
+    const view = (state.settings && state.settings.innUtView) || "samlet";
+    const isPerson = view !== "samlet";
+    const pc = isPerson && c && c.byPerson ? c.byPerson[view] : null;
+    const whoName = isPerson ? nameOf(view) : "";
 
-    if (titleEl) {
-      titleEl.textContent = fromSaldo
-        ? "Trygg å bruke (fra saldo)"
-        : "Trygg å bruke";
+    // Pick household or per-person Trygg å bruke (same tabs as Inn/Ut)
+    let amount, raw, mode, remAll, remFast, buf, planHead, brukForHint, hasBrukForHint;
+    if (isPerson && pc) {
+      amount = typeof pc.safeToSpend === "number" ? pc.safeToSpend : 0;
+      raw = typeof pc.safeToSpendRaw === "number" ? pc.safeToSpendRaw : 0;
+      mode = pc.safeToSpendMode || "plan";
+      remAll =
+        typeof pc.remainingBudgetAll === "number" ? pc.remainingBudgetAll : 0;
+      remFast =
+        typeof pc.remainingFastBudgets === "number"
+          ? pc.remainingFastBudgets
+          : 0;
+      buf =
+        typeof pc.spendBufferShare === "number" ? pc.spendBufferShare : 0;
+      planHead =
+        typeof pc.safeToSpendPlan === "number" ? pc.safeToSpendPlan : 0;
+      const bal = c.balanceByPerson && c.balanceByPerson[view];
+      brukForHint =
+        bal && bal.bruk != null && Number.isFinite(Number(bal.bruk))
+          ? Number(bal.bruk)
+          : 0;
+      hasBrukForHint = !!(pc.hasBrukBalance);
+    } else {
+      amount = c && typeof c.safeToSpend === "number" ? c.safeToSpend : 0;
+      raw = c && typeof c.safeToSpendRaw === "number" ? c.safeToSpendRaw : 0;
+      mode = (c && c.safeToSpendMode) || "plan";
+      remAll =
+        c && typeof c.remainingBudgetAll === "number"
+          ? c.remainingBudgetAll
+          : 0;
+      remFast =
+        c && typeof c.remainingFastBudgets === "number"
+          ? c.remainingFastBudgets
+          : 0;
+      buf = c && typeof c.spendBuffer === "number" ? c.spendBuffer : 0;
+      planHead =
+        c && typeof c.safeToSpendPlan === "number" ? c.safeToSpendPlan : 0;
+      brukForHint =
+        c && typeof c.totalBruk === "number" ? c.totalBruk : 0;
+      hasBrukForHint = !!(c && c.hasBrukBalances);
     }
+
+    const fromSaldo = mode === "saldo";
+    const show = !!(
+      c &&
+      (c.hasPlannedIncome ||
+        c.hasBudgets ||
+        c.samletUtgifter > 0 ||
+        c.hasBrukBalances ||
+        (pc && (pc.planInn > 0 || pc.utgifter > 0 || pc.hasBrukBalance)))
+    );
+
+    const baseTitle = fromSaldo
+      ? "Trygg å bruke (fra saldo)"
+      : "Trygg å bruke";
+    const titled = isPerson && whoName
+      ? baseTitle + " · " + whoName
+      : baseTitle;
+
+    if (titleEl) titleEl.textContent = titled;
+    if (miniLabel) miniLabel.textContent = titled;
 
     if (valEl) {
       valEl.textContent = show ? formatNOK(amount) : "—";
@@ -7398,35 +7537,27 @@ button.cat-group-header {
               : "");
     }
     if (hintEl) {
-      const remAll =
-        c && typeof c.remainingBudgetAll === "number"
-          ? c.remainingBudgetAll
-          : 0;
-      const remFast =
-        c && typeof c.remainingFastBudgets === "number"
-          ? c.remainingFastBudgets
-          : 0;
-      const buf =
-        c && typeof c.spendBuffer === "number" ? c.spendBuffer : 0;
-      const wantSaldo =
-        !c || c.useSaldoInSafeToSpend !== false;
+      const wantSaldo = !c || c.useSaldoInSafeToSpend !== false;
       if (!show) {
         hintEl.classList.remove("is-saldo-short");
         hintEl.textContent = wantSaldo
           ? "Sett brukssaldo for mer treffsikkert tall – eller plan-formel: forventet inn minus brukt minus faste igjen."
           : "Det du trygt kan bruke nå: forventet inntekt minus det du har brukt, minus faste utgifter som gjenstår.";
       } else if (fromSaldo) {
-        const planHead =
-          c && typeof c.safeToSpendPlan === "number" ? c.safeToSpendPlan : 0;
-        const totalBruk =
-          c && typeof c.totalBruk === "number" ? c.totalBruk : 0;
         const saldoShort =
           amount <= 0 &&
-          (planHead > 0 || (remAll > 0 && remAll > totalBruk));
-        hintEl.classList.toggle("is-saldo-short", !!saldoShort || (amount <= 0 && raw < 0));
+          (planHead > 0 || (remAll > 0 && remAll > brukForHint));
+        hintEl.classList.toggle(
+          "is-saldo-short",
+          !!saldoShort || (amount <= 0 && raw < 0)
+        );
+        const whose =
+          isPerson && whoName ? " for " + whoName : "";
         if (amount <= 0 && (raw < 0 || saldoShort)) {
           hintEl.textContent =
-            "Saldo på bruk dekker ikke gjenstående budsjett" +
+            "Saldo på bruk" +
+            whose +
+            " dekker ikke gjenstående budsjett" +
             (buf > 0 ? " + buffer" : "") +
             (planHead > 0
               ? " (plan-modus ville vist ca. " + formatNOK(planHead) + ")"
@@ -7439,15 +7570,20 @@ button.cat-group-header {
             " er dekket først).";
         } else {
           hintEl.textContent =
-            "Fra brukssaldo: ca. " +
+            "Fra brukssaldo" +
+            whose +
+            ": ca. " +
             formatNOK(amount) +
             " etter gjenstående plan" +
             (remAll > 0 ? " (" + formatNOK(remAll) + " igjen)" : "") +
-            (buf > 0 ? " og buffer " + formatNOK(buf) : "") +
+            (buf > 0
+              ? " og buffer " +
+                formatNOK(buf) +
+                (isPerson ? " (andel)" : "")
+              : "") +
             ". Spare er utenfor.";
         }
       } else {
-        // Plan formula (toggle off or no bruk)
         hintEl.classList.remove("is-saldo-short");
         let base;
         if (amount <= 0 && raw < 0) {
@@ -7464,7 +7600,7 @@ button.cat-group-header {
             (remFast > 0 ? " (" + formatNOK(remFast) + " faste igjen)" : "") +
             ".";
         }
-        if (wantSaldo && !c.hasBrukBalances) {
+        if (wantSaldo && !hasBrukForHint) {
           base += " Sett brukssaldo for mer treffsikkert tall.";
         }
         hintEl.textContent = base;

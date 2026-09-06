@@ -1,5 +1,21 @@
 # Endringslogg – Familiebudsjett
 
+## 6. september 2026 (UTC+2) – Trygg å bruke per person
+
+### Trygg å bruke følger Inn/Ut-fanen
+- **Samlet**: husstandens Trygg å bruke (som før).
+- **Mathias / Andrea** (eller annen person): personens eget tall. Tittel f.eks. `Trygg å bruke · Mathias`.
+- Samme faner som Inn og ut på Oversikt; Plan-mini følger samme valg.
+
+### Formel per person
+- **Saldo-modus** (når personens bruk er satt): `bruk − gjenstående budsjett tilordnet personen − buffer/antall personer`. Spare utenfor.
+- **Gjenstående**: egne kategorier `max(0, plan−faktisk)` + **%-andel av Felles** gjenstående (samme split som planUt).
+- **Plan-modus**: `planInn − utgifter (egne + felles-andel) − gjenstående faste` (med felles-attribusjon).
+- Buffer fordeles **likt** på aktive personer.
+
+### Datasikkerhet
+- Lagringsnøkkel uendret: **`familie-budsjett-v1`**. Ingen wipe/auto-reset.
+
 ## 6. september 2026 (UTC+2) – Kjøpt noe: kategori etter hvem + hurtig ny kategori
 
 ### Kategori filtrert etter «Hvem»
