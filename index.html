@@ -2806,6 +2806,25 @@ body.is-cat-dragging .cat-row-summary {
   accent-color: var(--teal);
 }
 
+.exp-new-cat {
+  display: grid;
+  gap: .45rem;
+  padding: .75rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-top: -.25rem;
+}
+.exp-new-cat-actions {
+  display: flex;
+  gap: .5rem;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.exp-new-cat .hint {
+  margin: 0;
+}
+
 .empty-encourage {
   background: #f0fdfa;
   border-radius: 14px;
@@ -3531,7 +3550,7 @@ button.cat-group-header {
 .year-table td.ok { color: var(--teal, #0f766e); }
 .year-table td.bad { color: var(--orange, #b45309); }
 
-  </style>
+</style>
 </head>
 <body>
   <a class="skip-link" href="#main">Hopp til innhold</a>
@@ -3968,14 +3987,29 @@ button.cat-group-header {
           <button type="button" class="amount-chip" data-amount="500">500</button>
           <button type="button" class="amount-chip" data-amount="1000">1000</button>
         </div>
-        <label class="field">
-          <span>Kategori</span>
-          <select id="expCategory" class="select lg" required></select>
-        </label>
         <fieldset class="who-set">
           <legend>Hvem</legend>
           <div class="seg who-seg" id="expWhoSeg" role="radiogroup" aria-label="Hvem"></div>
         </fieldset>
+        <label class="field">
+          <div class="field-label-row">
+            <span>Kategori</span>
+            <button type="button" class="btn ghost xs" id="expNewCatToggle" aria-expanded="false" aria-controls="expNewCat">+ Ny kategori</button>
+          </div>
+          <select id="expCategory" class="select lg" required></select>
+        </label>
+        <div class="exp-new-cat" id="expNewCat" hidden>
+          <input id="expNewCatName" class="input" type="text" maxlength="40" placeholder="Navn på kategori" autocomplete="off" />
+          <select id="expNewCatType" class="select" aria-label="Fast eller variabel">
+            <option value="variabel" selected>Variabel</option>
+            <option value="fast">Fast</option>
+          </select>
+          <p class="hint compact" id="expNewCatOwnerHint"></p>
+          <div class="exp-new-cat-actions">
+            <button type="button" class="btn ghost sm" id="expNewCatCancel">Avbryt</button>
+            <button type="button" class="btn primary sm" id="expNewCatSave">Legg til</button>
+          </div>
+        </div>
         <label class="field">
           <span>Dato</span>
           <input id="expDate" class="input" type="date" required />
@@ -5869,7 +5903,7 @@ button.cat-group-header {
   };
 });
 
-  </script>
+</script>
   <script>
 /**
  * Familiebudsjett – multi-person
@@ -8634,8 +8668,25 @@ button.cat-group-header {
     return base;
   }
 
-  function fillCategorySelect(selectEl, selectedId) {
+  /** Categories allowed for expense «who»: person → own + Felles; felles → only Felles. */
+  function categoriesForWho(who) {
     const cats = activeCategories();
+    if (!who || who === "felles") {
+      return cats.filter(function (c) { return c.owner === "felles"; });
+    }
+    return cats.filter(function (c) {
+      return c.owner === who || c.owner === "felles";
+    });
+  }
+
+  function currentExpWho() {
+    const whoEl = document.querySelector('#dlgExpense input[name="expWho"]:checked');
+    return whoEl ? whoEl.value : "felles";
+  }
+
+  function fillCategorySelect(selectEl, selectedId, who) {
+    if (who == null) who = currentExpWho();
+    const cats = categoriesForWho(who);
     const nameCounts = {};
     cats.forEach(function (c) {
       const k = String(c.name || "").toLowerCase();
@@ -8649,6 +8700,8 @@ button.cat-group-header {
       selectEl.innerHTML = html;
       return;
     }
+    const validSelected = selectedId && cats.some(function (c) { return c.id === selectedId; });
+    const pickId = validSelected ? selectedId : null;
     function opts(list) {
       return list
         .map(function (c) {
@@ -8656,7 +8709,7 @@ button.cat-group-header {
             '<option value="' +
             escapeAttr(c.id) +
             '"' +
-            (c.id === selectedId ? " selected" : "") +
+            (pickId && c.id === pickId ? " selected" : "") +
             ">" +
             escapeHtml(categoryOptionLabel(c, nameCounts)) +
             "</option>"
@@ -8671,16 +8724,83 @@ button.cat-group-header {
       html += '<optgroup label="Variable">' + opts(vars) + "</optgroup>";
     }
     selectEl.innerHTML = html;
-    if (!selectedId) {
+    if (!pickId) {
       const last = state.settings && state.settings.lastExpense;
-      if (last && last.categoryId && cats.some(function (c) { return c.id === last.categoryId; })) {
+      if (
+        last &&
+        last.categoryId &&
+        cats.some(function (c) { return c.id === last.categoryId; })
+      ) {
         selectEl.value = last.categoryId;
       } else {
-        const mat = cats.find(function (c) { return c.name === "Mat"; });
+        const matOwn = cats.find(function (c) {
+          return c.name === "Mat" && c.owner === who;
+        });
+        const matAny = cats.find(function (c) { return c.name === "Mat"; });
+        const mat = matOwn || matAny;
         if (mat) selectEl.value = mat.id;
         else if (cats[0]) selectEl.value = cats[0].id;
       }
     }
+  }
+
+  function updateExpNewCatOwnerHint() {
+    const hint = $("#expNewCatOwnerHint");
+    if (!hint) return;
+    const who = currentExpWho();
+    hint.textContent = "Eier: " + (who === "felles" ? "Felles" : nameOf(who));
+  }
+
+  function hideExpNewCat() {
+    const panel = $("#expNewCat");
+    if (panel) panel.hidden = true;
+    const toggle = $("#expNewCatToggle");
+    if (toggle) toggle.setAttribute("aria-expanded", "false");
+    const nameEl = $("#expNewCatName");
+    if (nameEl) nameEl.value = "";
+    const typeEl = $("#expNewCatType");
+    if (typeEl) typeEl.value = "variabel";
+  }
+
+  function showExpNewCat() {
+    const panel = $("#expNewCat");
+    if (!panel) return;
+    panel.hidden = false;
+    const toggle = $("#expNewCatToggle");
+    if (toggle) toggle.setAttribute("aria-expanded", "true");
+    updateExpNewCatOwnerHint();
+    setTimeout(function () {
+      try { $("#expNewCatName").focus(); } catch (err) { /* */ }
+    }, 30);
+  }
+
+  function saveExpNewCategory() {
+    const nameEl = $("#expNewCatName");
+    const name = nameEl ? nameEl.value.trim() : "";
+    if (!name) {
+      showToast("Skriv inn navn på kategorien");
+      try { if (nameEl) nameEl.focus(); } catch (err) { /* */ }
+      return;
+    }
+    const who = currentExpWho();
+    const owner = who === "felles" ? "felles" : who;
+    const typeEl = $("#expNewCatType");
+    const type = typeEl && typeEl.value === "fast" ? "fast" : "variabel";
+    const created = addCategory({
+      name: name,
+      type: type,
+      owner: owner,
+      autoFill: type === "fast"
+    });
+    if (!created) {
+      showToast("Kunne ikke legge til");
+      return;
+    }
+    save();
+    hideExpNewCat();
+    fillCategorySelect($("#expCategory"), created.id, who);
+    render();
+    showToast("Kategori lagt til");
   }
 
   function renderMonthGrid() {
@@ -8845,14 +8965,17 @@ button.cat-group-header {
     });
     $("#expNote").value = edit ? edit.note || "" : "";
     $("#expDate").value = edit ? edit.date || todayISO() : todayISO();
-    fillCategorySelect(
-      $("#expCategory"),
-      edit ? edit.categoryId : last.categoryId || null
-    );
     const whoDefault = edit
       ? edit.owner
       : last.owner || (activePeopleList()[0] && activePeopleList()[0].id) || "felles";
     renderWhoSeg(whoDefault);
+    hideExpNewCat();
+    let catSel = edit ? edit.categoryId : last.categoryId || null;
+    const allowed = categoriesForWho(whoDefault);
+    if (catSel && !allowed.some(function (c) { return c.id === catSel; })) {
+      catSel = null;
+    }
+    fillCategorySelect($("#expCategory"), catSel, whoDefault);
     $("#expDelete").hidden = !edit;
     const stay = $("#expStayOpen");
     if (stay) {
@@ -10146,8 +10269,13 @@ button.cat-group-header {
         $("#expNote").value = "";
         $("#expDate").value = todayISO();
         $$(".amount-chip").forEach(function (c) { c.classList.remove("is-active"); });
-        fillCategorySelect($("#expCategory"), state.settings.lastExpense.categoryId);
         renderWhoSeg(state.settings.lastExpense.owner);
+        hideExpNewCat();
+        fillCategorySelect(
+          $("#expCategory"),
+          state.settings.lastExpense.categoryId,
+          state.settings.lastExpense.owner
+        );
         $("#expenseTitle").textContent = "Kjøpt noe";
         $("#expDelete").hidden = true;
         showToast("Lagret – legg inn neste");
@@ -10170,6 +10298,40 @@ button.cat-group-header {
       render();
       showToast("Kjøp slettet");
     });
+
+    const expWhoSeg = $("#expWhoSeg");
+    if (expWhoSeg) {
+      expWhoSeg.addEventListener("change", function (e) {
+        if (!e.target || e.target.name !== "expWho") return;
+        const who = e.target.value;
+        const cur = $("#expCategory").value;
+        const allowed = categoriesForWho(who);
+        const keep = allowed.some(function (c) { return c.id === cur; }) ? cur : null;
+        fillCategorySelect($("#expCategory"), keep, who);
+        updateExpNewCatOwnerHint();
+      });
+    }
+    const expNewToggle = $("#expNewCatToggle");
+    if (expNewToggle) {
+      expNewToggle.addEventListener("click", function () {
+        const panel = $("#expNewCat");
+        if (panel && !panel.hidden) hideExpNewCat();
+        else showExpNewCat();
+      });
+    }
+    const expNewCancel = $("#expNewCatCancel");
+    if (expNewCancel) expNewCancel.addEventListener("click", hideExpNewCat);
+    const expNewSave = $("#expNewCatSave");
+    if (expNewSave) expNewSave.addEventListener("click", saveExpNewCategory);
+    const expNewName = $("#expNewCatName");
+    if (expNewName) {
+      expNewName.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          saveExpNewCategory();
+        }
+      });
+    }
 
     // Income form
     $("#incomeClose").addEventListener("click", function () { closeDlg("#dlgIncome"); });
@@ -10607,6 +10769,6 @@ button.cat-group-header {
   }
 })();
 
-  </script>
+</script>
 </body>
 </html>

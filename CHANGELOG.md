@@ -1,5 +1,22 @@
 # Endringslogg – Familiebudsjett
 
+## 6. september 2026 (UTC+2) – Kjøpt noe: kategori etter hvem + hurtig ny kategori
+
+### Kategori filtrert etter «Hvem»
+- Velger du **Mathias** (eller annen person): kun **deres** kategorier **+ Felles**.
+- Velger du **Andrea**: kun hennes **+ Felles**.
+- Velger du **Felles**: kun felles-kategorier.
+- Byttes «Hvem», nullstilles kategori hvis den ikke lenger er gyldig.
+- Siste huskede kategori brukes bare hvis den fortsatt passer til valgt «Hvem».
+
+### + Ny kategori inne i Kjøpt noe
+- Knapp **«+ Ny kategori»** åpner kompakt skjema (navn + Fast/Variabel).
+- Eier forhåndssettes fra «Hvem» (person eller Felles).
+- Lagre → kategorien opprettes, velges i listen, dialog for kjøp forblir åpen.
+
+### Datasikkerhet
+- Lagringsnøkkel uendret: **`familie-budsjett-v1`**. Ingen wipe/auto-reset.
+
 ## 6. september 2026 (UTC+2) – Årlige/kvartalsvise underlinjer
 
 ### Intervall på underlinjer
