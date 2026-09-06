@@ -1529,9 +1529,119 @@ dialog.modal.is-open .modal-card {
 .people-manage {
   display: flex;
   flex-direction: column;
-  gap: .65rem;
-  margin: .5rem 0 1rem;
+  gap: .75rem;
+  margin: .65rem 0 1rem;
 }
+.people-card {
+  display: flex;
+  flex-direction: column;
+  gap: .55rem;
+  padding: .9rem .95rem;
+  background: var(--bg-soft, #e8efec);
+  border: 1.5px solid var(--border, #d5e0db);
+  border-radius: 14px;
+}
+.people-card.archived {
+  opacity: .62;
+  border-style: dashed;
+}
+.people-name-field {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+  margin: 0;
+}
+.people-name-label {
+  font-size: .78rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+.people-name-input {
+  width: 100%;
+  min-height: var(--tap, 44px);
+  font: inherit;
+  font-size: 1.2rem;
+  font-weight: 800;
+  padding: .65rem .75rem;
+  border: 1.5px solid var(--border, #d5e0db);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--text);
+}
+.people-name-input:focus {
+  outline: none;
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, .15);
+}
+.people-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem;
+}
+.people-action {
+  min-height: 42px;
+  flex: 1 1 auto;
+  font-weight: 700;
+}
+.people-action.restore {
+  background: var(--teal-bg, #e6f4f1);
+  color: var(--teal-dark, #0b5f59);
+  border-color: #99f6e4;
+}
+.people-card-hint {
+  margin: 0;
+  font-size: .8rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+.people-tag {
+  align-self: flex-start;
+  font-size: .72rem;
+  font-weight: 800;
+  color: var(--muted);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: .15rem .55rem;
+}
+.people-card-felles {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+.people-felles-title {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--text);
+}
+.add-person-block {
+  display: flex;
+  flex-direction: column;
+  gap: .65rem;
+  margin-top: .25rem;
+}
+.people-add-input {
+  min-height: var(--tap, 44px);
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+.people-add-btn {
+  width: 100%;
+  min-height: 52px;
+  font-size: 1.05rem;
+  font-weight: 800;
+  border-radius: 14px;
+}
+.settings-add-person {
+  margin-bottom: .75rem;
+}
+.settings-people-title {
+  margin: .35rem 0 0;
+  font-size: 1rem;
+}
+.mer-people-card {
+  margin-top: .85rem;
+}
+/* legacy row (if any) */
 .people-row {
   display: flex;
   flex-wrap: wrap;
@@ -1540,24 +1650,6 @@ dialog.modal.is-open .modal-card {
   padding: .65rem .7rem;
   background: var(--bg-soft, #e8efec);
   border-radius: 12px;
-}
-.people-row input[type="text"] {
-  flex: 1 1 8rem;
-  min-width: 0;
-  font: inherit;
-  font-weight: 700;
-  padding: .45rem .55rem;
-  border: 1px solid var(--border, #d5e0db);
-  border-radius: 8px;
-  background: #fff;
-}
-.people-row.archived {
-  opacity: .55;
-}
-.people-row .tag {
-  font-size: .72rem;
-  font-weight: 700;
-  color: var(--muted);
 }
 .add-person-row {
   display: flex;
@@ -1901,7 +1993,8 @@ body {
 }
 .plan-person h3 { font-size: .9rem; margin: 0 0 .35rem; }
 .plan-person .field { margin-bottom: .35rem; }
-.plan-person .field > span { font-size: .78rem; }
+.plan-person .field > span,
+.plan-person .field-label-row > span { font-size: .78rem; }
 .plan-vs { font-size: .78rem; margin-top: .2rem; }
 
 .cat-spend-sticky {
@@ -3077,47 +3170,53 @@ button.cat-group-header {
 }
 
 .amount-calc {
-  background: #f0fdfa;
+  background: linear-gradient(180deg, #f0fdfa 0%, #e6fffa 100%);
   border: 1.5px solid #99f6e4;
-  border-radius: var(--radius-sm, 12px);
-  padding: .65rem;
-  margin: .1rem 0 .35rem;
+  border-radius: 14px;
+  padding: .75rem;
+  margin: .35rem 0 .5rem;
   display: grid;
-  gap: .5rem;
+  gap: .55rem;
+  box-shadow: 0 1px 2px rgba(15, 118, 110, .06);
 }
 .amount-calc[hidden] {
   display: none !important;
 }
+.plan-person .amount-calc {
+  margin: .15rem 0 .35rem;
+}
 .amount-calc-display {
   background: #fff;
-  border: 1.5px solid var(--border);
-  border-radius: 10px;
-  min-height: 48px;
-  padding: .55rem .75rem;
-  font-size: 1.35rem;
+  border: 1.5px solid #5eead4;
+  border-radius: 12px;
+  min-height: 52px;
+  padding: .65rem .85rem;
+  font-size: 1.4rem;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   text-align: right;
   word-break: break-all;
   color: var(--text);
+  letter-spacing: .01em;
 }
 .amount-calc-pad {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: .4rem;
+  gap: .45rem;
 }
 .calc-key {
   appearance: none;
   border: 1.5px solid var(--border);
   background: #fff;
   color: var(--text);
-  border-radius: 12px;
-  min-height: 48px;
-  font-size: 1.15rem;
+  border-radius: 14px;
+  min-height: 50px;
+  font-size: 1.18rem;
   font-weight: 750;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
   touch-action: manipulation;
+  box-shadow: 0 1px 0 rgba(15, 28, 24, .04);
 }
 .calc-key:active {
   transform: scale(0.97);
@@ -3141,19 +3240,24 @@ button.cat-group-header {
 }
 .calc-use {
   grid-column: span 2;
-  min-height: 48px;
-  font-size: 1rem;
+  min-height: 50px;
+  font-size: 1.02rem;
   font-weight: 800;
-  border-radius: 12px;
+  border-radius: 14px;
 }
 .amount-calc-hint {
   margin: 0;
   text-align: center;
+  font-size: .78rem;
 }
-.amount-calc-pad .calc-eq {
-  /* = sits with C and Bruk on last row: keys are 16 + use spans 2 = need layout */
+.plan-person .field-label-row {
+  width: 100%;
 }
-/* Last row: = | C | Bruk(span 2) — already in DOM order after + */
+.plan-person .calc-toggle {
+  min-height: 30px;
+  padding: .2rem .5rem;
+  font-size: .72rem;
+}
 
 </style>
 </head>
@@ -3247,6 +3351,33 @@ button.cat-group-header {
             <h3 id="planIncTitle">Forventet inntekt</h3>
           </div>
           <div class="plan-income-grid" id="planIncomeGrid"></div>
+          <div id="planIncCalcHost" class="plan-inc-calc-host">
+            <div class="amount-calc" id="planIncCalc" hidden>
+              <div class="amount-calc-display" data-calc-display aria-live="polite">0</div>
+              <div class="amount-calc-pad" role="group" aria-label="Kalkulator for forventet inntekt">
+                <button type="button" class="calc-key" data-calc-key="7">7</button>
+                <button type="button" class="calc-key" data-calc-key="8">8</button>
+                <button type="button" class="calc-key" data-calc-key="9">9</button>
+                <button type="button" class="calc-key calc-op" data-calc-key="÷">÷</button>
+                <button type="button" class="calc-key" data-calc-key="4">4</button>
+                <button type="button" class="calc-key" data-calc-key="5">5</button>
+                <button type="button" class="calc-key" data-calc-key="6">6</button>
+                <button type="button" class="calc-key calc-op" data-calc-key="×">×</button>
+                <button type="button" class="calc-key" data-calc-key="1">1</button>
+                <button type="button" class="calc-key" data-calc-key="2">2</button>
+                <button type="button" class="calc-key" data-calc-key="3">3</button>
+                <button type="button" class="calc-key calc-op" data-calc-key="−">−</button>
+                <button type="button" class="calc-key" data-calc-key="0">0</button>
+                <button type="button" class="calc-key" data-calc-key=",">,</button>
+                <button type="button" class="calc-key" data-calc-key="⌫" aria-label="Slett">⌫</button>
+                <button type="button" class="calc-key calc-op" data-calc-key="+">+</button>
+                <button type="button" class="calc-key calc-eq" data-calc-key="=">=</button>
+                <button type="button" class="calc-key calc-c" data-calc-key="C">C</button>
+                <button type="button" class="btn primary calc-use" data-calc-use>Bruk</button>
+              </div>
+              <p class="hint compact amount-calc-hint">Eller skriv direkte i feltet, f.eks. 42500+2400</p>
+            </div>
+          </div>
         </div>
 
         <div class="budget-block cat-hero" id="sectionPlanExpenses" aria-labelledby="catTitle">
@@ -3433,10 +3564,10 @@ button.cat-group-header {
         <div class="card-head">
           <h2 id="merTitle">Mer</h2>
         </div>
-        <p class="hint compact">Snarveier til personer, innstillinger og demo-data.</p>
+        <p class="hint compact">Snarveier til familie, innstillinger og demo-data.</p>
         <div class="mer-actions">
           <button type="button" class="btn primary mer-btn" id="btnNewCatMer">+ Ny kategori</button>
-          <button type="button" class="btn mer-btn" id="btnMerPeople">Personer</button>
+          <button type="button" class="btn mer-btn" id="btnMerPeople">Familie / Personer</button>
           <button type="button" class="btn mer-btn" id="btnMerSettings">Innstillinger</button>
           <button type="button" class="btn primary mer-btn" id="btnMerBackup">Ta backup</button>
           <button type="button" class="btn mer-btn mer-btn-excel" id="btnFillExcel">Fyll budsjett fra Excel</button>
@@ -3445,6 +3576,21 @@ button.cat-group-header {
         </div>
         <p class="hint compact" id="merExcelHint">«Fyll budsjett fra Excel» oppretter manglende kategorier (med riktig eier) og setter forventet inntekt/utgifter for alle 12 måneder: <strong>Felles</strong> = Lån/Strøm/Internett/Forsikring, personlige variable under Mathias/Andrea, Mobil under Mathias. Lager ikke fake kjøp eller saldo.</p>
         <p class="hint compact">Hold ⠿ og dra for å endre kategori-rekkefølge på Plan (velg «Egen rekkefølge») eller under Administrer.</p>
+      </section>
+
+      <section class="card compact-card mer-people-card" id="sectionMerPeople" aria-labelledby="merPeopleTitle">
+        <div class="card-head">
+          <h2 id="merPeopleTitle">Familie / Personer</h2>
+        </div>
+        <p class="hint compact">Gi nytt navn direkte i feltet. Felles er ikke en person og kan ikke fjernes. Standard er Mathias &amp; Andrea – endre eller legg til etter behov.</p>
+        <div id="merPeopleManageList" class="people-manage"></div>
+        <div class="add-person-block">
+          <label class="field">
+            <span>Ny person</span>
+            <input type="text" id="merNewPersonName" class="input lg people-add-input" maxlength="40" placeholder="Skriv navn…" autocomplete="off" />
+          </label>
+          <button type="button" class="btn primary lg people-add-btn" id="btnMerAddPerson">+ Legg til person</button>
+        </div>
       </section>
     </div>
   </main>
@@ -3728,12 +3874,12 @@ button.cat-group-header {
           </div>
         </label>
         <p class="hint compact">Valgfritt husstandsbeløp (standard 0). Trekkes fra trygg-å-bruke når saldo-formel er på.</p>
-        <h3 style="margin:.25rem 0 0;font-size:1rem;">Personer</h3>
-        <p class="hint compact">Gi nytt navn, legg til eller arkiver. Felles er ikke en person – delte utgifter merkes «Felles» og deles likt.</p>
+        <h3 class="settings-people-title">Personer</h3>
+        <p class="hint compact">Samme liste som under <strong>Mer → Familie / Personer</strong>. Felles er ikke en person.</p>
         <div id="peopleManageList" class="people-manage"></div>
-        <div class="add-person-row">
-          <input type="text" id="newPersonName" class="input" maxlength="40" placeholder="Nytt navn" autocomplete="off" />
-          <button type="button" class="btn primary sm" id="btnAddPerson">Legg til person</button>
+        <div class="add-person-block settings-add-person">
+          <input type="text" id="newPersonName" class="input lg people-add-input" maxlength="40" placeholder="Skriv navn…" autocomplete="off" />
+          <button type="button" class="btn primary people-add-btn" id="btnAddPerson">+ Legg til person</button>
         </div>
         <div class="settings-actions">
           <button type="button" class="btn" id="btnExportJson">Eksporter JSON</button>
@@ -5495,6 +5641,15 @@ button.cat-group-header {
     return String(v).replace(".", ",");
   }
 
+  /** Move shared Plan-income calc pad back to its host (survives grid re-render). */
+  function parkPlanIncCalc() {
+    const panel = $("#planIncCalc");
+    const host = $("#planIncCalcHost");
+    if (panel && host && panel.parentNode !== host) {
+      host.appendChild(panel);
+    }
+  }
+
   function renderHeaderEyebrow() {
     const el = $("#headerEyebrow");
     if (!el) return;
@@ -5999,6 +6154,7 @@ button.cat-group-header {
     renderCategories(m, c);
     renderTransactions(m);
     renderReminder(m);
+    renderPeopleManage();
     updateStorageInfo();
     fillOwnerSelect($("#newCatOwner"), "felles");
 
@@ -6093,26 +6249,39 @@ button.cat-group-header {
     const focusKey =
       focused && focused.getAttribute && focused.getAttribute("data-plan-inc");
 
+    // Keep shared calc pad outside the grid so re-render does not wipe it
+    parkPlanIncCalc();
+
     grid.innerHTML = activePeopleList()
       .map(function (person) {
         const pi = (m.plannedIncome && m.plannedIncome[person.id]) || {};
         const personCalc = (c.byPerson && c.byPerson[person.id]) || { lønn: 0, ekstra: 0 };
+        const lønnKey = person.id + "-lønn";
+        const ekstraKey = person.id + "-ekstra";
         return (
           '<div class="plan-person" data-plan-person="' +
           escapeAttr(person.id) +
           '"><h3>' +
           escapeHtml(person.name) +
           "</h3>" +
-          '<label class="field"><span>Lønn</span><div class="input-affix green">' +
+          '<label class="field"><div class="field-label-row"><span>Lønn</span>' +
+          '<button type="button" class="btn ghost xs calc-toggle" data-calc-panel="planIncCalc" data-calc-for="' +
+          escapeAttr(lønnKey) +
+          '" aria-expanded="false" aria-controls="planIncCalc">Kalkulator</button></div>' +
+          '<div class="input-affix green">' +
           '<input type="text" inputmode="decimal" data-plan-inc="' +
-          escapeAttr(person.id) +
-          '-lønn" placeholder="0" autocomplete="off" class="plan-inc-input" value="' +
+          escapeAttr(lønnKey) +
+          '" placeholder="0" autocomplete="off" class="plan-inc-input" value="' +
           escapeAttr(formatPlanInput(pi.lønn)) +
           '" /><span>kr</span></div></label>' +
-          '<label class="field"><span>Ekstra <em class="opt">(valgfritt)</em></span><div class="input-affix green">' +
+          '<label class="field"><div class="field-label-row"><span>Ekstra <em class="opt">(valgfritt)</em></span>' +
+          '<button type="button" class="btn ghost xs calc-toggle" data-calc-panel="planIncCalc" data-calc-for="' +
+          escapeAttr(ekstraKey) +
+          '" aria-expanded="false" aria-controls="planIncCalc">Kalkulator</button></div>' +
+          '<div class="input-affix green">' +
           '<input type="text" inputmode="decimal" data-plan-inc="' +
-          escapeAttr(person.id) +
-          '-ekstra" placeholder="0" autocomplete="off" class="plan-inc-input" value="' +
+          escapeAttr(ekstraKey) +
+          '" placeholder="0" autocomplete="off" class="plan-inc-input" value="' +
           escapeAttr(formatPlanInput(pi.ekstra)) +
           '" /><span>kr</span></div></label>' +
           '<div class="plan-vs"><span>Faktisk: <strong data-plan-actual="' +
@@ -6178,37 +6347,94 @@ button.cat-group-header {
       .join("");
   }
 
-  function renderPeopleManage() {
-    const list = $("#peopleManageList");
-    if (!list) return;
-    list.innerHTML = state.people
+  function buildPeopleManageHtml() {
+    const rows = state.people
       .map(function (person) {
+        const hasData = Calc.personHasData(state, person.id);
+        const archived = !!person.archived;
+        let actions = "";
+        if (archived) {
+          actions =
+            '<button type="button" class="btn people-action restore" data-people-archive="' +
+            escapeAttr(person.id) +
+            '">Gjenopprett</button>' +
+            (!hasData
+              ? '<button type="button" class="btn danger ghost people-action" data-people-delete="' +
+                escapeAttr(person.id) +
+                '">Slett permanent</button>'
+              : "");
+        } else {
+          // Unified Fjern: archive (+ reassign) if data, else permanent delete
+          actions =
+            '<button type="button" class="btn danger ghost people-action" data-people-remove="' +
+            escapeAttr(person.id) +
+            '">Fjern</button>';
+        }
         return (
-          '<div class="people-row' +
-          (person.archived ? " archived" : "") +
+          '<div class="people-card' +
+          (archived ? " archived" : "") +
           '" data-people-id="' +
           escapeAttr(person.id) +
           '">' +
-          '<input type="text" data-people-rename="' +
+          '<label class="people-name-field"><span class="people-name-label">Navn</span>' +
+          '<input type="text" class="people-name-input" data-people-rename="' +
           escapeAttr(person.id) +
           '" value="' +
           escapeAttr(person.name) +
-          '" maxlength="40" aria-label="Navn" />' +
-          (person.archived ? '<span class="tag">Arkivert</span>' : "") +
-          '<button type="button" class="btn sm ghost" data-people-archive="' +
-          escapeAttr(person.id) +
-          '">' +
-          (person.archived ? "Gjenopprett" : "Arkiver") +
-          "</button>" +
-          (!person.archived && !Calc.personHasData(state, person.id)
-            ? '<button type="button" class="btn sm danger ghost" data-people-delete="' +
-              escapeAttr(person.id) +
-              '">Slett</button>'
+          '" maxlength="40" autocomplete="off" aria-label="Navn på person" /></label>' +
+          (archived ? '<span class="tag people-tag">Arkivert</span>' : "") +
+          (hasData && !archived
+            ? '<p class="people-card-hint">Har registrerte tall – fjerning arkiverer og flytter eierskap til Felles.</p>'
             : "") +
-          "</div>"
+          '<div class="people-card-actions">' +
+          actions +
+          "</div></div>"
         );
       })
       .join("");
+    return (
+      rows +
+      '<div class="people-card people-card-felles" aria-hidden="false">' +
+      '<div class="people-felles-title">Felles</div>' +
+      '<p class="people-card-hint">Ikke en person – delte utgifter merkes «Felles» og fordeles likt mellom aktive personer. Kan ikke fjernes.</p>' +
+      "</div>"
+    );
+  }
+
+  function renderPeopleManage() {
+    const focused = document.activeElement;
+    const focusId =
+      focused && focused.getAttribute && focused.getAttribute("data-people-rename");
+    const focusVal = focusId && focused ? focused.value : null;
+    const html = buildPeopleManageHtml();
+    ["peopleManageList", "merPeopleManageList"].forEach(function (id) {
+      const list = document.getElementById(id);
+      if (list) list.innerHTML = html;
+    });
+    if (focusId) {
+      const inp = document.querySelector(
+        '#merPeopleManageList [data-people-rename="' +
+          focusId.replace(/"/g, "") +
+          '"], #peopleManageList [data-people-rename="' +
+          focusId.replace(/"/g, "") +
+          '"]'
+      );
+      // Prefer Mer list if visible, else first match
+      const candidates = document.querySelectorAll('[data-people-rename="' + focusId.replace(/"/g, "") + '"]');
+      let target = null;
+      for (let i = 0; i < candidates.length; i++) {
+        const el = candidates[i];
+        const panel = el.closest(".tab-panel, .modal, dialog");
+        if (panel && panel.hidden) continue;
+        target = el;
+        break;
+      }
+      if (!target && candidates.length) target = candidates[0];
+      if (target) {
+        if (focusVal != null) target.value = focusVal;
+        try { target.focus({ preventScroll: true }); } catch (e) { /* */ }
+      }
+    }
   }
 
   var CHART_COLORS = [
@@ -8096,7 +8322,8 @@ button.cat-group-header {
     const CALC_TARGET = {
       expCalc: "expAmount",
       incCalc: "incAmount",
-      savCalc: "savAmount"
+      savCalc: "savAmount",
+      planIncCalc: null // dynamic via data-calc-for / panel.dataset.calcFor
     };
 
     function getCalcDisplay(panel) {
@@ -8116,34 +8343,84 @@ button.cat-group-header {
       return d.dataset.expr != null ? d.dataset.expr : (d.textContent === "0" ? "" : d.textContent);
     }
 
+    function findPlanIncInput(key) {
+      if (!key) return null;
+      const nodes = document.querySelectorAll("[data-plan-inc]");
+      for (let i = 0; i < nodes.length; i++) {
+        if (nodes[i].getAttribute("data-plan-inc") === key) return nodes[i];
+      }
+      return null;
+    }
+
+    function resolveCalcTargetInput(panelId) {
+      if (panelId === "planIncCalc") {
+        const panel = document.getElementById(panelId);
+        return findPlanIncInput(panel && panel.dataset.calcFor);
+      }
+      const targetId = CALC_TARGET[panelId];
+      return targetId ? document.getElementById(targetId) : null;
+    }
+
+    function syncCalcToggleState(panelId, activeFor) {
+      $$('.calc-toggle[data-calc-panel="' + (panelId || "") + '"]').forEach(function (b) {
+        const forKey = b.getAttribute("data-calc-for");
+        const on = activeFor
+          ? forKey === activeFor
+          : !forKey; // dialog toggles have no data-calc-for
+        b.setAttribute("aria-expanded", on ? "true" : "false");
+      });
+    }
+
     function closeCalcPanel(panelId) {
       const panel = panelId ? document.getElementById(panelId) : null;
-      if (panel) panel.hidden = true;
+      if (panel) {
+        panel.hidden = true;
+        if (panelId === "planIncCalc") {
+          delete panel.dataset.calcFor;
+          parkPlanIncCalc();
+        }
+      }
       $$('.calc-toggle[data-calc-panel="' + (panelId || "") + '"]').forEach(function (b) {
         b.setAttribute("aria-expanded", "false");
       });
     }
 
-    function openCalcPanel(panelId) {
+    function openCalcPanel(panelId, calcFor) {
       const panel = document.getElementById(panelId);
       if (!panel) return;
-      // Close other calc panels in same dialog flow
       Object.keys(CALC_TARGET).forEach(function (id) {
         if (id !== panelId) closeCalcPanel(id);
       });
+      if (panelId === "planIncCalc") {
+        if (!calcFor) return;
+        panel.dataset.calcFor = calcFor;
+        const inpPlace = document.querySelector('[data-plan-inc="' + calcFor.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"]');
+        const field = inpPlace && inpPlace.closest(".field");
+        if (field && field.parentNode) {
+          field.parentNode.insertBefore(panel, field.nextSibling);
+        } else {
+          parkPlanIncCalc();
+        }
+      }
       panel.hidden = false;
-      const targetId = CALC_TARGET[panelId];
-      const inp = targetId ? document.getElementById(targetId) : null;
+      const inp = resolveCalcTargetInput(panelId);
       const seed = inp && inp.value ? String(inp.value).trim() : "";
       setCalcExpr(panel, seed);
-      $$('.calc-toggle[data-calc-panel="' + panelId + '"]').forEach(function (b) {
-        b.setAttribute("aria-expanded", "true");
-      });
+      if (panelId === "planIncCalc") syncCalcToggleState(panelId, calcFor);
+      else syncCalcToggleState(panelId, null);
     }
 
-    function toggleCalcPanel(panelId) {
+    function toggleCalcPanel(panelId, calcFor) {
       const panel = document.getElementById(panelId);
       if (!panel) return;
+      if (panelId === "planIncCalc") {
+        if (!panel.hidden && panel.dataset.calcFor === calcFor) {
+          closeCalcPanel(panelId);
+          return;
+        }
+        openCalcPanel(panelId, calcFor);
+        return;
+      }
       if (panel.hidden) openCalcPanel(panelId);
       else closeCalcPanel(panelId);
     }
@@ -8167,9 +8444,7 @@ button.cat-group-header {
         setCalcExpr(panel, formatAmountInput(n));
         return;
       }
-      // Map display ops already use × ÷ − ,
       if (key === "," || key === ".") {
-        // allow comma after digit; avoid double decimal in current number chunk
         const chunk = (expr.split(/[+\-×÷*/()]/).pop() || "");
         if (chunk.indexOf(",") >= 0 || chunk.indexOf(".") >= 0) return;
         setCalcExpr(panel, expr + ",");
@@ -8188,11 +8463,19 @@ button.cat-group-header {
         showToast("Ugyldig beløp");
         return;
       }
-      const targetId = CALC_TARGET[panelId];
-      const inp = targetId ? document.getElementById(targetId) : null;
+      const inp = resolveCalcTargetInput(panelId);
       if (inp) {
         inp.value = formatAmountInput(n);
         $$(".amount-chip").forEach(function (c) { c.classList.remove("is-active"); });
+        if (panelId === "planIncCalc") {
+          closeCalcPanel(panelId);
+          try {
+            inp.dispatchEvent(new Event("change", { bubbles: true }));
+          } catch (err) {
+            /* */
+          }
+          return;
+        }
         try { inp.focus({ preventScroll: true }); } catch (err) { /* */ }
       }
       closeCalcPanel(panelId);
@@ -8203,7 +8486,8 @@ button.cat-group-header {
       if (toggle) {
         e.preventDefault();
         const id = toggle.getAttribute("data-calc-panel");
-        if (id) toggleCalcPanel(id);
+        const calcFor = toggle.getAttribute("data-calc-for");
+        if (id) toggleCalcPanel(id, calcFor || undefined);
         return;
       }
       const useBtn = e.target.closest("[data-calc-use]");
@@ -8278,11 +8562,14 @@ button.cat-group-header {
     const btnMerPeople = $("#btnMerPeople");
     if (btnMerPeople) {
       btnMerPeople.addEventListener("click", function () {
-        openSettingsDialog();
-        setTimeout(function () {
-          const el = $("#peopleManageList");
-          if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-        }, 80);
+        const el = $("#sectionMerPeople");
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+        const inp = $("#merNewPersonName");
+        if (inp) {
+          setTimeout(function () {
+            try { inp.focus({ preventScroll: true }); } catch (err) { /* */ }
+          }, 200);
+        }
       });
     }
     const btnMerSettings = $("#btnMerSettings");
@@ -8765,42 +9052,102 @@ button.cat-group-header {
     }
 
     // People management
-    const btnAddPerson = $("#btnAddPerson");
-    if (btnAddPerson) {
-      btnAddPerson.addEventListener("click", function () {
-        const name = (($("#newPersonName") && $("#newPersonName").value) || "").trim();
-        if (!name) {
-          showToast("Skriv inn et navn");
-          return;
+    function addPersonFromInput(inputEl) {
+      const name = ((inputEl && inputEl.value) || "").trim();
+      if (!name) {
+        showToast("Skriv inn et navn");
+        if (inputEl) {
+          try { inputEl.focus(); } catch (err) { /* */ }
         }
-        const id = "p" + uid();
-        state.people.push({ id: id, name: name, archived: false });
-        $("#newPersonName").value = "";
-        Object.keys(state.months).forEach(function (k) {
-          Calc.ensureMonthShape(state.months[k], state.people);
-        });
-        Calc.ensureCategorySplits(state.categories, state.people);
-        save();
-        renderPeopleManage();
-        render();
-        showToast(name + " lagt til");
+        return;
+      }
+      const id = "p" + uid();
+      state.people.push({ id: id, name: name, archived: false });
+      if (inputEl) inputEl.value = "";
+      Object.keys(state.months).forEach(function (k) {
+        Calc.ensureMonthShape(state.months[k], state.people);
       });
+      Calc.ensureCategorySplits(state.categories, state.people);
+      save();
+      renderPeopleManage();
+      render();
+      showToast(name + " lagt til");
     }
 
-    const peopleList = $("#peopleManageList");
-    if (peopleList) {
-      peopleList.addEventListener("change", function (e) {
-        const t = e.target;
-        const id = t.getAttribute("data-people-rename");
-        if (!id) return;
-        const person = Calc.personById(state.people, id);
-        if (!person) return;
-        person.name = t.value.trim() || person.name;
-        save();
-        renderPeopleManage();
-        render();
+    function onPeopleRename(e) {
+      const t = e.target;
+      const id = t && t.getAttribute && t.getAttribute("data-people-rename");
+      if (!id) return;
+      const person = Calc.personById(state.people, id);
+      if (!person) return;
+      person.name = t.value.trim() || person.name;
+      save();
+      renderPeopleManage();
+      render();
+    }
+
+    ["btnAddPerson", "btnMerAddPerson"].forEach(function (bid) {
+      const btn = document.getElementById(bid);
+      if (!btn) return;
+      btn.addEventListener("click", function () {
+        const inputId = bid === "btnMerAddPerson" ? "merNewPersonName" : "newPersonName";
+        addPersonFromInput(document.getElementById(inputId));
       });
+    });
+    ["newPersonName", "merNewPersonName"].forEach(function (iid) {
+      const inp = document.getElementById(iid);
+      if (!inp) return;
+      inp.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          addPersonFromInput(inp);
+        }
+      });
+    });
+
+    const peopleList = $("#peopleManageList");
+    const merPeopleList = $("#merPeopleManageList");
+    [peopleList, merPeopleList].forEach(function (peopleList) {
+      if (!peopleList) return;
+      peopleList.addEventListener("change", onPeopleRename);
       peopleList.addEventListener("click", function (e) {
+        const rem = e.target.closest("[data-people-remove]");
+        if (rem) {
+          const id = rem.getAttribute("data-people-remove");
+          const person = Calc.personById(state.people, id);
+          if (!person || person.archived) return;
+          if (activePeopleList().length <= 1) {
+            showToast("Må ha minst én aktiv person");
+            return;
+          }
+          const hasData = Calc.personHasData(state, id);
+          if (hasData) {
+            if (
+              !confirm(
+                "Fjerne " +
+                  person.name +
+                  "?\n\nPersonen arkiveres (skjules). Utgifter og plan merket på personen flyttes til Felles."
+              )
+            )
+              return;
+            Calc.reassignPersonData(state, id, "felles");
+            person.archived = true;
+            if (state.settings.innUtView === id) state.settings.innUtView = "samlet";
+            Calc.ensureCategorySplits(state.categories, state.people);
+            save();
+            renderPeopleManage();
+            render();
+            showToast(person.name + " arkivert – data til Felles");
+          } else {
+            if (!confirm("Fjerne " + person.name + " permanent? Ingen registrerte tall.")) return;
+            state.people = state.people.filter(function (x) { return x.id !== id; });
+            save();
+            renderPeopleManage();
+            render();
+            showToast(person.name + " fjernet");
+          }
+          return;
+        }
         const arch = e.target.closest("[data-people-archive]");
         if (arch) {
           const id = arch.getAttribute("data-people-archive");
@@ -8858,7 +9205,7 @@ button.cat-group-header {
           showToast("Slettet");
         }
       });
-    }
+    });
 
     function exportJsonBackup() {
       downloadBlob(

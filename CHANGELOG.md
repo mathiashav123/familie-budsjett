@@ -1,5 +1,22 @@
 # Endringslogg – Familiebudsjett
 
+## 6. september 2026 (UTC+2) – Plan-kalkulator + Familie/Personer
+
+### Plan – kalkulator på forventet inntekt
+- **Kalkulator**-knapp ved **Lønn** og **Ekstra** under Plan → Forventet inntekt (samme UX som «Kjøpt noe»).
+- Delt trykkpad (`planIncCalc`) som flytter seg under feltet du redigerer; **Bruk** lagrer beløpet.
+- Inntekt-dialog (lønn/ekstra) beholder `incCalc` – uendret og i bruk.
+
+### Mer → Familie / Personer
+- Egen seksjon med store navnefelt (endre på stedet), tydelig **+ Legg til person**, og **Fjern** med bekreftelse.
+- Har data → arkiveres (skjules) og eierskap flyttes til **Felles**. Uten data → slettes permanent.
+- **Felles** vises som ikke-slettbar info. Mathias & Andrea er standard til du endrer.
+
+### Visuell polish
+- Kalkulator-pad: bedre spacing, større taster, mykere flate.
+- Personkort mer romslige og mobilvennlige.
+
+
 ## 6. september 2026 (UTC+2) – Beløp-kalkulator
 
 ### Kalkulator for beløp
