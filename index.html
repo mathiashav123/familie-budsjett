@@ -1835,7 +1835,7 @@ body {
   min-height: 2.5rem;
 }
 
-/* Bottom bar: Plan | Oversikt | [Kjøpt noe] | Logg | Mer — buy dead-center (2|buy|2) */
+/* Bottom bar: Plan | Oversikt | [Kjøpt noe] | Sparing | Mer — buy dead-center (2|buy|2) */
 .main-tabs {
   position: fixed;
   z-index: 40;
@@ -3551,7 +3551,7 @@ button.cat-group-header {
 .year-table td.bad { color: var(--orange, #b45309); }
 
 
-/* ——— Sparing (Mer) ——— */
+/* ——— Sparing ——— */
 .mer-sparing-card .sparing-metrics {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3651,6 +3651,89 @@ button.cat-group-header {
   font-style: italic;
 }
 
+/* ——— Sparemål ——— */
+.sparing-goals-card {
+  margin-top: .75rem;
+}
+.sparing-card .sparing-metrics,
+.mer-sparing-card .sparing-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .5rem;
+  margin: .55rem 0 .35rem;
+}
+.goals-list {
+  display: flex;
+  flex-direction: column;
+  gap: .55rem;
+  margin-top: .55rem;
+}
+.goal-card {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  border-radius: var(--radius-sm);
+  padding: .7rem .75rem;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+  color: inherit;
+  font: inherit;
+}
+.goal-card:active { transform: scale(.99); }
+.goal-card-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: .5rem;
+}
+.goal-card-name {
+  font-weight: 800;
+  font-size: .98rem;
+  letter-spacing: -.01em;
+}
+.goal-card-who {
+  font-size: .72rem;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.goal-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem .75rem;
+  font-size: .78rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.goal-card-meta strong {
+  color: var(--text);
+  font-weight: 750;
+}
+.goal-progress {
+  height: .45rem;
+  background: #d9e5e1;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.goal-progress > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #0f766e, #14b8a6);
+  border-radius: 999px;
+  min-width: 0;
+}
+.goal-card-eta {
+  font-size: .82rem;
+  font-weight: 750;
+  color: var(--teal-dark);
+}
+.goal-card-eta.is-reached { color: var(--green); }
+.goal-card-eta.is-need { color: var(--amber); }
+
 </style>
 </head>
 <body>
@@ -3686,7 +3769,7 @@ button.cat-group-header {
       <span class="tab-buy-label">Kjøpt noe</span>
     </button>
     <div class="main-tabs-side right" role="presentation">
-      <button type="button" class="main-tab" role="tab" id="tabLogg" data-tab="logg" aria-controls="panelLogg" aria-selected="false"><span class="tab-ico" aria-hidden="true">≡</span><span class="tab-txt">Logg</span></button>
+      <button type="button" class="main-tab" role="tab" id="tabSparing" data-tab="sparing" aria-controls="panelSparing" aria-selected="false"><span class="tab-ico" aria-hidden="true">◇</span><span class="tab-txt">Sparing</span></button>
       <button type="button" class="main-tab" role="tab" id="tabMer" data-tab="mer" aria-controls="panelMer" aria-selected="false"><span class="tab-ico" aria-hidden="true">⋯</span><span class="tab-txt">Mer</span></button>
     </div>
   </nav>
@@ -3930,7 +4013,7 @@ button.cat-group-header {
     </div>
 
     <!-- ——— LOGG ——— -->
-    <div id="panelLogg" class="tab-panel" role="tabpanel" aria-labelledby="tabLogg" hidden>
+    <div id="panelLogg" class="tab-panel" role="tabpanel" aria-label="Logg" hidden>
       <section class="card compact-card" aria-labelledby="txTitle">
         <div class="card-head">
           <h2 id="txTitle">Transaksjoner</h2>
@@ -3956,18 +4039,69 @@ button.cat-group-header {
       </section>
     </div>
 
+    <!-- ——— SPARING ——— -->
+    <div id="panelSparing" class="tab-panel" role="tabpanel" aria-labelledby="tabSparing" hidden>
+      <section class="card compact-card sparing-card" id="sectionSparing" aria-labelledby="sparingTitle">
+        <div class="card-head">
+          <h2 id="sparingTitle">Sparing</h2>
+        </div>
+        <p class="hint compact">Spare saldo nå, og loggførte spareinnskudd denne måneden / i år. Ingen tips eller sammenligninger.</p>
+        <div class="view-tabs" id="sparingTabs" role="tablist" aria-label="Visning Sparing"></div>
+        <div class="sparing-metrics" id="sparingMetrics" aria-live="polite">
+          <div class="sparing-metric is-hero">
+            <span class="sparing-metric-label">Nå</span>
+            <strong class="sparing-metric-value" id="sparingNaa">—</strong>
+            <span class="sparing-metric-hint" id="sparingNaaHint">Spare saldo</span>
+          </div>
+          <div class="sparing-metric">
+            <span class="sparing-metric-label">Denne måneden</span>
+            <strong class="sparing-metric-value" id="sparingMonth">—</strong>
+            <span class="sparing-metric-hint">Loggførte innskudd</span>
+          </div>
+          <div class="sparing-metric">
+            <span class="sparing-metric-label">I år</span>
+            <strong class="sparing-metric-value" id="sparingYear">—</strong>
+            <span class="sparing-metric-hint" id="sparingYearHint">2026</span>
+          </div>
+          <div class="sparing-metric is-muted">
+            <span class="sparing-metric-label">Totalt</span>
+            <strong class="sparing-metric-value" id="sparingTotal">—</strong>
+            <span class="sparing-metric-hint">Alle loggførte innskudd</span>
+          </div>
+        </div>
+        <div class="sparing-actions">
+          <button type="button" class="btn primary" id="btnSparingAdd">+ Spareinnskudd</button>
+        </div>
+        <p class="hint compact" id="sparingEmptyHint" hidden>Ingen spareinnskudd logget ennå. Trykk «+ Spareinnskudd», eller sett spare saldo under Oversikt → Kontoer.</p>
+        <div id="sparingList" class="sparing-list" aria-label="Spareinnskudd denne måneden"></div>
+      </section>
+
+      <section class="card compact-card sparing-goals-card" id="sectionSparingGoals" aria-labelledby="sparingGoalsTitle">
+        <div class="card-head">
+          <h2 id="sparingGoalsTitle">Sparemål</h2>
+        </div>
+        <p class="hint compact">Sett målbeløp og hvor mye du vil spare per måned. Appen viser når du kan forvente å nå målet. Fremdrift er «Spart mot dette målet» (eget tall per mål – ikke auto-koblet til spare saldo).</p>
+        <div class="sparing-actions">
+          <button type="button" class="btn primary" id="btnGoalAdd">+ Nytt sparemål</button>
+        </div>
+        <p class="hint compact" id="goalsEmptyHint" hidden>Ingen sparemål ennå. Trykk «+ Nytt sparemål».</p>
+        <div id="goalsList" class="goals-list" aria-label="Sparemål"></div>
+      </section>
+    </div>
+
     <!-- ——— MER ——— -->
     <div id="panelMer" class="tab-panel" role="tabpanel" aria-labelledby="tabMer" hidden>
       <section class="card compact-card mer-card" aria-labelledby="merTitle">
         <div class="card-head">
           <h2 id="merTitle">Mer</h2>
         </div>
-        <p class="hint compact">Snarveier til sparing, familie, år, innstillinger og demo-data.</p>
+        <p class="hint compact">Snarveier til logg, familie, år, innstillinger og demo-data. Sparing har egen fane.</p>
         <div class="mer-actions">
           <button type="button" class="btn primary mer-btn" id="btnNewCatMer">+ Ny kategori</button>
+          <button type="button" class="btn mer-btn" id="btnMerLogg">Logg</button>
           <button type="button" class="btn mer-btn" id="btnMerPeople">Familie / Personer</button>
           <button type="button" class="btn mer-btn" id="btnMerYear">År</button>
-          <button type="button" class="btn primary mer-btn" id="btnMerSparing">Sparing</button>
+          <button type="button" class="btn ghost mer-btn" id="btnMerSparing">Sparing (fane)</button>
           <button type="button" class="btn mer-btn" id="btnMerSettings">Innstillinger</button>
           <button type="button" class="btn primary mer-btn" id="btnMerBackup">Ta backup</button>
           <button type="button" class="btn mer-btn mer-btn-excel" id="btnFillExcel">Fyll budsjett fra Excel</button>
@@ -4006,42 +4140,6 @@ button.cat-group-header {
         </div>
       </section>
 
-
-      <section class="card compact-card mer-sparing-card" id="sectionMerSparing" aria-labelledby="merSparingTitle">
-        <div class="card-head">
-          <h2 id="merSparingTitle">Sparing</h2>
-        </div>
-        <p class="hint compact">Spare saldo nå, og loggførte spareinnskudd denne måneden / i år. Ingen tips eller sammenligninger.</p>
-        <div class="view-tabs" id="sparingTabs" role="tablist" aria-label="Visning Sparing"></div>
-        <div class="sparing-metrics" id="sparingMetrics" aria-live="polite">
-          <div class="sparing-metric is-hero">
-            <span class="sparing-metric-label">Nå</span>
-            <strong class="sparing-metric-value" id="sparingNaa">—</strong>
-            <span class="sparing-metric-hint" id="sparingNaaHint">Spare saldo</span>
-          </div>
-          <div class="sparing-metric">
-            <span class="sparing-metric-label">Denne måneden</span>
-            <strong class="sparing-metric-value" id="sparingMonth">—</strong>
-            <span class="sparing-metric-hint">Loggførte innskudd</span>
-          </div>
-          <div class="sparing-metric">
-            <span class="sparing-metric-label">I år</span>
-            <strong class="sparing-metric-value" id="sparingYear">—</strong>
-            <span class="sparing-metric-hint" id="sparingYearHint">2026</span>
-          </div>
-          <div class="sparing-metric is-muted">
-            <span class="sparing-metric-label">Totalt</span>
-            <strong class="sparing-metric-value" id="sparingTotal">—</strong>
-            <span class="sparing-metric-hint">Alle loggførte innskudd</span>
-          </div>
-        </div>
-        <div class="sparing-actions">
-          <button type="button" class="btn primary" id="btnSparingAdd">+ Spareinnskudd</button>
-        </div>
-        <p class="hint compact" id="sparingEmptyHint" hidden>Ingen spareinnskudd logget ennå. Trykk «+ Spareinnskudd», eller sett spare saldo under Oversikt → Kontoer.</p>
-        <div id="sparingList" class="sparing-list" aria-label="Spareinnskudd denne måneden"></div>
-        <p class="hint compact sparing-later">Mål / sparingstargets – kommer senere.</p>
-      </section>
 
       <section class="card compact-card mer-people-card" id="sectionMerPeople" aria-labelledby="merPeopleTitle">
         <div class="card-head">
@@ -4232,6 +4330,46 @@ button.cat-group-header {
       <footer class="modal-foot">
         <button type="button" class="btn danger ghost" id="incDelete" hidden>Slett</button>
         <button type="button" class="btn ghost" id="incCancel">Avbryt</button>
+        <button type="submit" class="btn primary">Lagre</button>
+      </footer>
+    </form>
+  </dialog>
+
+
+  <!-- Modal: sparemål -->
+  <dialog id="dlgGoal" class="modal">
+    <form id="formGoal" class="modal-card">
+      <header class="modal-head">
+        <h2 id="goalTitle">Nytt sparemål</h2>
+        <button type="button" class="icon-btn" id="goalClose" aria-label="Lukk">×</button>
+      </header>
+      <div class="modal-body stack">
+        <input type="hidden" id="goalId" />
+        <label class="field">
+          <span>Navn</span>
+          <input id="goalName" class="input lg" type="text" maxlength="60" placeholder="F.eks. Buffer, Ferie, Bil" required autocomplete="off" />
+        </label>
+        <label class="field">
+          <span>Målbeløp (kr)</span>
+          <input id="goalTarget" class="input lg amount-expr" type="text" inputmode="decimal" placeholder="0" required autocomplete="off" />
+        </label>
+        <label class="field">
+          <span>Spare per måned (kr/mnd)</span>
+          <input id="goalMonthly" class="input lg amount-expr" type="text" inputmode="decimal" placeholder="0" required autocomplete="off" />
+        </label>
+        <label class="field">
+          <span>Spart mot dette målet (kr)</span>
+          <input id="goalSaved" class="input lg amount-expr" type="text" inputmode="decimal" placeholder="0" autocomplete="off" />
+        </label>
+        <p class="hint compact">Oppdater «Spart» når du setter av penger til målet. Spare saldo og spareinnskudd er egen oversikt.</p>
+        <fieldset class="field">
+          <legend>Hvem / eier</legend>
+          <div class="seg who-seg" id="goalWhoSeg" role="radiogroup" aria-label="Hvem"></div>
+        </fieldset>
+      </div>
+      <footer class="modal-foot">
+        <button type="button" class="btn danger ghost" id="goalDelete" hidden>Slett</button>
+        <button type="button" class="btn ghost" id="goalCancel">Avbryt</button>
         <button type="submit" class="btn primary">Lagre</button>
       </footer>
     </form>
@@ -4715,7 +4853,8 @@ button.cat-group-header {
           useSaldoInSafeToSpend: true,
           spendBuffer: 0,
           sparingView: "samlet"
-        }
+        },
+        savingsGoals: []
       };
     }
 
@@ -4895,7 +5034,8 @@ button.cat-group-header {
           !!(
             parsed.settings && parsed.settings.pendingBalancesMigrationToast
           )
-      }
+      },
+      savingsGoals: normalizeSavingsGoals(parsed.savingsGoals, people)
     };
   }
 
@@ -5916,6 +6056,11 @@ button.cat-group-header {
     (state.categories || []).forEach(function (c) {
       if (c.owner === fromId) c.owner = toOwner;
     });
+    (state.savingsGoals || []).forEach(function (g) {
+      if (g.person === fromId) {
+        g.person = toOwner === "felles" ? "felles" : toOwner;
+      }
+    });
   }
 
 
@@ -6017,6 +6162,108 @@ button.cat-group-header {
     }
   }
 
+
+
+  /**
+   * Sparemål (savings goals) — additive on state.savingsGoals[].
+   * Progress model: each goal has explicit `saved` ("Spart mot dette målet").
+   * Spare saldo and spareinnskudd stay separate overview metrics; they are NOT
+   * auto-linked (avoids ambiguity when several goals share one person/konto).
+   * person: person id | "felles" | "samlet" (husstand).
+   */
+  function normalizeSavingsGoal(g, people) {
+    g = g || {};
+    var person = mapLegacyOwner(g.person || "samlet");
+    if (person !== "felles" && person !== "samlet" && !personById(people, person)) {
+      person = "samlet";
+    }
+    var target = Number(g.target);
+    var monthly = Number(g.monthly);
+    var saved = Number(g.saved);
+    return {
+      id: g.id || uid(),
+      name: (g.name && String(g.name).trim()) || "Sparemål",
+      target: Number.isFinite(target) && target >= 0 ? target : 0,
+      monthly: Number.isFinite(monthly) && monthly >= 0 ? monthly : 0,
+      saved: Number.isFinite(saved) && saved >= 0 ? saved : 0,
+      person: person
+    };
+  }
+
+  function normalizeSavingsGoals(list, people) {
+    if (!Array.isArray(list)) return [];
+    return list.map(function (g) {
+      return normalizeSavingsGoal(g, people);
+    });
+  }
+
+  /**
+   * ETA for a sparemål from a reference date (defaults to today).
+   * monthsNeeded = ceil(remaining / monthly); add that many calendar months
+   * to the reference month. Label: "ca. mnd ÅÅÅÅ" / "nådd" / need monthly.
+   */
+  function savingsGoalEta(goal, fromDate) {
+    var target = Number(goal && goal.target);
+    var saved = Number(goal && goal.saved);
+    var monthly = Number(goal && goal.monthly);
+    if (!Number.isFinite(target)) target = 0;
+    if (!Number.isFinite(saved)) saved = 0;
+    if (!Number.isFinite(monthly)) monthly = 0;
+    var remaining = target - saved;
+    if (remaining <= 0) {
+      return {
+        status: "reached",
+        monthsNeeded: 0,
+        remaining: 0,
+        year: null,
+        month: null,
+        label: "nådd"
+      };
+    }
+    if (monthly <= 0) {
+      return {
+        status: "need_monthly",
+        monthsNeeded: null,
+        remaining: remaining,
+        year: null,
+        month: null,
+        label: "Sett månedlig beløp"
+      };
+    }
+    var monthsNeeded = Math.ceil(remaining / monthly);
+    var d = fromDate instanceof Date ? fromDate : new Date();
+    if (Number.isNaN(d.getTime())) d = new Date();
+    var total = d.getFullYear() * 12 + d.getMonth() + monthsNeeded;
+    var year = Math.floor(total / 12);
+    var month = total % 12;
+    var shortNames = [
+      "jan", "feb", "mar", "apr", "mai", "jun",
+      "jul", "aug", "sep", "okt", "nov", "des"
+    ];
+    return {
+      status: "eta",
+      monthsNeeded: monthsNeeded,
+      remaining: remaining,
+      year: year,
+      month: month,
+      label: "ca. " + shortNames[month] + " " + year
+    };
+  }
+
+  function savingsGoalProgress(goal) {
+    var target = Number(goal && goal.target);
+    var saved = Number(goal && goal.saved);
+    if (!Number.isFinite(target)) target = 0;
+    if (!Number.isFinite(saved)) saved = 0;
+    var pct = target > 0 ? Math.min(100, Math.max(0, (saved / target) * 100)) : (saved > 0 ? 100 : 0);
+    return {
+      target: target,
+      saved: saved,
+      remaining: Math.max(0, target - saved),
+      pct: pct,
+      reached: target > 0 ? saved >= target : saved > 0
+    };
+  }
 
   /**
    * Sum logged spareinnskudd (m.savings) for one month, optional person filter.
@@ -6207,6 +6454,10 @@ button.cat-group-header {
     yearRollup: yearRollup,
     sumSavingsForMonth: sumSavingsForMonth,
     sparingStats: sparingStats,
+    normalizeSavingsGoal: normalizeSavingsGoal,
+    normalizeSavingsGoals: normalizeSavingsGoals,
+    savingsGoalEta: savingsGoalEta,
+    savingsGoalProgress: savingsGoalProgress,
     actualForCategory: actualForCategory,
     actualForCategoryOwner: actualForCategoryOwner,
     calcPerson: calcPerson,
@@ -6385,7 +6636,8 @@ button.cat-group-header {
         useSaldoInSafeToSpend: true,
         spendBuffer: 0,
         sparingView: "samlet"
-      }
+      },
+      savingsGoals: []
     };
   }
 
@@ -6489,6 +6741,7 @@ button.cat-group-header {
       if (!raw) return DEFAULT_STATE();
       const parsed = JSON.parse(raw);
       const migrated = Calc.migrateState(parsed);
+      if (!Array.isArray(migrated.savingsGoals)) migrated.savingsGoals = [];
       // Keep existing categories (incl. previously seeded). Empty array stays empty.
       ensureCategoryOrders(migrated);
       return migrated;
@@ -6777,12 +7030,20 @@ button.cat-group-header {
   }
 
   function applyMainTab(tab) {
-    const t = tab === "plan" || tab === "logg" || tab === "oversikt" || tab === "mer" ? tab : "oversikt";
+    const t =
+      tab === "plan" ||
+      tab === "logg" ||
+      tab === "oversikt" ||
+      tab === "mer" ||
+      tab === "sparing"
+        ? tab
+        : "oversikt";
     state.settings.mainTab = t;
     const panels = {
       plan: $("#panelPlan"),
       oversikt: $("#panelOversikt"),
       logg: $("#panelLogg"),
+      sparing: $("#panelSparing"),
       mer: $("#panelMer")
     };
     Object.keys(panels).forEach(function (k) {
@@ -8891,7 +9152,7 @@ button.cat-group-header {
   }
 
   function renderSparing() {
-    const section = $("#sectionMerSparing");
+    const section = $("#sectionSparing") || $("#sectionMerSparing");
     if (!section) return;
     renderSparingTabs();
     const stats = Calc.sparingStats(
@@ -8971,8 +9232,113 @@ button.cat-group-header {
       }
     }
     if (emptyHint) {
-      emptyHint.hidden = rows.length > 0 || (slice.denneManeden || 0) > 0;
+      emptyHint.hidden = rows.length > 0 || (slice.denneManeden || 0) > 0 || (slice.hasNaa && slice.naa);
     }
+    renderSavingsGoals();
+  }
+
+  function goalOwnerLabel(person) {
+    if (person === "samlet") return "Husstand";
+    if (person === "felles") return "Felles";
+    return nameOf(person);
+  }
+
+  function fillGoalWhoSeg(selected) {
+    const seg = $("#goalWhoSeg");
+    if (!seg) return;
+    const sel = selected || "samlet";
+    let html =
+      '<label><input type="radio" name="goalWho" value="samlet"' +
+      (sel === "samlet" ? " checked" : "") +
+      " /><span>Husstand</span></label>";
+    html +=
+      '<label><input type="radio" name="goalWho" value="felles"' +
+      (sel === "felles" ? " checked" : "") +
+      " /><span>Felles</span></label>";
+    activePeopleList().forEach(function (person) {
+      html +=
+        '<label><input type="radio" name="goalWho" value="' +
+        escapeAttr(person.id) +
+        '"' +
+        (sel === person.id ? " checked" : "") +
+        " /><span>" +
+        escapeHtml(person.name) +
+        "</span></label>";
+    });
+    seg.innerHTML = html;
+  }
+
+  function openGoal(edit) {
+    $("#goalTitle").textContent = edit ? "Rediger sparemål" : "Nytt sparemål";
+    $("#goalId").value = edit ? edit.id : "";
+    $("#goalName").value = edit ? edit.name || "" : "";
+    $("#goalTarget").value = edit ? String(edit.target).replace(".", ",") : "";
+    $("#goalMonthly").value = edit ? String(edit.monthly).replace(".", ",") : "";
+    $("#goalSaved").value = edit
+      ? String(edit.saved != null ? edit.saved : 0).replace(".", ",")
+      : "0";
+    fillGoalWhoSeg(edit ? edit.person : "samlet");
+    $("#goalDelete").hidden = !edit;
+    openDlg("#dlgGoal");
+    setTimeout(function () { $("#goalName").focus(); }, 50);
+  }
+
+  function renderSavingsGoals() {
+    if (!Array.isArray(state.savingsGoals)) state.savingsGoals = [];
+    const list = $("#goalsList");
+    const emptyHint = $("#goalsEmptyHint");
+    if (!list) return;
+    const view = state.settings.sparingView || "samlet";
+    let goals = state.savingsGoals.slice();
+    if (view !== "samlet") {
+      goals = goals.filter(function (g) { return g.person === view; });
+    }
+    goals.sort(function (a, b) {
+      const pa = Calc.savingsGoalProgress(a);
+      const pb = Calc.savingsGoalProgress(b);
+      if (pa.reached !== pb.reached) return pa.reached ? 1 : -1;
+      return String(a.name || "").localeCompare(String(b.name || ""), "nb");
+    });
+    if (!goals.length) {
+      list.innerHTML = "";
+      if (emptyHint) emptyHint.hidden = false;
+      return;
+    }
+    if (emptyHint) emptyHint.hidden = true;
+    const now = new Date();
+    list.innerHTML = goals
+      .map(function (g) {
+        const prog = Calc.savingsGoalProgress(g);
+        const eta = Calc.savingsGoalEta(g, now);
+        const etaClass =
+          eta.status === "reached"
+            ? " is-reached"
+            : eta.status === "need_monthly"
+              ? " is-need"
+              : "";
+        return (
+          '<button type="button" class="goal-card" data-edit-goal="' +
+          escapeAttr(g.id) +
+          '"><div class="goal-card-top"><span class="goal-card-name">' +
+          escapeHtml(g.name) +
+          '</span><span class="goal-card-who">' +
+          escapeHtml(goalOwnerLabel(g.person)) +
+          '</span></div><div class="goal-card-meta"><span><strong>' +
+          formatNOK(prog.saved) +
+          "</strong> av " +
+          formatNOK(prog.target) +
+          "</span><span>" +
+          formatNOK(g.monthly) +
+          '/mnd</span></div><div class="goal-progress" aria-hidden="true"><span style="width:' +
+          Math.round(prog.pct) +
+          '%"></span></div><div class="goal-card-eta' +
+          etaClass +
+          '">' +
+          escapeHtml(eta.label) +
+          "</div></button>"
+        );
+      })
+      .join("");
   }
 
   function allTxForMonth(m) {
@@ -9865,7 +10231,7 @@ button.cat-group-header {
       render();
     });
 
-    // Main tabs: Plan | Oversikt | Kjøpt noe (action) | Logg | Mer
+    // Main tabs: Plan | Oversikt | Kjøpt noe (action) | Sparing | Mer (Logg via Mer)
     const mainTabs = $("#mainTabs");
     if (mainTabs) {
       mainTabs.addEventListener("click", function (e) {
@@ -10292,13 +10658,18 @@ button.cat-group-header {
     const btnMerSparing = $("#btnMerSparing");
     if (btnMerSparing) {
       btnMerSparing.addEventListener("click", function () {
-        applyMainTab("mer");
+        applyMainTab("sparing");
         save();
         render();
-        setTimeout(function () {
-          const el = $("#sectionMerSparing");
-          if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-        }, 60);
+      });
+    }
+
+    const btnMerLogg = $("#btnMerLogg");
+    if (btnMerLogg) {
+      btnMerLogg.addEventListener("click", function () {
+        applyMainTab("logg");
+        save();
+        render();
       });
     }
 
@@ -10338,6 +10709,26 @@ button.cat-group-header {
         const id = btn.getAttribute("data-edit-saving");
         const tx = findTx("saving", id);
         if (tx) openSaving(tx.person, tx);
+      });
+    }
+
+    const btnGoalAdd = $("#btnGoalAdd");
+    if (btnGoalAdd) {
+      btnGoalAdd.addEventListener("click", function () {
+        openGoal(null);
+      });
+    }
+
+    const goalsList = $("#goalsList");
+    if (goalsList) {
+      goalsList.addEventListener("click", function (e) {
+        const btn = e.target.closest("[data-edit-goal]");
+        if (!btn) return;
+        const id = btn.getAttribute("data-edit-goal");
+        const g = (state.savingsGoals || []).find(function (x) {
+          return x.id === id;
+        });
+        if (g) openGoal(g);
       });
     }
 
@@ -10923,6 +11314,80 @@ button.cat-group-header {
     });
 
     // Saving form
+    const goalClose = $("#goalClose");
+    if (goalClose) {
+      goalClose.addEventListener("click", function () { closeDlg("#dlgGoal"); });
+    }
+    const goalCancel = $("#goalCancel");
+    if (goalCancel) {
+      goalCancel.addEventListener("click", function () { closeDlg("#dlgGoal"); });
+    }
+    const formGoal = $("#formGoal");
+    if (formGoal) {
+      formGoal.addEventListener("submit", function (e) {
+        e.preventDefault();
+        resolveAmountField($("#goalTarget"));
+        resolveAmountField($("#goalMonthly"));
+        resolveAmountField($("#goalSaved"));
+        const name = ($("#goalName").value || "").trim();
+        const target = parseAmount($("#goalTarget").value);
+        const monthly = parseAmount($("#goalMonthly").value);
+        let saved = parseAmount($("#goalSaved").value);
+        if (!name) {
+          showToast("Skriv inn navn");
+          return;
+        }
+        if (target == null || target < 0) {
+          showToast("Ugyldig målbeløp");
+          return;
+        }
+        if (monthly == null || monthly < 0) {
+          showToast("Ugyldig månedlig beløp");
+          return;
+        }
+        if (saved == null || saved < 0) saved = 0;
+        const whoEl = document.querySelector('#dlgGoal input[name="goalWho"]:checked');
+        const person = (whoEl && whoEl.value) || "samlet";
+        if (!Array.isArray(state.savingsGoals)) state.savingsGoals = [];
+        const id = $("#goalId").value;
+        const payload = Calc.normalizeSavingsGoal(
+          {
+            id: id || uid(),
+            name: name,
+            target: target,
+            monthly: monthly,
+            saved: saved,
+            person: person
+          },
+          state.people
+        );
+        const idx = state.savingsGoals.findIndex(function (x) {
+          return x.id === payload.id;
+        });
+        if (idx >= 0) state.savingsGoals[idx] = payload;
+        else state.savingsGoals.push(payload);
+        closeDlg("#dlgGoal");
+        save();
+        render();
+        showToast("Sparemål lagret");
+      });
+    }
+    const goalDelete = $("#goalDelete");
+    if (goalDelete) {
+      goalDelete.addEventListener("click", function () {
+        const id = $("#goalId").value;
+        if (!id) return;
+        if (!confirm("Slette dette sparemålet?")) return;
+        state.savingsGoals = (state.savingsGoals || []).filter(function (x) {
+          return x.id !== id;
+        });
+        closeDlg("#dlgGoal");
+        save();
+        render();
+        showToast("Sparemål slettet");
+      });
+    }
+
     $("#savingClose").addEventListener("click", function () { closeDlg("#dlgSaving"); });
     $("#savCancel").addEventListener("click", function () { closeDlg("#dlgSaving"); });
     $("#formSaving").addEventListener("submit", function (e) {
@@ -11244,6 +11709,7 @@ button.cat-group-header {
             return;
           }
           state = Calc.migrateState(parsed);
+          if (!Array.isArray(state.savingsGoals)) state.savingsGoals = [];
           ensureCategoryOrders(state);
           save();
           closeDlg("#dlgSettings");

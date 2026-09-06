@@ -1,5 +1,22 @@
 # Endringslogg – Familiebudsjett
 
+## 6. september 2026 (UTC+2) – Sparing-fane + sparemål
+
+### Sparing som bunnfane
+- **Sparing** er egen fane i bunnlinjen: Plan | Oversikt | **Kjøpt noe** | Sparing | Mer (balansert 2|buy|2).
+- **Logg** er flyttet til Mer → Logg (samme panel som før).
+- Mer → Sparing er demotert (ghost «Sparing (fane)») – ikke lenger eneste inngang.
+
+### Sparemål
+- Opprett/rediger/slett mål: navn, målbeløp (kr), spare per måned (kr/mnd), «Spart mot dette målet», eier (Husstand / Felles / person).
+- Liste på Sparing-fanen med progresjonsbar + ETA («ca. mnd ÅÅÅÅ», «nådd», eller «Sett månedlig beløp»).
+- **Formel:** `monthsNeeded = ceil((mål − spart) / månedsbeløp)`; ETA = inneværende kalendermåned + monthsNeeded.
+- **Fremdrift:** eksplisitt felt «Spart mot dette målet» per mål (ikke auto-koblet til spare saldo / spareinnskudd – unngår tvetydighet ved flere mål). Saldo og innskudd forblir egen oversikt.
+
+### Datasikkerhet
+- Additivt `savingsGoals[]` på state. Lagringsnøkkel uendret: **`familie-budsjett-v1`**. Ingen wipe.
+
+
 ## 6. september 2026 (UTC+2) – Sparing-seksjon
 
 ### Mer → Sparing
