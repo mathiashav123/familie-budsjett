@@ -255,7 +255,8 @@
     var st = state && typeof state === "object" ? state : {};
     var archives = Array.isArray(st.archives) ? st.archives : [];
     var active = Object.assign({}, st);
-    // Keep archives on active too for plain fallback; structured uses split.
+    // Structured split: activePayload without heavy archive months (refs + archives[] beside it)
+    active.archives = [];
     var bytes = estimatePayloadBytes(st);
     var forceStruct = !!opts.forceStructured || bytes >= (opts.threshold || 96 * 1024) || archives.length > 0;
     if (!forceStruct) {
