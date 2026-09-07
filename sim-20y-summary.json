@@ -1,0 +1,27 @@
+{
+  "ok": true,
+  "months": 240,
+  "expenses": 11208,
+  "incomes": 754,
+  "savingsTx": 449,
+  "payloadBytes": 1809592,
+  "payloadKiB": 1767.18,
+  "payloadMiB": 1.73,
+  "avgCalcMs": 0.21,
+  "totalCalcMs": 26.76,
+  "goalsCompleted": 4,
+  "goalsAbandoned": 2,
+  "goalsAdjusted": 2,
+  "goalsActive": 0,
+  "missedMonths": 4,
+  "carryEvents": 239,
+  "usable": true,
+  "reportPath": "/workspace/familie-budsjett/SIM-20Y-RAPPORT.md",
+  "top5": [
+    "Årsarkiv / kompakt historikk for sync-payload",
+    "Sparemål status (aktiv/nådd/arkivert) + historikk",
+    "Kobling spareinnskudd → sparemål (fordeling)",
+    "Flerårsoversikt i UI (yearRollup + sparingStats)",
+    "Inkrementell/delt sky-sync (ikke alltid full JSON)"
+  ]
+}

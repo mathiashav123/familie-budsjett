@@ -48,7 +48,8 @@
       lastSyncAt: null,
       pendingPush: false,
       lastError: null,
-      keepLocalOnce: false
+      keepLocalOnce: false,
+      lastPushedFingerprint: null
     };
   }
 
@@ -176,6 +177,74 @@
   function clearError(meta) {
     meta.lastError = null;
     return meta;
+  }
+
+  function bytesToBase64(bytes) {
+    var bin = "";
+    var i;
+    var CHUNK = 0x8000;
+    for (i = 0; i < bytes.length; i += CHUNK) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+    }
+    return btoa(bin);
+  }
+
+  function base64ToBytes(b64) {
+    var bin = atob(b64);
+    var out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  async function gzipStringToBase64(str) {
+    if (typeof CompressionStream === "undefined") return null;
+    var stream = new Blob([str]).stream().pipeThrough(new CompressionStream("gzip"));
+    var buf = await new Response(stream).arrayBuffer();
+    return bytesToBase64(new Uint8Array(buf));
+  }
+
+  async function gunzipBase64ToString(b64) {
+    if (typeof DecompressionStream === "undefined") {
+      throw new Error("Kan ikke dekomprimere synk-data i denne nettleseren");
+    }
+    var bytes = base64ToBytes(b64);
+    var stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+    return await new Response(stream).text();
+  }
+
+  /**
+   * Encode local state for households.payload:
+   * - structured split when archives or large
+   * - gzip-b64 envelope when still large and CompressionStream exists
+   */
+  async function encodeCloudPayload(state) {
+    var packed = Sync.packCloudPayload(state, { updatedAt: Sync.isoNow() });
+    var json = JSON.stringify(packed);
+    var threshold = 120 * 1024;
+    if (json.length >= threshold) {
+      try {
+        var b64 = await gzipStringToBase64(json);
+        if (b64 && b64.length < json.length * 0.92) {
+          return Sync.wrapGzipCloudPayload(b64, json.length, {
+            version: state && state.version,
+            updated_at: Sync.isoNow()
+          });
+        }
+      } catch (e) {
+        console.warn("gzip sync skipped", e);
+      }
+    }
+    return packed;
+  }
+
+  async function decodeCloudPayload(raw) {
+    if (!raw || typeof raw !== "object") return raw;
+    if (Sync.isGzipCloudPayload(raw)) {
+      var text = await gunzipBase64ToString(raw.body);
+      var inner = JSON.parse(text);
+      return Sync.unpackCloudPayload(inner);
+    }
+    return Sync.unpackCloudPayload(raw);
   }
 
   function getSessionUser() {
@@ -358,9 +427,10 @@
   async function createHouseholdWithLocal() {
     await refreshSessionIfNeeded();
     var state = host.getState();
+    var encoded = await encodeCloudPayload(state);
     var row = await api("POST", "/rest/v1/rpc/create_household", {
       p_name: "Familie",
-      p_payload: state
+      p_payload: encoded
     });
     var meta = loadMeta();
     applyHouseholdToMeta(meta, {
@@ -372,6 +442,7 @@
     meta.lastPushAt = Sync.isoNow();
     meta.lastSyncAt = Sync.isoNow();
     meta.pendingPush = false;
+    meta.lastPushedFingerprint = Sync.payloadFingerprint(state);
     clearError(meta);
     saveMeta(meta);
     return row;
@@ -391,18 +462,31 @@
     await refreshSessionIfNeeded();
     if (!getSessionUser()) return { ok: false, reason: "not-logged-in" };
 
+    var state = host.getState();
+    var fp = Sync.payloadFingerprint(state);
+    if (meta.lastPushedFingerprint && meta.lastPushedFingerprint === fp && !meta.pendingPush) {
+      return { ok: true, reason: "unchanged" };
+    }
+    // If fingerprint matches last push and only pending flag is stale, clear it
+    if (meta.lastPushedFingerprint === fp && meta.lastSyncedCloudAt) {
+      meta.pendingPush = false;
+      saveMeta(meta);
+      if (host && host.onMeta) host.onMeta(meta);
+      return { ok: true, reason: "unchanged" };
+    }
+
     pushing = true;
     meta.pendingPush = true;
     saveMeta(meta);
     if (host && host.onMeta) host.onMeta(meta);
 
     try {
-      var state = host.getState();
       var now = Sync.isoNow();
+      var encoded = await encodeCloudPayload(state);
       var rows = await api(
         "PATCH",
         "/rest/v1/households?id=eq." + encodeURIComponent(meta.householdId),
-        { payload: state, updated_at: now },
+        { payload: encoded, updated_at: now },
         { headers: { Prefer: "return=representation" } }
       );
       var row = Array.isArray(rows) ? rows[0] : rows;
@@ -411,6 +495,7 @@
       meta.lastPushAt = now;
       meta.lastSyncAt = now;
       meta.pendingPush = false;
+      meta.lastPushedFingerprint = fp;
       if (row) applyHouseholdToMeta(meta, row);
       clearError(meta);
       saveMeta(meta);
@@ -490,7 +575,7 @@
 
       if (decision.action === "pull" || decision.action === "conflict") {
         var localState = host.getState();
-        var cloudPayload = row.payload;
+        var cloudPayload = await decodeCloudPayload(row.payload);
         var differs = !Sync.payloadsRoughlyEqual(localState, cloudPayload);
         var localHas = Sync.hasMeaningfulLocalData(localState);
         var confirmFn = (host && host.confirmFn) || function (msg) { return window.confirm(msg); };
@@ -520,6 +605,7 @@
           meta.lastSyncAt = Sync.isoNow();
           meta.localChangeAt = meta.lastPullAt;
           meta.pendingPush = false;
+          meta.lastPushedFingerprint = Sync.payloadFingerprint(cloudPayload);
           clearError(meta);
           saveMeta(meta);
           if (host.showToast) host.showToast("Hentet fra husstanden");
@@ -579,7 +665,8 @@
     saveMeta(meta);
 
     var localState = host.getState();
-    var differs = !Sync.payloadsRoughlyEqual(localState, row.payload);
+    var cloudPayload = await decodeCloudPayload(row.payload);
+    var differs = !Sync.payloadsRoughlyEqual(localState, cloudPayload);
     var localHas = Sync.hasMeaningfulLocalData(localState);
     if (localHas && differs) {
       var confirmFn = (host && host.confirmFn) || function (msg) { return window.confirm(msg); };
@@ -592,13 +679,14 @@
         return { ok: true, action: "pushed-local" };
       }
     }
-    if (row.payload && typeof row.payload === "object") {
-      host.applyCloudState(row.payload);
+    if (cloudPayload && typeof cloudPayload === "object") {
+      host.applyCloudState(cloudPayload);
       meta = loadMeta();
       meta.lastSyncedCloudAt = row.updated_at;
       meta.lastPullAt = Sync.isoNow();
       meta.lastSyncAt = Sync.isoNow();
       meta.localChangeAt = meta.lastPullAt;
+      meta.lastPushedFingerprint = Sync.payloadFingerprint(cloudPayload);
       clearError(meta);
       saveMeta(meta);
       if (host.showToast) host.showToast("Hentet fra husstanden");

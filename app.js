@@ -179,7 +179,8 @@
         spendBuffer: 0,
         sparingView: "samlet"
       },
-      savingsGoals: []
+      savingsGoals: [],
+      archives: []
     };
   }
 
@@ -284,6 +285,12 @@
       const parsed = JSON.parse(raw);
       const migrated = Calc.migrateState(parsed);
       if (!Array.isArray(migrated.savingsGoals)) migrated.savingsGoals = [];
+      if (!Array.isArray(migrated.archives)) migrated.archives = [];
+      migrated.savingsGoals = Calc.refreshSavingsGoalsStatus(
+        migrated.savingsGoals,
+        migrated.months,
+        migrated.archives
+      );
       // Keep existing categories (incl. previously seeded). Empty array stays empty.
       ensureCategoryOrders(migrated);
       return migrated;
@@ -295,6 +302,8 @@
 
   function save() {
     try {
+      ensureArchives();
+      if (!Array.isArray(state.savingsGoals)) state.savingsGoals = [];
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       var C=window.FamilieBudsjettCloud;
       if(C&&typeof C.schedulePush==="function") C.schedulePush();
@@ -330,6 +339,24 @@
 
   function nameOf(who) {
     return Calc.nameOf(state.people, who);
+  }
+
+  function ensureArchives() {
+    if (!Array.isArray(state.archives)) state.archives = [];
+  }
+
+  function refreshGoalsFromDeposits() {
+    ensureArchives();
+    if (!Array.isArray(state.savingsGoals)) state.savingsGoals = [];
+    state.savingsGoals = Calc.refreshSavingsGoalsStatus(
+      state.savingsGoals,
+      state.months,
+      state.archives
+    );
+  }
+
+  function goalOpts() {
+    return { months: state.months, archives: state.archives || [] };
   }
 
   function activeCategories() {
@@ -2565,15 +2592,19 @@
   function renderYearOverview() {
     const section = $("#sectionMerYear");
     if (!section) return;
+    ensureArchives();
     const y = getYearOverviewYear();
     const label = $("#yearOverviewLabel");
     if (label) label.textContent = String(y);
+    const archivedEntry = Calc.findArchive(state.archives, y);
+    const isArchivedHotGone = !!archivedEntry && !Calc.yearHasMonthData(state.months, y);
     const roll = Calc.yearRollup(
       state.months,
       y,
       state.people,
       state.categories,
-      state.settings || {}
+      state.settings || {},
+      state.archives
     );
     const t = roll.totals;
     const totalsEl = $("#yearOverviewTotals");
@@ -2686,10 +2717,260 @@
         svg +
         '<div class="year-bars-legend"><span class="leg plan">Plan ut</span><span class="leg actual">Faktisk ut</span></div>';
     }
+
+    renderYearArchiveUI(y, archivedEntry, isArchivedHotGone);
+    renderMultiYearTrends();
   }
 
+  function renderYearArchiveUI(y, archivedEntry, isArchivedHotGone) {
+    const banner = $("#yearArchiveBanner");
+    const actions = $("#yearArchiveActions");
+    const suggested = Calc.yearsSuggestedForArchive(
+      state.months,
+      state.archives,
+      state.view.year,
+      3
+    );
+    if (banner) {
+      if (suggested.length) {
+        banner.hidden = false;
+        banner.innerHTML =
+          "<strong>Forslag:</strong> Arkiver " +
+          suggested
+            .map(function (yy) {
+              return String(yy);
+            })
+            .join(", ") +
+          " for mindre synk-payload. Aggregater beholdes; du kan eksportere og gjenopprette." +
+          '<div><button type="button" class="btn ghost sm" data-archive-suggest="' +
+          suggested[0] +
+          '">Arkiver ' +
+          suggested[0] +
+          "</button></div>";
+      } else {
+        banner.hidden = true;
+        banner.innerHTML = "";
+      }
+    }
+    if (!actions) return;
+    let html = "";
+    if (isArchivedHotGone) {
+      html +=
+        '<span class="archive-pill">Arkivert ' +
+        escapeHtml(String(y)) +
+        "</span>";
+      html +=
+        '<button type="button" class="btn ghost sm" id="btnRestoreYear">Gjenopprett år</button>';
+      html +=
+        '<button type="button" class="btn ghost sm" id="btnExportYearArchive">Eksporter arkiv</button>';
+    } else if (Calc.yearHasMonthData(state.months, y)) {
+      html += '<span class="archive-pill is-hot">Aktivt år</span>';
+      html +=
+        '<button type="button" class="btn ghost sm" id="btnArchiveYear">Arkiver år ' +
+        escapeHtml(String(y)) +
+        "</button>";
+      html +=
+        '<button type="button" class="btn ghost sm" id="btnExportYearLive">Eksporter år</button>';
+    } else if (archivedEntry) {
+      html +=
+        '<span class="archive-pill">Arkivert</span>' +
+        '<button type="button" class="btn ghost sm" id="btnRestoreYear">Gjenopprett år</button>' +
+        '<button type="button" class="btn ghost sm" id="btnExportYearArchive">Eksporter arkiv</button>';
+    } else {
+      html += '<span class="hint compact">Ingen data for dette året.</span>';
+    }
+    actions.innerHTML = html;
+  }
+
+  function renderMultiYearTrends() {
+    ensureArchives();
+    const cards = $("#multiYearCards");
+    const barsEl = $("#multiYearBars");
+    const years = Calc.listYearsWithData(state.months, state.archives);
+    const summaries = Calc.multiYearSummaries(
+      state.months,
+      state.archives,
+      state.people,
+      state.categories,
+      state.settings || {},
+      years
+    );
+    if (cards) {
+      if (!summaries.length) {
+        cards.innerHTML = '<p class="hint compact">Ingen år med data ennå.</p>';
+      } else {
+        cards.innerHTML = summaries
+          .slice()
+          .reverse()
+          .map(function (s) {
+            return (
+              '<button type="button" class="multi-year-card' +
+              (s.archived ? " is-archived" : "") +
+              '" data-jump-year-card="' +
+              s.year +
+              '"><div class="multi-year-card-year"><span>' +
+              s.year +
+              "</span>" +
+              (s.archived ? '<span class="archive-pill">arkiv</span>' : "") +
+              "</div><span>Faktisk ut</span><strong>" +
+              formatNOK(s.actualUt) +
+              "</strong><span>Til overs</span><strong>" +
+              formatNOK(s.tilOvers) +
+              "</strong><span>Sparing</span><strong>" +
+              formatNOK(s.savingsSum) +
+              "</strong></button>"
+            );
+          })
+          .join("");
+      }
+    }
+    if (barsEl) {
+      if (summaries.length < 2) {
+        barsEl.innerHTML = "";
+        return;
+      }
+      const maxV = Math.max(
+        1,
+        ...summaries.map(function (s) {
+          return Math.max(s.actualUt || 0, s.savingsSum || 0);
+        })
+      );
+      const w = Math.max(280, summaries.length * 28);
+      const h = 56;
+      const gap = 3;
+      const groupW = (w - gap * (summaries.length - 1)) / summaries.length;
+      let svg =
+        '<svg viewBox="0 0 ' +
+        w +
+        " " +
+        h +
+        '" width="100%" height="' +
+        h +
+        '" role="img" aria-label="Utgifter og sparing over år">';
+      summaries.forEach(function (s, i) {
+        const x = i * (groupW + gap);
+        const utH = Math.round(((s.actualUt || 0) / maxV) * (h - 4));
+        const savH = Math.round(((s.savingsSum || 0) / maxV) * (h - 4));
+        const bw = Math.max(2, (groupW - 2) / 2);
+        svg +=
+          '<rect x="' +
+          x +
+          '" y="' +
+          (h - utH) +
+          '" width="' +
+          bw +
+          '" height="' +
+          utH +
+          '" rx="1" fill="#b45309" opacity="0.7"/>';
+        svg +=
+          '<rect x="' +
+          (x + bw + 1) +
+          '" y="' +
+          (h - savH) +
+          '" width="' +
+          bw +
+          '" height="' +
+          savH +
+          '" rx="1" fill="#0f766e" opacity="0.65"/>';
+      });
+      svg += "</svg>";
+      barsEl.innerHTML =
+        svg +
+        '<div class="year-bars-legend"><span class="leg actual">Faktisk ut</span><span class="leg plan">Sparing</span></div>';
+    }
+  }
+
+  function archiveYearFlow(year, opts) {
+    opts = opts || {};
+    var exportFirst = opts.exportFirst;
+    ensureArchives();
+    const y = Number(year);
+    if (!Calc.yearHasMonthData(state.months, y)) {
+      showToast("Ingen månedsdata å arkivere for " + y);
+      return;
+    }
+    const entry = Calc.buildYearArchive(
+      state.months,
+      y,
+      state.people,
+      state.categories,
+      state.settings || {}
+    );
+    if (exportFirst !== false) {
+      downloadBlob(
+        "familie-budsjett-arkiv-" + y + ".json",
+        new Blob([Calc.exportArchiveJson(entry)], { type: "application/json" })
+      );
+    }
+    const ok = confirm(
+      "Arkivere år " +
+        y +
+        "?\n\nDetaljerte poster flyttes ut av aktiv data (aggregater beholdes). En eksportfil er lastet ned / kan lastes ned. Du kan gjenopprette senere."
+    );
+    if (!ok) return;
+    const result = Calc.archiveYearInState(
+      state.months,
+      state.archives,
+      y,
+      state.people,
+      state.categories,
+      state.settings || {}
+    );
+    state.months = result.months;
+    state.archives = result.archives;
+    save();
+    render();
+    showToast("År " + y + " arkivert");
+  }
+
+  function restoreYearFlow(year) {
+    ensureArchives();
+    const result = Calc.restoreYearFromArchive(state.months, state.archives, year);
+    if (!result) {
+      showToast("Fant ikke arkiv for " + year);
+      return;
+    }
+    if (
+      !confirm(
+        "Gjenopprette år " +
+          year +
+          " til aktiv data? Arkivposten fjernes (data beholdes i måneder)."
+      )
+    ) {
+      return;
+    }
+    state.months = result.months;
+    state.archives = result.archives;
+    save();
+    render();
+    showToast("År " + year + " gjenopprettet");
+  }
+
+  function exportYearFlow(year) {
+    ensureArchives();
+    let entry = Calc.findArchive(state.archives, year);
+    if (!entry) {
+      if (!Calc.yearHasMonthData(state.months, year)) {
+        showToast("Ingen data å eksportere");
+        return;
+      }
+      entry = Calc.buildYearArchive(
+        state.months,
+        year,
+        state.people,
+        state.categories,
+        state.settings || {}
+      );
+    }
+    downloadBlob(
+      "familie-budsjett-arkiv-" + year + ".json",
+      new Blob([Calc.exportArchiveJson(entry)], { type: "application/json" })
+    );
+    showToast("Eksportert år " + year);
+  }
 
   function renderSparingTabs() {
+
     const tabs = $("#sparingTabs");
     if (!tabs) return;
     const view = state.settings.sparingView || "samlet";
@@ -2723,7 +3004,8 @@
       state.months,
       state.view.year,
       state.view.month,
-      state.people
+      state.people,
+      state.archives
     );
     const view = state.settings.sparingView || "samlet";
     const slice =
@@ -2789,6 +3071,11 @@
         list.innerHTML = rows
           .map(function (s) {
             const note = (s.note || "").trim();
+            var goalName = "";
+            if (s.goalId) {
+              var gg = (state.savingsGoals || []).find(function (x) { return x.id === s.goalId; });
+              if (gg) goalName = gg.name;
+            }
             return (
               '<button type="button" class="sparing-row" data-edit-saving="' +
               escapeAttr(s.id) +
@@ -2797,6 +3084,7 @@
               '</span><span class="sparing-row-meta">' +
               escapeHtml(s.date || "") +
               (note ? " · " + escapeHtml(note) : "") +
+              (goalName ? '<span class="sparing-row-goal">→ ' + escapeHtml(goalName) + "</span>" : "") +
               '</span></span><span class="sparing-row-amt">' +
               formatNOK(s.amount) +
               "</span></button>"
@@ -2809,6 +3097,88 @@
       emptyHint.hidden = rows.length > 0 || (slice.denneManeden || 0) > 0 || (slice.hasNaa && slice.naa);
     }
     renderSavingsGoals();
+    renderSparingYearTrends();
+  }
+
+  function renderSparingYearTrends() {
+    ensureArchives();
+    const cards = $("#sparingYearCards");
+    const barsEl = $("#sparingYearBars");
+    if (!cards && !barsEl) return;
+    const years = Calc.listYearsWithData(state.months, state.archives);
+    const summaries = Calc.multiYearSummaries(
+      state.months,
+      state.archives,
+      state.people,
+      state.categories,
+      state.settings || {},
+      years
+    );
+    const view = state.settings.sparingView || "samlet";
+    // For person view, still show household year savings (simple); metrics stay global deposits
+    if (cards) {
+      if (!summaries.length) {
+        cards.innerHTML = '<p class="hint compact">Ingen sparehistorikk ennå.</p>';
+      } else {
+        cards.innerHTML = summaries
+          .slice()
+          .reverse()
+          .map(function (s) {
+            return (
+              '<div class="multi-year-card' +
+              (s.archived ? " is-archived" : "") +
+              '"><div class="multi-year-card-year"><span>' +
+              s.year +
+              "</span>" +
+              (s.archived ? '<span class="archive-pill">arkiv</span>' : "") +
+              "</div><span>Spareinnskudd</span><strong>" +
+              formatNOK(s.savingsSum) +
+              "</strong></div>"
+            );
+          })
+          .join("");
+      }
+    }
+    if (barsEl) {
+      if (summaries.length < 2) {
+        barsEl.innerHTML = "";
+        return;
+      }
+      const maxV = Math.max(
+        1,
+        ...summaries.map(function (s) {
+          return s.savingsSum || 0;
+        })
+      );
+      const w = Math.max(260, summaries.length * 26);
+      const h = 48;
+      const gap = 3;
+      const barW = (w - gap * (summaries.length - 1)) / summaries.length;
+      let svg =
+        '<svg viewBox="0 0 ' +
+        w +
+        " " +
+        h +
+        '" width="100%" height="' +
+        h +
+        '" role="img" aria-label="Sparing per år">';
+      summaries.forEach(function (s, i) {
+        const x = i * (barW + gap);
+        const bh = Math.round(((s.savingsSum || 0) / maxV) * (h - 4));
+        svg +=
+          '<rect x="' +
+          x +
+          '" y="' +
+          (h - bh) +
+          '" width="' +
+          Math.max(2, barW) +
+          '" height="' +
+          bh +
+          '" rx="1" fill="#0f766e" opacity="0.7"/>';
+      });
+      svg += "</svg>";
+      barsEl.innerHTML = svg;
+    }
   }
 
   function goalOwnerLabel(person) {
@@ -2874,66 +3244,155 @@
             : "samlet");
     fillGoalWhoSeg(defaultWho);
     $("#goalDelete").hidden = !edit;
+    const statusActions = $("#goalStatusActions");
+    if (statusActions) statusActions.hidden = !edit;
+    const hint = $("#goalSavedHint");
+    if (hint && edit) {
+      const prog = Calc.savingsGoalProgress(edit, goalOpts());
+      hint.textContent =
+        "Manuelt: " +
+        formatNOK(prog.baseSaved) +
+        " · Koblet innskudd: " +
+        formatNOK(prog.linkedSaved) +
+        " · Totalt: " +
+        formatNOK(prog.saved) +
+        " · Status: " +
+        (edit.status || "aktiv");
+    } else if (hint) {
+      hint.textContent =
+        "Kobling: spareinnskudd med valgt sparemål legges oppå dette tallet. ETA oppdateres automatisk.";
+    }
     openDlg("#dlgGoal");
     setTimeout(function () { $("#goalName").focus(); }, 50);
   }
 
+  function fillSavGoalSelect(selectedId) {
+    const sel = $("#savGoal");
+    if (!sel) return;
+    if (!Array.isArray(state.savingsGoals)) state.savingsGoals = [];
+    const active = state.savingsGoals.filter(function (g) {
+      const st = Calc.normalizeGoalStatus(g.status);
+      return st === "aktiv" || st === "nådd" || (selectedId && g.id === selectedId);
+    });
+    let html = '<option value="">Ingen kobling</option>';
+    active.forEach(function (g) {
+      html +=
+        '<option value="' +
+        escapeAttr(g.id) +
+        '"' +
+        (selectedId && selectedId === g.id ? " selected" : "") +
+        ">" +
+        escapeHtml(g.name) +
+        " (" +
+        escapeHtml(goalOwnerLabel(g.person)) +
+        ")</option>";
+    });
+    sel.innerHTML = html;
+  }
+
   function renderSavingsGoals() {
     if (!Array.isArray(state.savingsGoals)) state.savingsGoals = [];
+    ensureArchives();
+    refreshGoalsFromDeposits();
     const list = $("#goalsList");
     const emptyHint = $("#goalsEmptyHint");
+    const histWrap = $("#goalsHistoryWrap");
+    const histList = $("#goalsHistoryList");
     if (!list) return;
     const view = state.settings.sparingView || "samlet";
     let goals = state.savingsGoals.slice();
     if (view !== "samlet") {
       goals = goals.filter(function (g) { return g.person === view; });
     }
-    goals.sort(function (a, b) {
-      const pa = Calc.savingsGoalProgress(a);
-      const pb = Calc.savingsGoalProgress(b);
+    const opts = goalOpts();
+    const now = new Date();
+    function statusOf(g) {
+      return Calc.normalizeGoalStatus(g.status);
+    }
+    const active = goals.filter(function (g) {
+      const st = statusOf(g);
+      return st === "aktiv";
+    });
+    const history = goals.filter(function (g) {
+      const st = statusOf(g);
+      return st === "nådd" || st === "arkivert" || st === "forlatt";
+    });
+    active.sort(function (a, b) {
+      const pa = Calc.savingsGoalProgress(a, opts);
+      const pb = Calc.savingsGoalProgress(b, opts);
       if (pa.reached !== pb.reached) return pa.reached ? 1 : -1;
       return String(a.name || "").localeCompare(String(b.name || ""), "nb");
     });
-    if (!goals.length) {
-      list.innerHTML = "";
-      if (emptyHint) emptyHint.hidden = false;
-      return;
-    }
-    if (emptyHint) emptyHint.hidden = true;
-    const now = new Date();
-    list.innerHTML = goals
-      .map(function (g) {
-        const prog = Calc.savingsGoalProgress(g);
-        const eta = Calc.savingsGoalEta(g, now);
-        const etaClass =
-          eta.status === "reached"
-            ? " is-reached"
-            : eta.status === "need_monthly"
+    history.sort(function (a, b) {
+      return String(b.statusAt || "").localeCompare(String(a.statusAt || ""));
+    });
+
+    function cardHtml(g) {
+      const prog = Calc.savingsGoalProgress(g, opts);
+      const eta = Calc.savingsGoalEta(g, now, opts);
+      const st = statusOf(g);
+      const etaClass =
+        eta.status === "reached"
+          ? " is-reached"
+          : eta.status === "need_monthly"
+            ? " is-need"
+            : eta.status === "abandoned"
               ? " is-need"
               : "";
-        return (
-          '<button type="button" class="goal-card" data-edit-goal="' +
-          escapeAttr(g.id) +
-          '"><div class="goal-card-top"><span class="goal-card-name">' +
-          escapeHtml(g.name) +
-          '</span><span class="goal-card-who">' +
-          escapeHtml(goalOwnerLabel(g.person)) +
-          '</span></div><div class="goal-card-meta"><span><strong>' +
-          formatNOK(prog.saved) +
-          "</strong> av " +
-          formatNOK(prog.target) +
-          "</span><span>" +
-          formatNOK(g.monthly) +
-          '/mnd</span></div><div class="goal-progress" aria-hidden="true"><span style="width:' +
-          Math.round(prog.pct) +
-          '%"></span></div><div class="goal-card-eta' +
-          etaClass +
-          '">' +
-          escapeHtml(eta.label) +
-          "</div></button>"
-        );
-      })
-      .join("");
+      const stClass =
+        st === "nådd"
+          ? " is-naadd"
+          : st === "arkivert"
+            ? " is-arkivert"
+            : st === "forlatt"
+              ? " is-forlatt"
+              : "";
+      return (
+        '<button type="button" class="goal-card" data-edit-goal="' +
+        escapeAttr(g.id) +
+        '"><div class="goal-card-top"><span class="goal-card-name">' +
+        escapeHtml(g.name) +
+        '</span><span class="goal-card-who">' +
+        escapeHtml(goalOwnerLabel(g.person)) +
+        ' <span class="goal-card-status' +
+        stClass +
+        '">' +
+        escapeHtml(st) +
+        "</span></span></div><div class=\"goal-card-meta\"><span><strong>" +
+        formatNOK(prog.saved) +
+        "</strong> av " +
+        formatNOK(prog.target) +
+        (prog.linkedSaved
+          ? " <em class=\"opt\">(+" + formatNOK(prog.linkedSaved) + " koblet)</em>"
+          : "") +
+        "</span><span>" +
+        formatNOK(g.monthly) +
+        '/mnd</span></div><div class="goal-progress" aria-hidden="true"><span style="width:' +
+        Math.round(prog.pct) +
+        '%"></span></div><div class="goal-card-eta' +
+        etaClass +
+        '">' +
+        escapeHtml(eta.label) +
+        "</div></button>"
+      );
+    }
+
+    if (!active.length) {
+      list.innerHTML = "";
+      if (emptyHint) emptyHint.hidden = history.length > 0;
+    } else {
+      if (emptyHint) emptyHint.hidden = true;
+      list.innerHTML = active.map(cardHtml).join("");
+    }
+    if (histWrap && histList) {
+      if (!history.length) {
+        histWrap.hidden = true;
+        histList.innerHTML = "";
+      } else {
+        histWrap.hidden = false;
+        histList.innerHTML = history.map(cardHtml).join("");
+      }
+    }
   }
 
   function allTxForMonth(m) {
@@ -3480,6 +3939,7 @@
     $("#savNote").value = edit ? edit.note || "" : "";
     $("#savDate").value = edit ? edit.date || todayISO() : todayISO();
     $("#savDelete").hidden = !edit;
+    fillSavGoalSelect(edit && edit.goalId ? edit.goalId : "");
     openDlg("#dlgSaving");
     setTimeout(function () { $("#savAmount").focus(); }, 50);
   }
@@ -3861,6 +4321,12 @@
     if (!payload || typeof payload !== "object") return;
     state = Calc.migrateState(payload);
     if (!Array.isArray(state.savingsGoals)) state.savingsGoals = [];
+    if (!Array.isArray(state.archives)) state.archives = [];
+    state.savingsGoals = Calc.refreshSavingsGoalsStatus(
+      state.savingsGoals,
+      state.months,
+      state.archives
+    );
     ensureCategoryOrders(state);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -4634,6 +5100,38 @@
       });
     }
 
+    const yearSection = $("#sectionMerYear");
+    if (yearSection) {
+      yearSection.addEventListener("click", function (e) {
+        const t = e.target.closest("[data-archive-suggest], #btnArchiveYear, #btnRestoreYear, #btnExportYearArchive, #btnExportYearLive, [data-jump-year-card]");
+        if (!t) return;
+        if (t.hasAttribute("data-archive-suggest")) {
+          archiveYearFlow(parseInt(t.getAttribute("data-archive-suggest"), 10), { exportFirst: true });
+          return;
+        }
+        if (t.id === "btnArchiveYear") {
+          archiveYearFlow(getYearOverviewYear(), { exportFirst: true });
+          return;
+        }
+        if (t.id === "btnRestoreYear") {
+          restoreYearFlow(getYearOverviewYear());
+          return;
+        }
+        if (t.id === "btnExportYearArchive" || t.id === "btnExportYearLive") {
+          exportYearFlow(getYearOverviewYear());
+          return;
+        }
+        if (t.hasAttribute("data-jump-year-card")) {
+          yearOverviewYear = parseInt(t.getAttribute("data-jump-year-card"), 10);
+          renderYearOverview();
+          const label = $("#yearOverviewLabel");
+          if (label && label.scrollIntoView) {
+            label.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        }
+      });
+    }
+
     const btnMerPeople = $("#btnMerPeople");
     if (btnMerPeople) {
       btnMerPeople.addEventListener("click", function () {
@@ -5223,17 +5721,23 @@
         const person = (whoEl && whoEl.value) || "samlet";
         if (!Array.isArray(state.savingsGoals)) state.savingsGoals = [];
         const id = $("#goalId").value;
-        const payload = Calc.normalizeSavingsGoal(
+        const prev = id
+          ? (state.savingsGoals || []).find(function (x) { return x.id === id; })
+          : null;
+        let payload = Calc.normalizeSavingsGoal(
           {
             id: id || uid(),
             name: name,
             target: target,
             monthly: monthly,
             saved: saved,
-            person: person
+            person: person,
+            status: prev && prev.status ? prev.status : "aktiv",
+            statusAt: prev && prev.statusAt ? prev.statusAt : null
           },
           state.people
         );
+        payload = Calc.applyGoalAutoStatus(payload, state.months, state.archives);
         const idx = state.savingsGoals.findIndex(function (x) {
           return x.id === payload.id;
         });
@@ -5250,7 +5754,7 @@
       goalDelete.addEventListener("click", function () {
         const id = $("#goalId").value;
         if (!id) return;
-        if (!confirm("Slette dette sparemålet?")) return;
+        if (!confirm("Slette dette sparemålet? Tip: bruk Arkiver mål for å beholde historikk.")) return;
         state.savingsGoals = (state.savingsGoals || []).filter(function (x) {
           return x.id !== id;
         });
@@ -5260,6 +5764,30 @@
         showToast("Sparemål slettet");
       });
     }
+
+    function setGoalStatusFromDialog(status) {
+      const id = $("#goalId").value;
+      if (!id) return;
+      if (!Array.isArray(state.savingsGoals)) state.savingsGoals = [];
+      const idx = state.savingsGoals.findIndex(function (x) { return x.id === id; });
+      if (idx < 0) return;
+      const g = Object.assign({}, state.savingsGoals[idx]);
+      g.status = Calc.normalizeGoalStatus(status);
+      g.statusAt = new Date().toISOString();
+      state.savingsGoals[idx] = Calc.normalizeSavingsGoal(g, state.people);
+      closeDlg("#dlgGoal");
+      save();
+      render();
+      showToast("Status: " + g.status);
+    }
+    [["goalMarkReached", "nådd"], ["goalMarkAbandoned", "forlatt"], ["goalMarkArchived", "arkivert"], ["goalMarkActive", "aktiv"]].forEach(function (pair) {
+      const el = $("#" + pair[0]);
+      if (el) {
+        el.addEventListener("click", function () {
+          setGoalStatusFromDialog(pair[1]);
+        });
+      }
+    });
 
     $("#savingClose").addEventListener("click", function () { closeDlg("#dlgSaving"); });
     $("#savCancel").addEventListener("click", function () { closeDlg("#dlgSaving"); });
@@ -5273,12 +5801,15 @@
       }
       const m = getMonth();
       const id = $("#savId").value;
+      const goalEl = $("#savGoal");
+      const goalId = goalEl && goalEl.value ? goalEl.value : null;
       const payload = {
         id: id || uid(),
         person: $("#savPerson").value,
         amount: amount,
         note: $("#savNote").value.trim(),
-        date: $("#savDate").value || todayISO()
+        date: $("#savDate").value || todayISO(),
+        goalId: goalId
       };
       if (id) {
         const idx = m.savings.findIndex(function (x) { return x.id === id; });
@@ -5287,16 +5818,18 @@
       } else {
         m.savings.push(payload);
       }
+      refreshGoalsFromDeposits();
       save();
       closeDlg("#dlgSaving");
       render();
-      showToast("Sparing lagret");
+      showToast(goalId ? "Sparing lagret og koblet til mål" : "Sparing lagret");
     });
     $("#savDelete").addEventListener("click", function () {
       const id = $("#savId").value;
       if (!id || !confirm("Slette denne sparingen?")) return;
       const m = getMonth();
       m.savings = m.savings.filter(function (x) { return x.id !== id; });
+      refreshGoalsFromDeposits();
       save();
       closeDlg("#dlgSaving");
       render();

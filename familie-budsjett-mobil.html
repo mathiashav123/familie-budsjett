@@ -3902,6 +3902,100 @@ button.cat-group-header {
 .sync-join-block .btn { justify-content: center; min-height: 2.6rem; }
 .sync-footer-hint { margin: .85rem 0 0; }
 
+/* ——— 20y: arkiv / flerår / sparemål-historikk ——— */
+.archive-banner {
+  margin: .5rem 0 .75rem;
+  padding: .7rem .85rem;
+  border-radius: 12px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  color: #9a3412;
+  font-size: .9rem;
+  display: grid;
+  gap: .55rem;
+}
+.archive-banner strong { font-weight: 750; }
+.archive-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem;
+  margin: 0 0 .75rem;
+}
+.archive-actions .btn { min-height: 2.35rem; }
+.archive-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .2rem .55rem;
+  border-radius: 999px;
+  font-size: .75rem;
+  font-weight: 700;
+  background: #ecfeff;
+  color: #0f766e;
+  border: 1px solid #99f6e4;
+}
+.archive-pill.is-hot { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
+.multi-year-block { margin-top: 1rem; padding-top: .75rem; border-top: 1px solid #e5e7eb; }
+.multi-year-title, .goals-history-title {
+  margin: 0 0 .35rem;
+  font-size: 1rem;
+  font-weight: 750;
+}
+.multi-year-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .55rem;
+  margin-top: .55rem;
+}
+@media (min-width: 520px) {
+  .multi-year-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.multi-year-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: .55rem .65rem;
+  background: #fff;
+  display: grid;
+  gap: .2rem;
+}
+.multi-year-card.is-archived { background: #f8fafc; }
+.multi-year-card-year {
+  font-weight: 800;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: .35rem;
+}
+.multi-year-card span { font-size: .78rem; color: var(--muted, #6b7280); }
+.multi-year-card strong { font-size: .92rem; font-variant-numeric: tabular-nums; }
+.multi-year-bars { margin: .35rem 0 .25rem; }
+.goal-card-status {
+  font-size: .72rem;
+  font-weight: 750;
+  text-transform: lowercase;
+  padding: .12rem .45rem;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #075985;
+}
+.goal-card-status.is-naadd { background: #dcfce7; color: #166534; }
+.goal-card-status.is-arkivert { background: #f1f5f9; color: #475569; }
+.goal-card-status.is-forlatt { background: #fee2e2; color: #991b1b; }
+.goals-history-wrap { margin-top: 1rem; padding-top: .75rem; border-top: 1px dashed #e5e7eb; }
+.goals-history .goal-card { opacity: .92; }
+.goal-status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  margin-top: .35rem;
+}
+.sparing-row-goal {
+  display: block;
+  font-size: .75rem;
+  color: var(--teal-dark, #0f766e);
+  font-weight: 650;
+}
+
 </style>
 </head>
 <body>
@@ -4253,12 +4347,25 @@ button.cat-group-header {
         <div class="card-head">
           <h2 id="sparingGoalsTitle">Sparemål</h2>
         </div>
-        <p class="hint compact">Sett målbeløp og hvor mye du vil spare per måned. Appen viser når du kan forvente å nå målet. Fremdrift er «Spart mot dette målet» (eget tall per mål – ikke auto-koblet til spare saldo).</p>
+        <p class="hint compact">Sett målbeløp og månedlig sparing. Koble spareinnskudd til et mål for automatisk fremdrift. Status: aktiv / nådd / arkivert / forlatt.</p>
         <div class="sparing-actions">
           <button type="button" class="btn primary" id="btnGoalAdd">+ Nytt sparemål</button>
         </div>
-        <p class="hint compact" id="goalsEmptyHint" hidden>Ingen sparemål ennå. Trykk «+ Nytt sparemål».</p>
-        <div id="goalsList" class="goals-list" aria-label="Sparemål"></div>
+        <p class="hint compact" id="goalsEmptyHint" hidden>Ingen aktive sparemål. Trykk «+ Nytt sparemål».</p>
+        <div id="goalsList" class="goals-list" aria-label="Aktive sparemål"></div>
+        <div class="goals-history-wrap" id="goalsHistoryWrap" hidden>
+          <h3 class="goals-history-title">Fullførte / arkiverte</h3>
+          <div id="goalsHistoryList" class="goals-list goals-history" aria-label="Sparemål-historikk"></div>
+        </div>
+      </section>
+
+      <section class="card compact-card sparing-trend-card" id="sectionSparingTrend" aria-labelledby="sparingTrendTitle">
+        <div class="card-head">
+          <h2 id="sparingTrendTitle">Sparing over år</h2>
+        </div>
+        <p class="hint compact">Sum loggførte spareinnskudd per kalenderår (inkl. arkiverte år).</p>
+        <div id="sparingYearBars" class="year-bars multi-year-bars" aria-hidden="true"></div>
+        <div id="sparingYearCards" class="multi-year-cards" aria-label="Sparing per år"></div>
       </section>
     </div>
 
@@ -4361,7 +4468,9 @@ button.cat-group-header {
             <button type="button" class="icon-btn" id="yearOverviewNext" aria-label="Neste år">›</button>
           </div>
         </div>
-        <p class="hint compact">Plan inn / plan ut / faktisk ut / til overs per måned. Hjelper deg å se året under ett.</p>
+        <p class="hint compact">Plan inn / plan ut / faktisk ut / til overs per måned. Arkiver gamle år for mindre synk-payload – aggregater beholdes.</p>
+        <div id="yearArchiveBanner" class="archive-banner" hidden></div>
+        <div id="yearArchiveActions" class="archive-actions"></div>
         <div id="yearOverviewBars" class="year-bars" aria-hidden="true"></div>
         <div id="yearOverviewTotals" class="year-totals"></div>
         <div class="year-table-wrap">
@@ -4377,6 +4486,12 @@ button.cat-group-header {
             </thead>
             <tbody id="yearOverviewBody"></tbody>
           </table>
+        </div>
+        <div class="multi-year-block">
+          <h3 class="multi-year-title">Flere år</h3>
+          <p class="hint compact">År-for-år: faktisk ut, til overs og sparing.</p>
+          <div id="multiYearBars" class="year-bars multi-year-bars" aria-hidden="true"></div>
+          <div id="multiYearCards" class="multi-year-cards" aria-label="Årsoversikt flere år"></div>
         </div>
       </section>
 
@@ -4598,14 +4713,20 @@ button.cat-group-header {
           <input id="goalMonthly" class="input lg amount-expr" type="text" inputmode="decimal" placeholder="0" required autocomplete="off" />
         </label>
         <label class="field">
-          <span>Spart mot dette målet (kr)</span>
+          <span>Spart manuelt / start (kr)</span>
           <input id="goalSaved" class="input lg amount-expr" type="text" inputmode="decimal" placeholder="0" autocomplete="off" />
         </label>
-        <p class="hint compact">Oppdater «Spart» når du setter av penger til målet. Spare saldo og spareinnskudd er egen oversikt.</p>
+        <p class="hint compact" id="goalSavedHint">Kobling: spareinnskudd med valgt sparemål legges oppå dette tallet. ETA oppdateres automatisk.</p>
         <fieldset class="field">
           <legend>Hvem / eier</legend>
           <div class="seg who-seg" id="goalWhoSeg" role="radiogroup" aria-label="Hvem"></div>
         </fieldset>
+        <div class="goal-status-actions" id="goalStatusActions" hidden>
+          <button type="button" class="btn ghost sm" id="goalMarkReached">Marker nådd</button>
+          <button type="button" class="btn ghost sm" id="goalMarkAbandoned" type="button">Forlat</button>
+          <button type="button" class="btn ghost sm" id="goalMarkArchived" type="button">Arkiver mål</button>
+          <button type="button" class="btn ghost sm" id="goalMarkActive" type="button">Aktiver igjen</button>
+        </div>
       </div>
       <footer class="modal-foot">
         <button type="button" class="btn danger ghost" id="goalDelete" hidden>Slett</button>
@@ -4661,6 +4782,12 @@ button.cat-group-header {
         <label class="field">
           <span>Dato</span>
           <input id="savDate" class="input" type="date" required />
+        </label>
+        <label class="field">
+          <span>Sparemål <em class="opt">(valgfritt)</em></span>
+          <select id="savGoal" class="select lg" aria-label="Koble til sparemål">
+            <option value="">Ingen kobling</option>
+          </select>
         </label>
         <label class="field">
           <span>Notat <em class="opt">(valgfritt)</em></span>
@@ -5113,7 +5240,8 @@ window.FAMILIE_BUDGET_SUPABASE = {
           spendBuffer: 0,
           sparingView: "samlet"
         },
-        savingsGoals: []
+        savingsGoals: [],
+        archives: []
       };
     }
 
@@ -5232,7 +5360,8 @@ window.FAMILIE_BUDGET_SUPABASE = {
           person: mapLegacyOwner(s.person),
           amount: s.amount,
           note: s.note || "",
-          date: s.date || ""
+          date: s.date || "",
+          goalId: s.goalId ? String(s.goalId) : null
         });
       });
       (src.expenses || []).forEach(function (e) {
@@ -5296,7 +5425,8 @@ window.FAMILIE_BUDGET_SUPABASE = {
             parsed.settings && parsed.settings.pendingBalancesMigrationToast
           )
       },
-      savingsGoals: normalizeSavingsGoals(parsed.savingsGoals, people)
+      savingsGoals: normalizeSavingsGoals(parsed.savingsGoals, people),
+      archives: normalizeArchives(parsed.archives)
     };
   }
 
@@ -6437,11 +6567,23 @@ window.FAMILIE_BUDGET_SUPABASE = {
 
   /**
    * Sparemål (savings goals) — additive on state.savingsGoals[].
-   * Progress model: each goal has explicit `saved` ("Spart mot dette målet").
-   * Spare saldo and spareinnskudd stay separate overview metrics; they are NOT
-   * auto-linked (avoids ambiguity when several goals share one person/konto).
+   * Progress model: `saved` is manual base ("Spart manuelt").
+   * Optional spareinnskudd.goalId links deposits → effectiveSaved = saved + linked.
+   * Status: aktiv | nådd | arkivert | forlatt. Auto-set nådd when effective ≥ target.
    * person: person id | "felles" | "samlet" (husstand).
    */
+  var GOAL_STATUSES = ["aktiv", "nådd", "arkivert", "forlatt"];
+
+  function normalizeGoalStatus(raw) {
+    var s = String(raw || "").toLowerCase();
+    if (s === "completed" || s === "reached" || s === "naadd") s = "nådd";
+    if (s === "abandoned" || s === "dropped") s = "forlatt";
+    if (s === "archived" || s === "archive") s = "arkivert";
+    if (s === "active" || s === "aktiv") s = "aktiv";
+    if (GOAL_STATUSES.indexOf(s) >= 0) return s;
+    return "aktiv";
+  }
+
   function normalizeSavingsGoal(g, people) {
     g = g || {};
     var person = mapLegacyOwner(g.person || "samlet");
@@ -6451,13 +6593,20 @@ window.FAMILIE_BUDGET_SUPABASE = {
     var target = Number(g.target);
     var monthly = Number(g.monthly);
     var saved = Number(g.saved);
+    var status = normalizeGoalStatus(g.status);
+    // Legacy goals without status: if saved already ≥ target, treat as nådd
+    if (!g.status && Number.isFinite(target) && target > 0 && Number.isFinite(saved) && saved >= target) {
+      status = "nådd";
+    }
     return {
       id: g.id || uid(),
       name: (g.name && String(g.name).trim()) || "Sparemål",
       target: Number.isFinite(target) && target >= 0 ? target : 0,
       monthly: Number.isFinite(monthly) && monthly >= 0 ? monthly : 0,
       saved: Number.isFinite(saved) && saved >= 0 ? saved : 0,
-      person: person
+      person: person,
+      status: status,
+      statusAt: g.statusAt ? String(g.statusAt) : null
     };
   }
 
@@ -6468,18 +6617,275 @@ window.FAMILIE_BUDGET_SUPABASE = {
     });
   }
 
+  function clonePlain(obj) {
+    try {
+      return JSON.parse(JSON.stringify(obj));
+    } catch (e) {
+      return obj;
+    }
+  }
+
+  function normalizeArchives(list) {
+    if (!Array.isArray(list)) return [];
+    return list
+      .map(function (a) {
+        if (!a || typeof a !== "object") return null;
+        var year = Number(a.year);
+        if (!Number.isFinite(year)) return null;
+        return {
+          year: year,
+          archivedAt: a.archivedAt ? String(a.archivedAt) : null,
+          rollup: a.rollup && typeof a.rollup === "object" ? a.rollup : null,
+          sparingYear: Number.isFinite(Number(a.sparingYear)) ? Number(a.sparingYear) : 0,
+          months: a.months && typeof a.months === "object" ? a.months : {}
+        };
+      })
+      .filter(Boolean)
+      .sort(function (x, y) {
+        return x.year - y.year;
+      });
+  }
+
+  function findArchive(archives, year) {
+    var y = Number(year);
+    var list = archives || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].year === y) return list[i];
+    }
+    return null;
+  }
+
+  function monthKeysForYear(year) {
+    var y = Number(year);
+    var keys = [];
+    for (var month = 0; month < 12; month++) {
+      keys.push(y + "-" + String(month + 1).padStart(2, "0"));
+    }
+    return keys;
+  }
+
+  function yearHasMonthData(months, year) {
+    var keys = monthKeysForYear(year);
+    var map = months || {};
+    for (var i = 0; i < keys.length; i++) {
+      var m = map[keys[i]];
+      if (!m) continue;
+      if ((m.expenses && m.expenses.length) || (m.incomes && m.incomes.length) || (m.savings && m.savings.length)) {
+        return true;
+      }
+      if (m.budgets && Object.keys(m.budgets).length) return true;
+      if (m.plannedIncome && Object.keys(m.plannedIncome).length) return true;
+    }
+    return false;
+  }
+
+  function listYearsWithData(months, archives) {
+    var set = {};
+    Object.keys(months || {}).forEach(function (k) {
+      var y = parseInt(String(k).slice(0, 4), 10);
+      if (Number.isFinite(y)) set[y] = true;
+    });
+    (archives || []).forEach(function (a) {
+      if (a && Number.isFinite(a.year)) set[a.year] = true;
+    });
+    return Object.keys(set)
+      .map(Number)
+      .sort(function (a, b) {
+        return a - b;
+      });
+  }
+
+  /**
+   * Build archive entry for a calendar year. Full months kept for restore/export;
+   * rollup + sparingYear for year view without hot months[].
+   */
+  function buildYearArchive(months, year, people, categories, settings) {
+    var y = Number(year);
+    var roll = yearRollup(months, y, people, categories, settings || {});
+    var map = months || {};
+    var archivedMonths = {};
+    var sparingYear = 0;
+    monthKeysForYear(y).forEach(function (key) {
+      if (map[key]) {
+        archivedMonths[key] = clonePlain(map[key]);
+        sparingYear += sumSavingsForMonth(map[key], null);
+      }
+    });
+    // Enrich rollup months with savingsSum
+    (roll.months || []).forEach(function (row) {
+      row.savingsSum = sumSavingsForMonth(map[row.key], null);
+    });
+    roll.totals = roll.totals || {};
+    roll.totals.savingsSum = sparingYear;
+    return {
+      year: y,
+      archivedAt: new Date().toISOString(),
+      rollup: roll,
+      sparingYear: sparingYear,
+      months: archivedMonths
+    };
+  }
+
+  /**
+   * Archive year: remove months from hot map, append/replace archives entry.
+   * Returns { stateMonths, archives, entry } — does not mutate inputs.
+   */
+  function archiveYearInState(months, archives, year, people, categories, settings) {
+    var entry = buildYearArchive(months, year, people, categories, settings);
+    var nextMonths = Object.assign({}, months || {});
+    monthKeysForYear(year).forEach(function (key) {
+      delete nextMonths[key];
+    });
+    var nextArchives = (archives || []).filter(function (a) {
+      return a && a.year !== entry.year;
+    });
+    nextArchives.push(entry);
+    nextArchives.sort(function (a, b) {
+      return a.year - b.year;
+    });
+    return { months: nextMonths, archives: nextArchives, entry: entry };
+  }
+
+  /**
+   * Restore archived year back into months. Full months required.
+   * Returns { months, archives } or null if missing.
+   */
+  function restoreYearFromArchive(months, archives, year) {
+    var entry = findArchive(archives, year);
+    if (!entry || !entry.months || !Object.keys(entry.months).length) return null;
+    var nextMonths = Object.assign({}, months || {});
+    Object.keys(entry.months).forEach(function (key) {
+      nextMonths[key] = clonePlain(entry.months[key]);
+    });
+    var nextArchives = (archives || []).filter(function (a) {
+      return a && a.year !== Number(year);
+    });
+    return { months: nextMonths, archives: nextArchives, entry: entry };
+  }
+
+  function exportArchiveJson(entry) {
+    return JSON.stringify(
+      {
+        type: "familie-budsjett-year-archive",
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        archive: entry
+      },
+      null,
+      2
+    );
+  }
+
+  /** Years older than (currentYear - keepRecentYears) with hot data, not yet archived. */
+  function yearsSuggestedForArchive(months, archives, currentYear, keepRecentYears) {
+    var keep = keepRecentYears == null ? 3 : Number(keepRecentYears);
+    if (!Number.isFinite(keep) || keep < 1) keep = 3;
+    var cy = Number(currentYear);
+    if (!Number.isFinite(cy)) cy = new Date().getFullYear();
+    var cutoff = cy - keep;
+    var out = [];
+    listYearsWithData(months, []).forEach(function (y) {
+      if (y <= cutoff && yearHasMonthData(months, y) && !findArchive(archives, y)) {
+        out.push(y);
+      }
+    });
+    return out;
+  }
+
+  /**
+   * Sum spareinnskudd linked to a goal across hot months + archived months.
+   */
+  function sumLinkedDepositsForGoal(months, archives, goalId) {
+    if (!goalId) return 0;
+    var gid = String(goalId);
+    var sum = 0;
+    function addFromMap(map) {
+      Object.keys(map || {}).forEach(function (k) {
+        var m = map[k];
+        if (!m || !Array.isArray(m.savings)) return;
+        m.savings.forEach(function (s) {
+          if (s && s.goalId && String(s.goalId) === gid) {
+            var n = Number(s.amount);
+            if (Number.isFinite(n)) sum += n;
+          }
+        });
+      });
+    }
+    addFromMap(months);
+    (archives || []).forEach(function (a) {
+      if (a && a.months) addFromMap(a.months);
+    });
+    return sum;
+  }
+
+  function effectiveGoalSaved(goal, months, archives) {
+    var base = Number(goal && goal.saved);
+    if (!Number.isFinite(base) || base < 0) base = 0;
+    return base + sumLinkedDepositsForGoal(months, archives, goal && goal.id);
+  }
+
+  /**
+   * Auto-promote aktiv → nådd when effective saved ≥ target.
+   * Does not demote manual arkivert/forlatt. Returns updated goal (may mutate copy).
+   */
+  function applyGoalAutoStatus(goal, months, archives, atIso) {
+    var g = goal || {};
+    var status = normalizeGoalStatus(g.status);
+    var eff = effectiveGoalSaved(g, months, archives);
+    var target = Number(g.target);
+    if (!Number.isFinite(target)) target = 0;
+    if (status === "aktiv" && target > 0 && eff >= target) {
+      return Object.assign({}, g, {
+        status: "nådd",
+        statusAt: atIso || new Date().toISOString()
+      });
+    }
+    return Object.assign({}, g, { status: status });
+  }
+
+  function refreshSavingsGoalsStatus(goals, months, archives, atIso) {
+    if (!Array.isArray(goals)) return [];
+    return goals.map(function (g) {
+      return applyGoalAutoStatus(g, months, archives, atIso);
+    });
+  }
+
   /**
    * ETA for a sparemål from a reference date (defaults to today).
-   * monthsNeeded = ceil(remaining / monthly); add that many calendar months
-   * to the reference month. Label: "ca. mnd ÅÅÅÅ" / "nådd" / need monthly.
+   * Uses effective saved when months/archives provided via opts.
    */
-  function savingsGoalEta(goal, fromDate) {
+  function savingsGoalEta(goal, fromDate, opts) {
+    opts = opts || {};
     var target = Number(goal && goal.target);
-    var saved = Number(goal && goal.saved);
+    var saved =
+      opts.months || opts.archives
+        ? effectiveGoalSaved(goal, opts.months, opts.archives)
+        : Number(goal && goal.saved);
     var monthly = Number(goal && goal.monthly);
     if (!Number.isFinite(target)) target = 0;
     if (!Number.isFinite(saved)) saved = 0;
     if (!Number.isFinite(monthly)) monthly = 0;
+    var statusField = normalizeGoalStatus(goal && goal.status);
+    if (statusField === "nådd" || statusField === "arkivert") {
+      return {
+        status: "reached",
+        monthsNeeded: 0,
+        remaining: 0,
+        year: null,
+        month: null,
+        label: statusField === "arkivert" ? "arkivert" : "nådd"
+      };
+    }
+    if (statusField === "forlatt") {
+      return {
+        status: "abandoned",
+        monthsNeeded: null,
+        remaining: Math.max(0, target - saved),
+        year: null,
+        month: null,
+        label: "forlatt"
+      };
+    }
     var remaining = target - saved;
     if (remaining <= 0) {
       return {
@@ -6521,18 +6927,25 @@ window.FAMILIE_BUDGET_SUPABASE = {
     };
   }
 
-  function savingsGoalProgress(goal) {
+  function savingsGoalProgress(goal, opts) {
+    opts = opts || {};
     var target = Number(goal && goal.target);
-    var saved = Number(goal && goal.saved);
+    var saved =
+      opts.months || opts.archives
+        ? effectiveGoalSaved(goal, opts.months, opts.archives)
+        : Number(goal && goal.saved);
     if (!Number.isFinite(target)) target = 0;
     if (!Number.isFinite(saved)) saved = 0;
-    var pct = target > 0 ? Math.min(100, Math.max(0, (saved / target) * 100)) : (saved > 0 ? 100 : 0);
+    var pct = target > 0 ? Math.min(100, Math.max(0, (saved / target) * 100)) : saved > 0 ? 100 : 0;
     return {
       target: target,
       saved: saved,
+      baseSaved: Number(goal && goal.saved) || 0,
+      linkedSaved: Math.max(0, saved - (Number(goal && goal.saved) || 0)),
       remaining: Math.max(0, target - saved),
       pct: pct,
-      reached: target > 0 ? saved >= target : saved > 0
+      reached: target > 0 ? saved >= target : saved > 0,
+      status: normalizeGoalStatus(goal && goal.status)
     };
   }
 
@@ -6553,15 +6966,14 @@ window.FAMILIE_BUDGET_SUPABASE = {
    * - naa: current spare saldo from balances (manual)
    * - denneManeden: sum of logged savings in the viewed month
    * - iAar: sum of logged savings in the viewed calendar year
-   * - totalt: sum of logged savings across all stored months
+   * - totalt: sum of logged savings across all stored months (+ archives if provided)
    */
-  function sparingStats(months, year, monthIndex, people) {
+  function sparingStats(months, year, monthIndex, people, archives) {
     var y = Number(year);
     var mi = Number(monthIndex);
     if (!Number.isFinite(mi) || mi < 0) mi = 0;
     if (mi > 11) mi = 11;
-    var key =
-      y + "-" + String(mi + 1).padStart(2, "0");
+    var key = y + "-" + String(mi + 1).padStart(2, "0");
     var monthsMap = months || {};
     var m = monthsMap[key] || {
       balances: {},
@@ -6579,28 +6991,44 @@ window.FAMILIE_BUDGET_SUPABASE = {
       totalt: 0
     };
 
+    function monthFromHotOrArchive(k) {
+      if (monthsMap[k]) return monthsMap[k];
+      var yy = parseInt(String(k).slice(0, 4), 10);
+      var arch = findArchive(archives, yy);
+      if (arch && arch.months && arch.months[k]) return arch.months[k];
+      return null;
+    }
+
     function sumYearForPerson(personId) {
       var sum = 0;
       for (var month = 0; month < 12; month++) {
-        var k =
-          y + "-" + String(month + 1).padStart(2, "0");
-        sum += sumSavingsForMonth(monthsMap[k], personId);
+        var k = y + "-" + String(month + 1).padStart(2, "0");
+        sum += sumSavingsForMonth(monthFromHotOrArchive(k), personId);
       }
+      // Prefer archive sparingYear for samlet when fully archived and no hot data
       return sum;
     }
 
     function sumAllForPerson(personId) {
       var sum = 0;
+      var seen = {};
       Object.keys(monthsMap).forEach(function (k) {
+        seen[k] = true;
         sum += sumSavingsForMonth(monthsMap[k], personId);
+      });
+      (archives || []).forEach(function (a) {
+        if (!a || !a.months) return;
+        Object.keys(a.months).forEach(function (k) {
+          if (seen[k]) return;
+          sum += sumSavingsForMonth(a.months[k], personId);
+        });
       });
       return sum;
     }
 
     active.forEach(function (p) {
       var bal = (m.balances && m.balances[p.id]) || {};
-      var spare =
-        bal.spare == null || bal.spare === "" ? null : Number(bal.spare);
+      var spare = bal.spare == null || bal.spare === "" ? null : Number(bal.spare);
       var hasNaa = spare != null && !Number.isNaN(spare);
       var naa = hasNaa ? spare : 0;
       var denne = sumSavingsForMonth(m, p.id);
@@ -6637,14 +7065,21 @@ window.FAMILIE_BUDGET_SUPABASE = {
   /**
    * Year overview: planInn / planUt / actualUt / tilOvers per month + totals.
    * tilOvers = planInn − planUt (planned remainder).
+   * If months missing but archive exists, returns archive.rollup (with savingsSum).
    */
-  function yearRollup(months, year, people, categories, settings) {
-    var rows = [];
-    var totals = { planInn: 0, planUt: 0, actualUt: 0, tilOvers: 0, actualInn: 0 };
+  function yearRollup(months, year, people, categories, settings, archives) {
     var y = Number(year);
+    var hasHot = yearHasMonthData(months, y);
+    if (!hasHot && archives) {
+      var arch = findArchive(archives, y);
+      if (arch && arch.rollup) {
+        return clonePlain(arch.rollup);
+      }
+    }
+    var rows = [];
+    var totals = { planInn: 0, planUt: 0, actualUt: 0, tilOvers: 0, actualInn: 0, savingsSum: 0 };
     for (var month = 0; month < 12; month++) {
-      var key =
-        y + "-" + String(month + 1).padStart(2, "0");
+      var key = y + "-" + String(month + 1).padStart(2, "0");
       var m = (months && months[key]) || {
         balances: {},
         budgets: {},
@@ -6660,6 +7095,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
       var actualUt = c.samletUtgifter || 0;
       var actualInn = c.samletInntekt || 0;
       var tilOvers = planInn - planUt;
+      var savingsSum = sumSavingsForMonth(m, null);
       rows.push({
         month: month,
         key: key,
@@ -6667,15 +7103,42 @@ window.FAMILIE_BUDGET_SUPABASE = {
         planUt: planUt,
         actualUt: actualUt,
         actualInn: actualInn,
-        tilOvers: tilOvers
+        tilOvers: tilOvers,
+        savingsSum: savingsSum
       });
       totals.planInn += planInn;
       totals.planUt += planUt;
       totals.actualUt += actualUt;
       totals.actualInn += actualInn;
       totals.tilOvers += tilOvers;
+      totals.savingsSum += savingsSum;
     }
     return { year: y, months: rows, totals: totals };
+  }
+
+  /**
+   * Multi-year trend cards: one rollup summary per year (hot or archive).
+   */
+  function multiYearSummaries(months, archives, people, categories, settings, yearList) {
+    var years = yearList && yearList.length ? yearList.slice() : listYearsWithData(months, archives);
+    years.sort(function (a, b) {
+      return a - b;
+    });
+    return years.map(function (y) {
+      var roll = yearRollup(months, y, people, categories, settings || {}, archives);
+      var t = roll.totals || {};
+      var archived = !!findArchive(archives, y) && !yearHasMonthData(months, y);
+      return {
+        year: y,
+        archived: archived,
+        planInn: t.planInn || 0,
+        planUt: t.planUt || 0,
+        actualUt: t.actualUt || 0,
+        actualInn: t.actualInn || 0,
+        tilOvers: t.tilOvers || 0,
+        savingsSum: t.savingsSum != null ? t.savingsSum : 0
+      };
+    });
   }
 
   /** True if string looks like an arithmetic expression (not a plain number). */
@@ -6735,8 +7198,24 @@ window.FAMILIE_BUDGET_SUPABASE = {
     sparingStats: sparingStats,
     normalizeSavingsGoal: normalizeSavingsGoal,
     normalizeSavingsGoals: normalizeSavingsGoals,
+    normalizeGoalStatus: normalizeGoalStatus,
+    normalizeArchives: normalizeArchives,
+    findArchive: findArchive,
+    yearHasMonthData: yearHasMonthData,
+    listYearsWithData: listYearsWithData,
+    buildYearArchive: buildYearArchive,
+    archiveYearInState: archiveYearInState,
+    restoreYearFromArchive: restoreYearFromArchive,
+    exportArchiveJson: exportArchiveJson,
+    yearsSuggestedForArchive: yearsSuggestedForArchive,
+    sumLinkedDepositsForGoal: sumLinkedDepositsForGoal,
+    effectiveGoalSaved: effectiveGoalSaved,
+    applyGoalAutoStatus: applyGoalAutoStatus,
+    refreshSavingsGoalsStatus: refreshSavingsGoalsStatus,
+    multiYearSummaries: multiYearSummaries,
     savingsGoalEta: savingsGoalEta,
     savingsGoalProgress: savingsGoalProgress,
+    GOAL_STATUSES: GOAL_STATUSES,
     actualForCategory: actualForCategory,
     actualForCategoryOwner: actualForCategoryOwner,
     calcPerson: calcPerson,
@@ -6976,6 +7455,118 @@ window.FAMILIE_BUDGET_SUPABASE = {
       .replace(/[^A-Z0-9]/g, "");
   }
 
+  /**
+   * Cheap fingerprint for skip-unchanged push (not cryptographic).
+   */
+  function payloadFingerprint(state) {
+    try {
+      var s = JSON.stringify(state);
+      var hash = 2166136261;
+      for (var i = 0; i < s.length; i++) {
+        hash ^= s.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+      }
+      return s.length + ":" + (hash >>> 0).toString(16);
+    } catch (e) {
+      return String(Date.now());
+    }
+  }
+
+  function estimatePayloadBytes(state) {
+    try {
+      return JSON.stringify(state).length;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  /**
+   * Pack state for cloud households.payload.
+   * Small payloads: plain state (backward compatible).
+   * Large: { _fb: 1, enc: "json", active, archives } structured split
+   *   so readers can ignore archives detail if needed; still one JSONB.
+   * Optional gzip-b64 when CompressionStream/zlib available (async helper outside).
+   *
+   * Structured form always includes version + updated_at for smarter clients.
+   */
+  function packCloudPayload(state, opts) {
+    opts = opts || {};
+    var st = state && typeof state === "object" ? state : {};
+    var archives = Array.isArray(st.archives) ? st.archives : [];
+    var active = Object.assign({}, st);
+    // Keep archives on active too for plain fallback; structured uses split.
+    var bytes = estimatePayloadBytes(st);
+    var forceStruct = !!opts.forceStructured || bytes >= (opts.threshold || 96 * 1024) || archives.length > 0;
+    if (!forceStruct) {
+      return st;
+    }
+    return {
+      _fb: 1,
+      version: st.version || 2,
+      updated_at: opts.updatedAt || isoNow(),
+      activePayload: active,
+      archives: archives,
+      archiveRefs: archives.map(function (a) {
+        return {
+          year: a.year,
+          archivedAt: a.archivedAt || null,
+          monthCount: a.months ? Object.keys(a.months).length : 0,
+          sparingYear: a.sparingYear || 0
+        };
+      })
+    };
+  }
+
+  /**
+   * Unpack cloud payload → plain app state.
+   * Accepts legacy plain state OR {_fb:1,...} envelope.
+   */
+  function unpackCloudPayload(payload) {
+    if (!payload || typeof payload !== "object") return payload;
+    if (payload._fb === 1) {
+      if (payload.enc === "gzip-b64" && typeof payload.body === "string") {
+        // Caller should decompress via unpackGzipCloudPayload; return marker
+        return payload;
+      }
+      var active = payload.activePayload && typeof payload.activePayload === "object"
+        ? Object.assign({}, payload.activePayload)
+        : Object.assign({}, payload);
+      delete active._fb;
+      delete active.activePayload;
+      delete active.archiveRefs;
+      if (Array.isArray(payload.archives)) {
+        active.archives = payload.archives;
+      } else if (!Array.isArray(active.archives)) {
+        active.archives = [];
+      }
+      return active;
+    }
+    if (!Array.isArray(payload.archives)) {
+      // additive default for older clouds
+      var clone = Object.assign({}, payload);
+      if (clone.archives == null) clone.archives = [];
+      return clone;
+    }
+    return payload;
+  }
+
+  function isGzipCloudPayload(payload) {
+    return !!(payload && payload._fb === 1 && payload.enc === "gzip-b64" && payload.body);
+  }
+
+  /** Build gzip-b64 envelope from UTF-8 JSON string (body already compressed+b64). */
+  function wrapGzipCloudPayload(base64Body, rawBytes, meta) {
+    meta = meta || {};
+    return {
+      _fb: 1,
+      enc: "gzip-b64",
+      body: base64Body,
+      bytes: rawBytes || null,
+      version: meta.version || 2,
+      updated_at: meta.updated_at || isoNow()
+    };
+  }
+
   return {
     parseTs: parseTs,
     isoNow: isoNow,
@@ -6986,6 +7577,12 @@ window.FAMILIE_BUDGET_SUPABASE = {
     formatLastSyncNb: formatLastSyncNb,
     syncStatusLabel: syncStatusLabel,
     normalizeInviteCode: normalizeInviteCode,
+    payloadFingerprint: payloadFingerprint,
+    estimatePayloadBytes: estimatePayloadBytes,
+    packCloudPayload: packCloudPayload,
+    unpackCloudPayload: unpackCloudPayload,
+    isGzipCloudPayload: isGzipCloudPayload,
+    wrapGzipCloudPayload: wrapGzipCloudPayload,
     SYNC_META_KEY: "familie-budsjett-sync-meta-v1"
   };
 });
@@ -7042,7 +7639,8 @@ window.FAMILIE_BUDGET_SUPABASE = {
       lastSyncAt: null,
       pendingPush: false,
       lastError: null,
-      keepLocalOnce: false
+      keepLocalOnce: false,
+      lastPushedFingerprint: null
     };
   }
 
@@ -7170,6 +7768,74 @@ window.FAMILIE_BUDGET_SUPABASE = {
   function clearError(meta) {
     meta.lastError = null;
     return meta;
+  }
+
+  function bytesToBase64(bytes) {
+    var bin = "";
+    var i;
+    var CHUNK = 0x8000;
+    for (i = 0; i < bytes.length; i += CHUNK) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+    }
+    return btoa(bin);
+  }
+
+  function base64ToBytes(b64) {
+    var bin = atob(b64);
+    var out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  async function gzipStringToBase64(str) {
+    if (typeof CompressionStream === "undefined") return null;
+    var stream = new Blob([str]).stream().pipeThrough(new CompressionStream("gzip"));
+    var buf = await new Response(stream).arrayBuffer();
+    return bytesToBase64(new Uint8Array(buf));
+  }
+
+  async function gunzipBase64ToString(b64) {
+    if (typeof DecompressionStream === "undefined") {
+      throw new Error("Kan ikke dekomprimere synk-data i denne nettleseren");
+    }
+    var bytes = base64ToBytes(b64);
+    var stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+    return await new Response(stream).text();
+  }
+
+  /**
+   * Encode local state for households.payload:
+   * - structured split when archives or large
+   * - gzip-b64 envelope when still large and CompressionStream exists
+   */
+  async function encodeCloudPayload(state) {
+    var packed = Sync.packCloudPayload(state, { updatedAt: Sync.isoNow() });
+    var json = JSON.stringify(packed);
+    var threshold = 120 * 1024;
+    if (json.length >= threshold) {
+      try {
+        var b64 = await gzipStringToBase64(json);
+        if (b64 && b64.length < json.length * 0.92) {
+          return Sync.wrapGzipCloudPayload(b64, json.length, {
+            version: state && state.version,
+            updated_at: Sync.isoNow()
+          });
+        }
+      } catch (e) {
+        console.warn("gzip sync skipped", e);
+      }
+    }
+    return packed;
+  }
+
+  async function decodeCloudPayload(raw) {
+    if (!raw || typeof raw !== "object") return raw;
+    if (Sync.isGzipCloudPayload(raw)) {
+      var text = await gunzipBase64ToString(raw.body);
+      var inner = JSON.parse(text);
+      return Sync.unpackCloudPayload(inner);
+    }
+    return Sync.unpackCloudPayload(raw);
   }
 
   function getSessionUser() {
@@ -7352,9 +8018,10 @@ window.FAMILIE_BUDGET_SUPABASE = {
   async function createHouseholdWithLocal() {
     await refreshSessionIfNeeded();
     var state = host.getState();
+    var encoded = await encodeCloudPayload(state);
     var row = await api("POST", "/rest/v1/rpc/create_household", {
       p_name: "Familie",
-      p_payload: state
+      p_payload: encoded
     });
     var meta = loadMeta();
     applyHouseholdToMeta(meta, {
@@ -7366,6 +8033,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     meta.lastPushAt = Sync.isoNow();
     meta.lastSyncAt = Sync.isoNow();
     meta.pendingPush = false;
+    meta.lastPushedFingerprint = Sync.payloadFingerprint(state);
     clearError(meta);
     saveMeta(meta);
     return row;
@@ -7385,18 +8053,31 @@ window.FAMILIE_BUDGET_SUPABASE = {
     await refreshSessionIfNeeded();
     if (!getSessionUser()) return { ok: false, reason: "not-logged-in" };
 
+    var state = host.getState();
+    var fp = Sync.payloadFingerprint(state);
+    if (meta.lastPushedFingerprint && meta.lastPushedFingerprint === fp && !meta.pendingPush) {
+      return { ok: true, reason: "unchanged" };
+    }
+    // If fingerprint matches last push and only pending flag is stale, clear it
+    if (meta.lastPushedFingerprint === fp && meta.lastSyncedCloudAt) {
+      meta.pendingPush = false;
+      saveMeta(meta);
+      if (host && host.onMeta) host.onMeta(meta);
+      return { ok: true, reason: "unchanged" };
+    }
+
     pushing = true;
     meta.pendingPush = true;
     saveMeta(meta);
     if (host && host.onMeta) host.onMeta(meta);
 
     try {
-      var state = host.getState();
       var now = Sync.isoNow();
+      var encoded = await encodeCloudPayload(state);
       var rows = await api(
         "PATCH",
         "/rest/v1/households?id=eq." + encodeURIComponent(meta.householdId),
-        { payload: state, updated_at: now },
+        { payload: encoded, updated_at: now },
         { headers: { Prefer: "return=representation" } }
       );
       var row = Array.isArray(rows) ? rows[0] : rows;
@@ -7405,6 +8086,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
       meta.lastPushAt = now;
       meta.lastSyncAt = now;
       meta.pendingPush = false;
+      meta.lastPushedFingerprint = fp;
       if (row) applyHouseholdToMeta(meta, row);
       clearError(meta);
       saveMeta(meta);
@@ -7484,7 +8166,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
 
       if (decision.action === "pull" || decision.action === "conflict") {
         var localState = host.getState();
-        var cloudPayload = row.payload;
+        var cloudPayload = await decodeCloudPayload(row.payload);
         var differs = !Sync.payloadsRoughlyEqual(localState, cloudPayload);
         var localHas = Sync.hasMeaningfulLocalData(localState);
         var confirmFn = (host && host.confirmFn) || function (msg) { return window.confirm(msg); };
@@ -7514,6 +8196,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
           meta.lastSyncAt = Sync.isoNow();
           meta.localChangeAt = meta.lastPullAt;
           meta.pendingPush = false;
+          meta.lastPushedFingerprint = Sync.payloadFingerprint(cloudPayload);
           clearError(meta);
           saveMeta(meta);
           if (host.showToast) host.showToast("Hentet fra husstanden");
@@ -7573,7 +8256,8 @@ window.FAMILIE_BUDGET_SUPABASE = {
     saveMeta(meta);
 
     var localState = host.getState();
-    var differs = !Sync.payloadsRoughlyEqual(localState, row.payload);
+    var cloudPayload = await decodeCloudPayload(row.payload);
+    var differs = !Sync.payloadsRoughlyEqual(localState, cloudPayload);
     var localHas = Sync.hasMeaningfulLocalData(localState);
     if (localHas && differs) {
       var confirmFn = (host && host.confirmFn) || function (msg) { return window.confirm(msg); };
@@ -7586,13 +8270,14 @@ window.FAMILIE_BUDGET_SUPABASE = {
         return { ok: true, action: "pushed-local" };
       }
     }
-    if (row.payload && typeof row.payload === "object") {
-      host.applyCloudState(row.payload);
+    if (cloudPayload && typeof cloudPayload === "object") {
+      host.applyCloudState(cloudPayload);
       meta = loadMeta();
       meta.lastSyncedCloudAt = row.updated_at;
       meta.lastPullAt = Sync.isoNow();
       meta.lastSyncAt = Sync.isoNow();
       meta.localChangeAt = meta.lastPullAt;
+      meta.lastPushedFingerprint = Sync.payloadFingerprint(cloudPayload);
       clearError(meta);
       saveMeta(meta);
       if (host.showToast) host.showToast("Hentet fra husstanden");
@@ -7817,7 +8502,8 @@ window.FAMILIE_BUDGET_SUPABASE = {
         spendBuffer: 0,
         sparingView: "samlet"
       },
-      savingsGoals: []
+      savingsGoals: [],
+      archives: []
     };
   }
 
@@ -7922,6 +8608,12 @@ window.FAMILIE_BUDGET_SUPABASE = {
       const parsed = JSON.parse(raw);
       const migrated = Calc.migrateState(parsed);
       if (!Array.isArray(migrated.savingsGoals)) migrated.savingsGoals = [];
+      if (!Array.isArray(migrated.archives)) migrated.archives = [];
+      migrated.savingsGoals = Calc.refreshSavingsGoalsStatus(
+        migrated.savingsGoals,
+        migrated.months,
+        migrated.archives
+      );
       // Keep existing categories (incl. previously seeded). Empty array stays empty.
       ensureCategoryOrders(migrated);
       return migrated;
@@ -7933,6 +8625,8 @@ window.FAMILIE_BUDGET_SUPABASE = {
 
   function save() {
     try {
+      ensureArchives();
+      if (!Array.isArray(state.savingsGoals)) state.savingsGoals = [];
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       var C=window.FamilieBudsjettCloud;
       if(C&&typeof C.schedulePush==="function") C.schedulePush();
@@ -7968,6 +8662,24 @@ window.FAMILIE_BUDGET_SUPABASE = {
 
   function nameOf(who) {
     return Calc.nameOf(state.people, who);
+  }
+
+  function ensureArchives() {
+    if (!Array.isArray(state.archives)) state.archives = [];
+  }
+
+  function refreshGoalsFromDeposits() {
+    ensureArchives();
+    if (!Array.isArray(state.savingsGoals)) state.savingsGoals = [];
+    state.savingsGoals = Calc.refreshSavingsGoalsStatus(
+      state.savingsGoals,
+      state.months,
+      state.archives
+    );
+  }
+
+  function goalOpts() {
+    return { months: state.months, archives: state.archives || [] };
   }
 
   function activeCategories() {
@@ -10203,15 +10915,19 @@ window.FAMILIE_BUDGET_SUPABASE = {
   function renderYearOverview() {
     const section = $("#sectionMerYear");
     if (!section) return;
+    ensureArchives();
     const y = getYearOverviewYear();
     const label = $("#yearOverviewLabel");
     if (label) label.textContent = String(y);
+    const archivedEntry = Calc.findArchive(state.archives, y);
+    const isArchivedHotGone = !!archivedEntry && !Calc.yearHasMonthData(state.months, y);
     const roll = Calc.yearRollup(
       state.months,
       y,
       state.people,
       state.categories,
-      state.settings || {}
+      state.settings || {},
+      state.archives
     );
     const t = roll.totals;
     const totalsEl = $("#yearOverviewTotals");
@@ -10324,10 +11040,260 @@ window.FAMILIE_BUDGET_SUPABASE = {
         svg +
         '<div class="year-bars-legend"><span class="leg plan">Plan ut</span><span class="leg actual">Faktisk ut</span></div>';
     }
+
+    renderYearArchiveUI(y, archivedEntry, isArchivedHotGone);
+    renderMultiYearTrends();
   }
 
+  function renderYearArchiveUI(y, archivedEntry, isArchivedHotGone) {
+    const banner = $("#yearArchiveBanner");
+    const actions = $("#yearArchiveActions");
+    const suggested = Calc.yearsSuggestedForArchive(
+      state.months,
+      state.archives,
+      state.view.year,
+      3
+    );
+    if (banner) {
+      if (suggested.length) {
+        banner.hidden = false;
+        banner.innerHTML =
+          "<strong>Forslag:</strong> Arkiver " +
+          suggested
+            .map(function (yy) {
+              return String(yy);
+            })
+            .join(", ") +
+          " for mindre synk-payload. Aggregater beholdes; du kan eksportere og gjenopprette." +
+          '<div><button type="button" class="btn ghost sm" data-archive-suggest="' +
+          suggested[0] +
+          '">Arkiver ' +
+          suggested[0] +
+          "</button></div>";
+      } else {
+        banner.hidden = true;
+        banner.innerHTML = "";
+      }
+    }
+    if (!actions) return;
+    let html = "";
+    if (isArchivedHotGone) {
+      html +=
+        '<span class="archive-pill">Arkivert ' +
+        escapeHtml(String(y)) +
+        "</span>";
+      html +=
+        '<button type="button" class="btn ghost sm" id="btnRestoreYear">Gjenopprett år</button>';
+      html +=
+        '<button type="button" class="btn ghost sm" id="btnExportYearArchive">Eksporter arkiv</button>';
+    } else if (Calc.yearHasMonthData(state.months, y)) {
+      html += '<span class="archive-pill is-hot">Aktivt år</span>';
+      html +=
+        '<button type="button" class="btn ghost sm" id="btnArchiveYear">Arkiver år ' +
+        escapeHtml(String(y)) +
+        "</button>";
+      html +=
+        '<button type="button" class="btn ghost sm" id="btnExportYearLive">Eksporter år</button>';
+    } else if (archivedEntry) {
+      html +=
+        '<span class="archive-pill">Arkivert</span>' +
+        '<button type="button" class="btn ghost sm" id="btnRestoreYear">Gjenopprett år</button>' +
+        '<button type="button" class="btn ghost sm" id="btnExportYearArchive">Eksporter arkiv</button>';
+    } else {
+      html += '<span class="hint compact">Ingen data for dette året.</span>';
+    }
+    actions.innerHTML = html;
+  }
+
+  function renderMultiYearTrends() {
+    ensureArchives();
+    const cards = $("#multiYearCards");
+    const barsEl = $("#multiYearBars");
+    const years = Calc.listYearsWithData(state.months, state.archives);
+    const summaries = Calc.multiYearSummaries(
+      state.months,
+      state.archives,
+      state.people,
+      state.categories,
+      state.settings || {},
+      years
+    );
+    if (cards) {
+      if (!summaries.length) {
+        cards.innerHTML = '<p class="hint compact">Ingen år med data ennå.</p>';
+      } else {
+        cards.innerHTML = summaries
+          .slice()
+          .reverse()
+          .map(function (s) {
+            return (
+              '<button type="button" class="multi-year-card' +
+              (s.archived ? " is-archived" : "") +
+              '" data-jump-year-card="' +
+              s.year +
+              '"><div class="multi-year-card-year"><span>' +
+              s.year +
+              "</span>" +
+              (s.archived ? '<span class="archive-pill">arkiv</span>' : "") +
+              "</div><span>Faktisk ut</span><strong>" +
+              formatNOK(s.actualUt) +
+              "</strong><span>Til overs</span><strong>" +
+              formatNOK(s.tilOvers) +
+              "</strong><span>Sparing</span><strong>" +
+              formatNOK(s.savingsSum) +
+              "</strong></button>"
+            );
+          })
+          .join("");
+      }
+    }
+    if (barsEl) {
+      if (summaries.length < 2) {
+        barsEl.innerHTML = "";
+        return;
+      }
+      const maxV = Math.max(
+        1,
+        ...summaries.map(function (s) {
+          return Math.max(s.actualUt || 0, s.savingsSum || 0);
+        })
+      );
+      const w = Math.max(280, summaries.length * 28);
+      const h = 56;
+      const gap = 3;
+      const groupW = (w - gap * (summaries.length - 1)) / summaries.length;
+      let svg =
+        '<svg viewBox="0 0 ' +
+        w +
+        " " +
+        h +
+        '" width="100%" height="' +
+        h +
+        '" role="img" aria-label="Utgifter og sparing over år">';
+      summaries.forEach(function (s, i) {
+        const x = i * (groupW + gap);
+        const utH = Math.round(((s.actualUt || 0) / maxV) * (h - 4));
+        const savH = Math.round(((s.savingsSum || 0) / maxV) * (h - 4));
+        const bw = Math.max(2, (groupW - 2) / 2);
+        svg +=
+          '<rect x="' +
+          x +
+          '" y="' +
+          (h - utH) +
+          '" width="' +
+          bw +
+          '" height="' +
+          utH +
+          '" rx="1" fill="#b45309" opacity="0.7"/>';
+        svg +=
+          '<rect x="' +
+          (x + bw + 1) +
+          '" y="' +
+          (h - savH) +
+          '" width="' +
+          bw +
+          '" height="' +
+          savH +
+          '" rx="1" fill="#0f766e" opacity="0.65"/>';
+      });
+      svg += "</svg>";
+      barsEl.innerHTML =
+        svg +
+        '<div class="year-bars-legend"><span class="leg actual">Faktisk ut</span><span class="leg plan">Sparing</span></div>';
+    }
+  }
+
+  function archiveYearFlow(year, opts) {
+    opts = opts || {};
+    var exportFirst = opts.exportFirst;
+    ensureArchives();
+    const y = Number(year);
+    if (!Calc.yearHasMonthData(state.months, y)) {
+      showToast("Ingen månedsdata å arkivere for " + y);
+      return;
+    }
+    const entry = Calc.buildYearArchive(
+      state.months,
+      y,
+      state.people,
+      state.categories,
+      state.settings || {}
+    );
+    if (exportFirst !== false) {
+      downloadBlob(
+        "familie-budsjett-arkiv-" + y + ".json",
+        new Blob([Calc.exportArchiveJson(entry)], { type: "application/json" })
+      );
+    }
+    const ok = confirm(
+      "Arkivere år " +
+        y +
+        "?\n\nDetaljerte poster flyttes ut av aktiv data (aggregater beholdes). En eksportfil er lastet ned / kan lastes ned. Du kan gjenopprette senere."
+    );
+    if (!ok) return;
+    const result = Calc.archiveYearInState(
+      state.months,
+      state.archives,
+      y,
+      state.people,
+      state.categories,
+      state.settings || {}
+    );
+    state.months = result.months;
+    state.archives = result.archives;
+    save();
+    render();
+    showToast("År " + y + " arkivert");
+  }
+
+  function restoreYearFlow(year) {
+    ensureArchives();
+    const result = Calc.restoreYearFromArchive(state.months, state.archives, year);
+    if (!result) {
+      showToast("Fant ikke arkiv for " + year);
+      return;
+    }
+    if (
+      !confirm(
+        "Gjenopprette år " +
+          year +
+          " til aktiv data? Arkivposten fjernes (data beholdes i måneder)."
+      )
+    ) {
+      return;
+    }
+    state.months = result.months;
+    state.archives = result.archives;
+    save();
+    render();
+    showToast("År " + year + " gjenopprettet");
+  }
+
+  function exportYearFlow(year) {
+    ensureArchives();
+    let entry = Calc.findArchive(state.archives, year);
+    if (!entry) {
+      if (!Calc.yearHasMonthData(state.months, year)) {
+        showToast("Ingen data å eksportere");
+        return;
+      }
+      entry = Calc.buildYearArchive(
+        state.months,
+        year,
+        state.people,
+        state.categories,
+        state.settings || {}
+      );
+    }
+    downloadBlob(
+      "familie-budsjett-arkiv-" + year + ".json",
+      new Blob([Calc.exportArchiveJson(entry)], { type: "application/json" })
+    );
+    showToast("Eksportert år " + year);
+  }
 
   function renderSparingTabs() {
+
     const tabs = $("#sparingTabs");
     if (!tabs) return;
     const view = state.settings.sparingView || "samlet";
@@ -10361,7 +11327,8 @@ window.FAMILIE_BUDGET_SUPABASE = {
       state.months,
       state.view.year,
       state.view.month,
-      state.people
+      state.people,
+      state.archives
     );
     const view = state.settings.sparingView || "samlet";
     const slice =
@@ -10427,6 +11394,11 @@ window.FAMILIE_BUDGET_SUPABASE = {
         list.innerHTML = rows
           .map(function (s) {
             const note = (s.note || "").trim();
+            var goalName = "";
+            if (s.goalId) {
+              var gg = (state.savingsGoals || []).find(function (x) { return x.id === s.goalId; });
+              if (gg) goalName = gg.name;
+            }
             return (
               '<button type="button" class="sparing-row" data-edit-saving="' +
               escapeAttr(s.id) +
@@ -10435,6 +11407,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
               '</span><span class="sparing-row-meta">' +
               escapeHtml(s.date || "") +
               (note ? " · " + escapeHtml(note) : "") +
+              (goalName ? '<span class="sparing-row-goal">→ ' + escapeHtml(goalName) + "</span>" : "") +
               '</span></span><span class="sparing-row-amt">' +
               formatNOK(s.amount) +
               "</span></button>"
@@ -10447,6 +11420,88 @@ window.FAMILIE_BUDGET_SUPABASE = {
       emptyHint.hidden = rows.length > 0 || (slice.denneManeden || 0) > 0 || (slice.hasNaa && slice.naa);
     }
     renderSavingsGoals();
+    renderSparingYearTrends();
+  }
+
+  function renderSparingYearTrends() {
+    ensureArchives();
+    const cards = $("#sparingYearCards");
+    const barsEl = $("#sparingYearBars");
+    if (!cards && !barsEl) return;
+    const years = Calc.listYearsWithData(state.months, state.archives);
+    const summaries = Calc.multiYearSummaries(
+      state.months,
+      state.archives,
+      state.people,
+      state.categories,
+      state.settings || {},
+      years
+    );
+    const view = state.settings.sparingView || "samlet";
+    // For person view, still show household year savings (simple); metrics stay global deposits
+    if (cards) {
+      if (!summaries.length) {
+        cards.innerHTML = '<p class="hint compact">Ingen sparehistorikk ennå.</p>';
+      } else {
+        cards.innerHTML = summaries
+          .slice()
+          .reverse()
+          .map(function (s) {
+            return (
+              '<div class="multi-year-card' +
+              (s.archived ? " is-archived" : "") +
+              '"><div class="multi-year-card-year"><span>' +
+              s.year +
+              "</span>" +
+              (s.archived ? '<span class="archive-pill">arkiv</span>' : "") +
+              "</div><span>Spareinnskudd</span><strong>" +
+              formatNOK(s.savingsSum) +
+              "</strong></div>"
+            );
+          })
+          .join("");
+      }
+    }
+    if (barsEl) {
+      if (summaries.length < 2) {
+        barsEl.innerHTML = "";
+        return;
+      }
+      const maxV = Math.max(
+        1,
+        ...summaries.map(function (s) {
+          return s.savingsSum || 0;
+        })
+      );
+      const w = Math.max(260, summaries.length * 26);
+      const h = 48;
+      const gap = 3;
+      const barW = (w - gap * (summaries.length - 1)) / summaries.length;
+      let svg =
+        '<svg viewBox="0 0 ' +
+        w +
+        " " +
+        h +
+        '" width="100%" height="' +
+        h +
+        '" role="img" aria-label="Sparing per år">';
+      summaries.forEach(function (s, i) {
+        const x = i * (barW + gap);
+        const bh = Math.round(((s.savingsSum || 0) / maxV) * (h - 4));
+        svg +=
+          '<rect x="' +
+          x +
+          '" y="' +
+          (h - bh) +
+          '" width="' +
+          Math.max(2, barW) +
+          '" height="' +
+          bh +
+          '" rx="1" fill="#0f766e" opacity="0.7"/>';
+      });
+      svg += "</svg>";
+      barsEl.innerHTML = svg;
+    }
   }
 
   function goalOwnerLabel(person) {
@@ -10512,66 +11567,155 @@ window.FAMILIE_BUDGET_SUPABASE = {
             : "samlet");
     fillGoalWhoSeg(defaultWho);
     $("#goalDelete").hidden = !edit;
+    const statusActions = $("#goalStatusActions");
+    if (statusActions) statusActions.hidden = !edit;
+    const hint = $("#goalSavedHint");
+    if (hint && edit) {
+      const prog = Calc.savingsGoalProgress(edit, goalOpts());
+      hint.textContent =
+        "Manuelt: " +
+        formatNOK(prog.baseSaved) +
+        " · Koblet innskudd: " +
+        formatNOK(prog.linkedSaved) +
+        " · Totalt: " +
+        formatNOK(prog.saved) +
+        " · Status: " +
+        (edit.status || "aktiv");
+    } else if (hint) {
+      hint.textContent =
+        "Kobling: spareinnskudd med valgt sparemål legges oppå dette tallet. ETA oppdateres automatisk.";
+    }
     openDlg("#dlgGoal");
     setTimeout(function () { $("#goalName").focus(); }, 50);
   }
 
+  function fillSavGoalSelect(selectedId) {
+    const sel = $("#savGoal");
+    if (!sel) return;
+    if (!Array.isArray(state.savingsGoals)) state.savingsGoals = [];
+    const active = state.savingsGoals.filter(function (g) {
+      const st = Calc.normalizeGoalStatus(g.status);
+      return st === "aktiv" || st === "nådd" || (selectedId && g.id === selectedId);
+    });
+    let html = '<option value="">Ingen kobling</option>';
+    active.forEach(function (g) {
+      html +=
+        '<option value="' +
+        escapeAttr(g.id) +
+        '"' +
+        (selectedId && selectedId === g.id ? " selected" : "") +
+        ">" +
+        escapeHtml(g.name) +
+        " (" +
+        escapeHtml(goalOwnerLabel(g.person)) +
+        ")</option>";
+    });
+    sel.innerHTML = html;
+  }
+
   function renderSavingsGoals() {
     if (!Array.isArray(state.savingsGoals)) state.savingsGoals = [];
+    ensureArchives();
+    refreshGoalsFromDeposits();
     const list = $("#goalsList");
     const emptyHint = $("#goalsEmptyHint");
+    const histWrap = $("#goalsHistoryWrap");
+    const histList = $("#goalsHistoryList");
     if (!list) return;
     const view = state.settings.sparingView || "samlet";
     let goals = state.savingsGoals.slice();
     if (view !== "samlet") {
       goals = goals.filter(function (g) { return g.person === view; });
     }
-    goals.sort(function (a, b) {
-      const pa = Calc.savingsGoalProgress(a);
-      const pb = Calc.savingsGoalProgress(b);
+    const opts = goalOpts();
+    const now = new Date();
+    function statusOf(g) {
+      return Calc.normalizeGoalStatus(g.status);
+    }
+    const active = goals.filter(function (g) {
+      const st = statusOf(g);
+      return st === "aktiv";
+    });
+    const history = goals.filter(function (g) {
+      const st = statusOf(g);
+      return st === "nådd" || st === "arkivert" || st === "forlatt";
+    });
+    active.sort(function (a, b) {
+      const pa = Calc.savingsGoalProgress(a, opts);
+      const pb = Calc.savingsGoalProgress(b, opts);
       if (pa.reached !== pb.reached) return pa.reached ? 1 : -1;
       return String(a.name || "").localeCompare(String(b.name || ""), "nb");
     });
-    if (!goals.length) {
-      list.innerHTML = "";
-      if (emptyHint) emptyHint.hidden = false;
-      return;
-    }
-    if (emptyHint) emptyHint.hidden = true;
-    const now = new Date();
-    list.innerHTML = goals
-      .map(function (g) {
-        const prog = Calc.savingsGoalProgress(g);
-        const eta = Calc.savingsGoalEta(g, now);
-        const etaClass =
-          eta.status === "reached"
-            ? " is-reached"
-            : eta.status === "need_monthly"
+    history.sort(function (a, b) {
+      return String(b.statusAt || "").localeCompare(String(a.statusAt || ""));
+    });
+
+    function cardHtml(g) {
+      const prog = Calc.savingsGoalProgress(g, opts);
+      const eta = Calc.savingsGoalEta(g, now, opts);
+      const st = statusOf(g);
+      const etaClass =
+        eta.status === "reached"
+          ? " is-reached"
+          : eta.status === "need_monthly"
+            ? " is-need"
+            : eta.status === "abandoned"
               ? " is-need"
               : "";
-        return (
-          '<button type="button" class="goal-card" data-edit-goal="' +
-          escapeAttr(g.id) +
-          '"><div class="goal-card-top"><span class="goal-card-name">' +
-          escapeHtml(g.name) +
-          '</span><span class="goal-card-who">' +
-          escapeHtml(goalOwnerLabel(g.person)) +
-          '</span></div><div class="goal-card-meta"><span><strong>' +
-          formatNOK(prog.saved) +
-          "</strong> av " +
-          formatNOK(prog.target) +
-          "</span><span>" +
-          formatNOK(g.monthly) +
-          '/mnd</span></div><div class="goal-progress" aria-hidden="true"><span style="width:' +
-          Math.round(prog.pct) +
-          '%"></span></div><div class="goal-card-eta' +
-          etaClass +
-          '">' +
-          escapeHtml(eta.label) +
-          "</div></button>"
-        );
-      })
-      .join("");
+      const stClass =
+        st === "nådd"
+          ? " is-naadd"
+          : st === "arkivert"
+            ? " is-arkivert"
+            : st === "forlatt"
+              ? " is-forlatt"
+              : "";
+      return (
+        '<button type="button" class="goal-card" data-edit-goal="' +
+        escapeAttr(g.id) +
+        '"><div class="goal-card-top"><span class="goal-card-name">' +
+        escapeHtml(g.name) +
+        '</span><span class="goal-card-who">' +
+        escapeHtml(goalOwnerLabel(g.person)) +
+        ' <span class="goal-card-status' +
+        stClass +
+        '">' +
+        escapeHtml(st) +
+        "</span></span></div><div class=\"goal-card-meta\"><span><strong>" +
+        formatNOK(prog.saved) +
+        "</strong> av " +
+        formatNOK(prog.target) +
+        (prog.linkedSaved
+          ? " <em class=\"opt\">(+" + formatNOK(prog.linkedSaved) + " koblet)</em>"
+          : "") +
+        "</span><span>" +
+        formatNOK(g.monthly) +
+        '/mnd</span></div><div class="goal-progress" aria-hidden="true"><span style="width:' +
+        Math.round(prog.pct) +
+        '%"></span></div><div class="goal-card-eta' +
+        etaClass +
+        '">' +
+        escapeHtml(eta.label) +
+        "</div></button>"
+      );
+    }
+
+    if (!active.length) {
+      list.innerHTML = "";
+      if (emptyHint) emptyHint.hidden = history.length > 0;
+    } else {
+      if (emptyHint) emptyHint.hidden = true;
+      list.innerHTML = active.map(cardHtml).join("");
+    }
+    if (histWrap && histList) {
+      if (!history.length) {
+        histWrap.hidden = true;
+        histList.innerHTML = "";
+      } else {
+        histWrap.hidden = false;
+        histList.innerHTML = history.map(cardHtml).join("");
+      }
+    }
   }
 
   function allTxForMonth(m) {
@@ -11118,6 +12262,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     $("#savNote").value = edit ? edit.note || "" : "";
     $("#savDate").value = edit ? edit.date || todayISO() : todayISO();
     $("#savDelete").hidden = !edit;
+    fillSavGoalSelect(edit && edit.goalId ? edit.goalId : "");
     openDlg("#dlgSaving");
     setTimeout(function () { $("#savAmount").focus(); }, 50);
   }
@@ -11499,6 +12644,12 @@ window.FAMILIE_BUDGET_SUPABASE = {
     if (!payload || typeof payload !== "object") return;
     state = Calc.migrateState(payload);
     if (!Array.isArray(state.savingsGoals)) state.savingsGoals = [];
+    if (!Array.isArray(state.archives)) state.archives = [];
+    state.savingsGoals = Calc.refreshSavingsGoalsStatus(
+      state.savingsGoals,
+      state.months,
+      state.archives
+    );
     ensureCategoryOrders(state);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -12272,6 +13423,38 @@ window.FAMILIE_BUDGET_SUPABASE = {
       });
     }
 
+    const yearSection = $("#sectionMerYear");
+    if (yearSection) {
+      yearSection.addEventListener("click", function (e) {
+        const t = e.target.closest("[data-archive-suggest], #btnArchiveYear, #btnRestoreYear, #btnExportYearArchive, #btnExportYearLive, [data-jump-year-card]");
+        if (!t) return;
+        if (t.hasAttribute("data-archive-suggest")) {
+          archiveYearFlow(parseInt(t.getAttribute("data-archive-suggest"), 10), { exportFirst: true });
+          return;
+        }
+        if (t.id === "btnArchiveYear") {
+          archiveYearFlow(getYearOverviewYear(), { exportFirst: true });
+          return;
+        }
+        if (t.id === "btnRestoreYear") {
+          restoreYearFlow(getYearOverviewYear());
+          return;
+        }
+        if (t.id === "btnExportYearArchive" || t.id === "btnExportYearLive") {
+          exportYearFlow(getYearOverviewYear());
+          return;
+        }
+        if (t.hasAttribute("data-jump-year-card")) {
+          yearOverviewYear = parseInt(t.getAttribute("data-jump-year-card"), 10);
+          renderYearOverview();
+          const label = $("#yearOverviewLabel");
+          if (label && label.scrollIntoView) {
+            label.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        }
+      });
+    }
+
     const btnMerPeople = $("#btnMerPeople");
     if (btnMerPeople) {
       btnMerPeople.addEventListener("click", function () {
@@ -12861,17 +14044,23 @@ window.FAMILIE_BUDGET_SUPABASE = {
         const person = (whoEl && whoEl.value) || "samlet";
         if (!Array.isArray(state.savingsGoals)) state.savingsGoals = [];
         const id = $("#goalId").value;
-        const payload = Calc.normalizeSavingsGoal(
+        const prev = id
+          ? (state.savingsGoals || []).find(function (x) { return x.id === id; })
+          : null;
+        let payload = Calc.normalizeSavingsGoal(
           {
             id: id || uid(),
             name: name,
             target: target,
             monthly: monthly,
             saved: saved,
-            person: person
+            person: person,
+            status: prev && prev.status ? prev.status : "aktiv",
+            statusAt: prev && prev.statusAt ? prev.statusAt : null
           },
           state.people
         );
+        payload = Calc.applyGoalAutoStatus(payload, state.months, state.archives);
         const idx = state.savingsGoals.findIndex(function (x) {
           return x.id === payload.id;
         });
@@ -12888,7 +14077,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
       goalDelete.addEventListener("click", function () {
         const id = $("#goalId").value;
         if (!id) return;
-        if (!confirm("Slette dette sparemålet?")) return;
+        if (!confirm("Slette dette sparemålet? Tip: bruk Arkiver mål for å beholde historikk.")) return;
         state.savingsGoals = (state.savingsGoals || []).filter(function (x) {
           return x.id !== id;
         });
@@ -12898,6 +14087,30 @@ window.FAMILIE_BUDGET_SUPABASE = {
         showToast("Sparemål slettet");
       });
     }
+
+    function setGoalStatusFromDialog(status) {
+      const id = $("#goalId").value;
+      if (!id) return;
+      if (!Array.isArray(state.savingsGoals)) state.savingsGoals = [];
+      const idx = state.savingsGoals.findIndex(function (x) { return x.id === id; });
+      if (idx < 0) return;
+      const g = Object.assign({}, state.savingsGoals[idx]);
+      g.status = Calc.normalizeGoalStatus(status);
+      g.statusAt = new Date().toISOString();
+      state.savingsGoals[idx] = Calc.normalizeSavingsGoal(g, state.people);
+      closeDlg("#dlgGoal");
+      save();
+      render();
+      showToast("Status: " + g.status);
+    }
+    [["goalMarkReached", "nådd"], ["goalMarkAbandoned", "forlatt"], ["goalMarkArchived", "arkivert"], ["goalMarkActive", "aktiv"]].forEach(function (pair) {
+      const el = $("#" + pair[0]);
+      if (el) {
+        el.addEventListener("click", function () {
+          setGoalStatusFromDialog(pair[1]);
+        });
+      }
+    });
 
     $("#savingClose").addEventListener("click", function () { closeDlg("#dlgSaving"); });
     $("#savCancel").addEventListener("click", function () { closeDlg("#dlgSaving"); });
@@ -12911,12 +14124,15 @@ window.FAMILIE_BUDGET_SUPABASE = {
       }
       const m = getMonth();
       const id = $("#savId").value;
+      const goalEl = $("#savGoal");
+      const goalId = goalEl && goalEl.value ? goalEl.value : null;
       const payload = {
         id: id || uid(),
         person: $("#savPerson").value,
         amount: amount,
         note: $("#savNote").value.trim(),
-        date: $("#savDate").value || todayISO()
+        date: $("#savDate").value || todayISO(),
+        goalId: goalId
       };
       if (id) {
         const idx = m.savings.findIndex(function (x) { return x.id === id; });
@@ -12925,16 +14141,18 @@ window.FAMILIE_BUDGET_SUPABASE = {
       } else {
         m.savings.push(payload);
       }
+      refreshGoalsFromDeposits();
       save();
       closeDlg("#dlgSaving");
       render();
-      showToast("Sparing lagret");
+      showToast(goalId ? "Sparing lagret og koblet til mål" : "Sparing lagret");
     });
     $("#savDelete").addEventListener("click", function () {
       const id = $("#savId").value;
       if (!id || !confirm("Slette denne sparingen?")) return;
       const m = getMonth();
       m.savings = m.savings.filter(function (x) { return x.id !== id; });
+      refreshGoalsFromDeposits();
       save();
       closeDlg("#dlgSaving");
       render();

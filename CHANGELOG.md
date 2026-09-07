@@ -1,5 +1,34 @@
 # Endringslogg – Familiebudsjett
 
+## 7. september 2026 (UTC+2) – 20-års forbedringer (arkiv, sparemål, synk)
+
+### 1. Årsarkiv / kompakt historikk
+- **Mer → År**: «Arkiver år 20XX», gjenopprett og eksporter (JSON). Aldri slett uten eksportsti.
+- Arkiverte år flyttes til `archives[]` (full månedsdata + `rollup`-aggregater); aktive `months` krymper.
+- Årsvisning leser aggregater fra arkiv når måneder mangler. Forslag etter ~3 år.
+
+### 2. Sparemål status + historikk
+- Status: **aktiv** | **nådd** | **arkivert** | **forlatt** (+ `statusAt`).
+- Auto-**nådd** når spart (effektivt) ≥ mål. Manuell arkiver/forlat/aktiver i dialogen.
+- Sparing-fanen: aktive mål + seksjon «Fullførte / arkiverte».
+
+### 3. Kobling spareinnskudd → sparemål
+- Ved spareinnskudd: valgfritt **Sparemål**.
+- Modell: `saved` = manuelt startbeløp; koblede innskudd (`goalId`) summeres → effektiv spart. ETA oppdateres automatisk.
+
+### 4. Multi-year UI
+- Mer → År: kort og søyler år-for-år (`yearRollup` / `multiYearSummaries`).
+- Sparing: «Sparing over år» med kort/søyler (`sparingStats` + års-summer). Mobilvennlig.
+
+### 5. Smartere sky-synk
+- Payload: strukturert `{ _fb, activePayload, archives, archiveRefs }` ved arkiv/stor data; valgfri **gzip-b64** over terskel.
+- Hopp over uendret push via fingerprint. Last-write-wins. localStorage `familie-budsjett-v1` offline som før.
+- Bakoverkompatibel: eldre plain JSON pakkes ut trygt.
+
+### Datasikkerhet / tester
+- Lagringsnøkkel uendret: **`familie-budsjett-v1`**. Kun additive felt (`archives[]`, goal `status`, `goalId`). Ingen wipe.
+- `test-calc.mjs` + `test-sync.mjs` utvidet (arkiv, kobling, pack/unpack).
+
 ## 7. september 2026 (UTC+2) – Konto / Synk UX
 
 ### Mer → Konto / Synk
