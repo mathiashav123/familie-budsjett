@@ -216,6 +216,118 @@
       .replace(/[^A-Z0-9]/g, "");
   }
 
+  /**
+   * Cheap fingerprint for skip-unchanged push (not cryptographic).
+   */
+  function payloadFingerprint(state) {
+    try {
+      var s = JSON.stringify(state);
+      var hash = 2166136261;
+      for (var i = 0; i < s.length; i++) {
+        hash ^= s.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+      }
+      return s.length + ":" + (hash >>> 0).toString(16);
+    } catch (e) {
+      return String(Date.now());
+    }
+  }
+
+  function estimatePayloadBytes(state) {
+    try {
+      return JSON.stringify(state).length;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  /**
+   * Pack state for cloud households.payload.
+   * Small payloads: plain state (backward compatible).
+   * Large: { _fb: 1, enc: "json", active, archives } structured split
+   *   so readers can ignore archives detail if needed; still one JSONB.
+   * Optional gzip-b64 when CompressionStream/zlib available (async helper outside).
+   *
+   * Structured form always includes version + updated_at for smarter clients.
+   */
+  function packCloudPayload(state, opts) {
+    opts = opts || {};
+    var st = state && typeof state === "object" ? state : {};
+    var archives = Array.isArray(st.archives) ? st.archives : [];
+    var active = Object.assign({}, st);
+    // Keep archives on active too for plain fallback; structured uses split.
+    var bytes = estimatePayloadBytes(st);
+    var forceStruct = !!opts.forceStructured || bytes >= (opts.threshold || 96 * 1024) || archives.length > 0;
+    if (!forceStruct) {
+      return st;
+    }
+    return {
+      _fb: 1,
+      version: st.version || 2,
+      updated_at: opts.updatedAt || isoNow(),
+      activePayload: active,
+      archives: archives,
+      archiveRefs: archives.map(function (a) {
+        return {
+          year: a.year,
+          archivedAt: a.archivedAt || null,
+          monthCount: a.months ? Object.keys(a.months).length : 0,
+          sparingYear: a.sparingYear || 0
+        };
+      })
+    };
+  }
+
+  /**
+   * Unpack cloud payload → plain app state.
+   * Accepts legacy plain state OR {_fb:1,...} envelope.
+   */
+  function unpackCloudPayload(payload) {
+    if (!payload || typeof payload !== "object") return payload;
+    if (payload._fb === 1) {
+      if (payload.enc === "gzip-b64" && typeof payload.body === "string") {
+        // Caller should decompress via unpackGzipCloudPayload; return marker
+        return payload;
+      }
+      var active = payload.activePayload && typeof payload.activePayload === "object"
+        ? Object.assign({}, payload.activePayload)
+        : Object.assign({}, payload);
+      delete active._fb;
+      delete active.activePayload;
+      delete active.archiveRefs;
+      if (Array.isArray(payload.archives)) {
+        active.archives = payload.archives;
+      } else if (!Array.isArray(active.archives)) {
+        active.archives = [];
+      }
+      return active;
+    }
+    if (!Array.isArray(payload.archives)) {
+      // additive default for older clouds
+      var clone = Object.assign({}, payload);
+      if (clone.archives == null) clone.archives = [];
+      return clone;
+    }
+    return payload;
+  }
+
+  function isGzipCloudPayload(payload) {
+    return !!(payload && payload._fb === 1 && payload.enc === "gzip-b64" && payload.body);
+  }
+
+  /** Build gzip-b64 envelope from UTF-8 JSON string (body already compressed+b64). */
+  function wrapGzipCloudPayload(base64Body, rawBytes, meta) {
+    meta = meta || {};
+    return {
+      _fb: 1,
+      enc: "gzip-b64",
+      body: base64Body,
+      bytes: rawBytes || null,
+      version: meta.version || 2,
+      updated_at: meta.updated_at || isoNow()
+    };
+  }
+
   return {
     parseTs: parseTs,
     isoNow: isoNow,
@@ -226,6 +338,12 @@
     formatLastSyncNb: formatLastSyncNb,
     syncStatusLabel: syncStatusLabel,
     normalizeInviteCode: normalizeInviteCode,
+    payloadFingerprint: payloadFingerprint,
+    estimatePayloadBytes: estimatePayloadBytes,
+    packCloudPayload: packCloudPayload,
+    unpackCloudPayload: unpackCloudPayload,
+    isGzipCloudPayload: isGzipCloudPayload,
+    wrapGzipCloudPayload: wrapGzipCloudPayload,
     SYNC_META_KEY: "familie-budsjett-sync-meta-v1"
   };
 });

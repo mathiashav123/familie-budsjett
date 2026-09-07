@@ -78,5 +78,30 @@ assert(
 assert(Sync.payloadsRoughlyEqual({ a: 1 }, { a: 1 }), "equal payloads");
 assert(!Sync.payloadsRoughlyEqual({ a: 1 }, { a: 2 }), "unequal payloads");
 
+
+{
+  const plain = { version: 2, months: {}, archives: [], savingsGoals: [] };
+  const packed = Sync.packCloudPayload(plain, { forceStructured: true, updatedAt: "2026-09-07T00:00:00.000Z" });
+  assert(packed._fb === 1, "structured pack _fb");
+  assert(Array.isArray(packed.archiveRefs), "archiveRefs");
+  const unpacked = Sync.unpackCloudPayload(packed);
+  assert(unpacked.version === 2, "unpack version");
+  assert(Array.isArray(unpacked.archives), "unpack archives");
+
+  const legacy = Sync.unpackCloudPayload({ version: 2, months: { "2026-01": {} } });
+  assert(Array.isArray(legacy.archives), "legacy gets archives []");
+
+  const fp1 = Sync.payloadFingerprint({ a: 1 });
+  const fp2 = Sync.payloadFingerprint({ a: 1 });
+  const fp3 = Sync.payloadFingerprint({ a: 2 });
+  assert(fp1 === fp2, "fingerprint stable");
+  assert(fp1 !== fp3, "fingerprint differs");
+
+  const gz = Sync.wrapGzipCloudPayload("aaa", 10, { version: 2 });
+  assert(Sync.isGzipCloudPayload(gz), "gzip envelope detected");
+  assert(!Sync.isGzipCloudPayload(packed), "structured not gzip");
+}
+
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed ? 1 : 0);

@@ -364,12 +364,25 @@
         <div class="card-head">
           <h2 id="sparingGoalsTitle">Sparemål</h2>
         </div>
-        <p class="hint compact">Sett målbeløp og hvor mye du vil spare per måned. Appen viser når du kan forvente å nå målet. Fremdrift er «Spart mot dette målet» (eget tall per mål – ikke auto-koblet til spare saldo).</p>
+        <p class="hint compact">Sett målbeløp og månedlig sparing. Koble spareinnskudd til et mål for automatisk fremdrift. Status: aktiv / nådd / arkivert / forlatt.</p>
         <div class="sparing-actions">
           <button type="button" class="btn primary" id="btnGoalAdd">+ Nytt sparemål</button>
         </div>
-        <p class="hint compact" id="goalsEmptyHint" hidden>Ingen sparemål ennå. Trykk «+ Nytt sparemål».</p>
-        <div id="goalsList" class="goals-list" aria-label="Sparemål"></div>
+        <p class="hint compact" id="goalsEmptyHint" hidden>Ingen aktive sparemål. Trykk «+ Nytt sparemål».</p>
+        <div id="goalsList" class="goals-list" aria-label="Aktive sparemål"></div>
+        <div class="goals-history-wrap" id="goalsHistoryWrap" hidden>
+          <h3 class="goals-history-title">Fullførte / arkiverte</h3>
+          <div id="goalsHistoryList" class="goals-list goals-history" aria-label="Sparemål-historikk"></div>
+        </div>
+      </section>
+
+      <section class="card compact-card sparing-trend-card" id="sectionSparingTrend" aria-labelledby="sparingTrendTitle">
+        <div class="card-head">
+          <h2 id="sparingTrendTitle">Sparing over år</h2>
+        </div>
+        <p class="hint compact">Sum loggførte spareinnskudd per kalenderår (inkl. arkiverte år).</p>
+        <div id="sparingYearBars" class="year-bars multi-year-bars" aria-hidden="true"></div>
+        <div id="sparingYearCards" class="multi-year-cards" aria-label="Sparing per år"></div>
       </section>
     </div>
 
@@ -472,7 +485,9 @@
             <button type="button" class="icon-btn" id="yearOverviewNext" aria-label="Neste år">›</button>
           </div>
         </div>
-        <p class="hint compact">Plan inn / plan ut / faktisk ut / til overs per måned. Hjelper deg å se året under ett.</p>
+        <p class="hint compact">Plan inn / plan ut / faktisk ut / til overs per måned. Arkiver gamle år for mindre synk-payload – aggregater beholdes.</p>
+        <div id="yearArchiveBanner" class="archive-banner" hidden></div>
+        <div id="yearArchiveActions" class="archive-actions"></div>
         <div id="yearOverviewBars" class="year-bars" aria-hidden="true"></div>
         <div id="yearOverviewTotals" class="year-totals"></div>
         <div class="year-table-wrap">
@@ -488,6 +503,12 @@
             </thead>
             <tbody id="yearOverviewBody"></tbody>
           </table>
+        </div>
+        <div class="multi-year-block">
+          <h3 class="multi-year-title">Flere år</h3>
+          <p class="hint compact">År-for-år: faktisk ut, til overs og sparing.</p>
+          <div id="multiYearBars" class="year-bars multi-year-bars" aria-hidden="true"></div>
+          <div id="multiYearCards" class="multi-year-cards" aria-label="Årsoversikt flere år"></div>
         </div>
       </section>
 
@@ -709,14 +730,20 @@
           <input id="goalMonthly" class="input lg amount-expr" type="text" inputmode="decimal" placeholder="0" required autocomplete="off" />
         </label>
         <label class="field">
-          <span>Spart mot dette målet (kr)</span>
+          <span>Spart manuelt / start (kr)</span>
           <input id="goalSaved" class="input lg amount-expr" type="text" inputmode="decimal" placeholder="0" autocomplete="off" />
         </label>
-        <p class="hint compact">Oppdater «Spart» når du setter av penger til målet. Spare saldo og spareinnskudd er egen oversikt.</p>
+        <p class="hint compact" id="goalSavedHint">Kobling: spareinnskudd med valgt sparemål legges oppå dette tallet. ETA oppdateres automatisk.</p>
         <fieldset class="field">
           <legend>Hvem / eier</legend>
           <div class="seg who-seg" id="goalWhoSeg" role="radiogroup" aria-label="Hvem"></div>
         </fieldset>
+        <div class="goal-status-actions" id="goalStatusActions" hidden>
+          <button type="button" class="btn ghost sm" id="goalMarkReached">Marker nådd</button>
+          <button type="button" class="btn ghost sm" id="goalMarkAbandoned" type="button">Forlat</button>
+          <button type="button" class="btn ghost sm" id="goalMarkArchived" type="button">Arkiver mål</button>
+          <button type="button" class="btn ghost sm" id="goalMarkActive" type="button">Aktiver igjen</button>
+        </div>
       </div>
       <footer class="modal-foot">
         <button type="button" class="btn danger ghost" id="goalDelete" hidden>Slett</button>
@@ -772,6 +799,12 @@
         <label class="field">
           <span>Dato</span>
           <input id="savDate" class="input" type="date" required />
+        </label>
+        <label class="field">
+          <span>Sparemål <em class="opt">(valgfritt)</em></span>
+          <select id="savGoal" class="select lg" aria-label="Koble til sparemål">
+            <option value="">Ingen kobling</option>
+          </select>
         </label>
         <label class="field">
           <span>Notat <em class="opt">(valgfritt)</em></span>

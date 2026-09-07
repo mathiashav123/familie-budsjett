@@ -3885,3 +3885,97 @@ button.cat-group-header {
 .sync-join-block .hint { margin: 0; }
 .sync-join-block .btn { justify-content: center; min-height: 2.6rem; }
 .sync-footer-hint { margin: .85rem 0 0; }
+
+/* ——— 20y: arkiv / flerår / sparemål-historikk ——— */
+.archive-banner {
+  margin: .5rem 0 .75rem;
+  padding: .7rem .85rem;
+  border-radius: 12px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  color: #9a3412;
+  font-size: .9rem;
+  display: grid;
+  gap: .55rem;
+}
+.archive-banner strong { font-weight: 750; }
+.archive-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem;
+  margin: 0 0 .75rem;
+}
+.archive-actions .btn { min-height: 2.35rem; }
+.archive-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .2rem .55rem;
+  border-radius: 999px;
+  font-size: .75rem;
+  font-weight: 700;
+  background: #ecfeff;
+  color: #0f766e;
+  border: 1px solid #99f6e4;
+}
+.archive-pill.is-hot { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
+.multi-year-block { margin-top: 1rem; padding-top: .75rem; border-top: 1px solid #e5e7eb; }
+.multi-year-title, .goals-history-title {
+  margin: 0 0 .35rem;
+  font-size: 1rem;
+  font-weight: 750;
+}
+.multi-year-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .55rem;
+  margin-top: .55rem;
+}
+@media (min-width: 520px) {
+  .multi-year-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.multi-year-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: .55rem .65rem;
+  background: #fff;
+  display: grid;
+  gap: .2rem;
+}
+.multi-year-card.is-archived { background: #f8fafc; }
+.multi-year-card-year {
+  font-weight: 800;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: .35rem;
+}
+.multi-year-card span { font-size: .78rem; color: var(--muted, #6b7280); }
+.multi-year-card strong { font-size: .92rem; font-variant-numeric: tabular-nums; }
+.multi-year-bars { margin: .35rem 0 .25rem; }
+.goal-card-status {
+  font-size: .72rem;
+  font-weight: 750;
+  text-transform: lowercase;
+  padding: .12rem .45rem;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #075985;
+}
+.goal-card-status.is-naadd { background: #dcfce7; color: #166534; }
+.goal-card-status.is-arkivert { background: #f1f5f9; color: #475569; }
+.goal-card-status.is-forlatt { background: #fee2e2; color: #991b1b; }
+.goals-history-wrap { margin-top: 1rem; padding-top: .75rem; border-top: 1px dashed #e5e7eb; }
+.goals-history .goal-card { opacity: .92; }
+.goal-status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  margin-top: .35rem;
+}
+.sparing-row-goal {
+  display: block;
+  font-size: .75rem;
+  color: var(--teal-dark, #0f766e);
+  font-weight: 650;
+}

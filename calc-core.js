@@ -344,7 +344,8 @@
           spendBuffer: 0,
           sparingView: "samlet"
         },
-        savingsGoals: []
+        savingsGoals: [],
+        archives: []
       };
     }
 
@@ -463,7 +464,8 @@
           person: mapLegacyOwner(s.person),
           amount: s.amount,
           note: s.note || "",
-          date: s.date || ""
+          date: s.date || "",
+          goalId: s.goalId ? String(s.goalId) : null
         });
       });
       (src.expenses || []).forEach(function (e) {
@@ -527,7 +529,8 @@
             parsed.settings && parsed.settings.pendingBalancesMigrationToast
           )
       },
-      savingsGoals: normalizeSavingsGoals(parsed.savingsGoals, people)
+      savingsGoals: normalizeSavingsGoals(parsed.savingsGoals, people),
+      archives: normalizeArchives(parsed.archives)
     };
   }
 
@@ -1668,11 +1671,23 @@
 
   /**
    * Sparemål (savings goals) — additive on state.savingsGoals[].
-   * Progress model: each goal has explicit `saved` ("Spart mot dette målet").
-   * Spare saldo and spareinnskudd stay separate overview metrics; they are NOT
-   * auto-linked (avoids ambiguity when several goals share one person/konto).
+   * Progress model: `saved` is manual base ("Spart manuelt").
+   * Optional spareinnskudd.goalId links deposits → effectiveSaved = saved + linked.
+   * Status: aktiv | nådd | arkivert | forlatt. Auto-set nådd when effective ≥ target.
    * person: person id | "felles" | "samlet" (husstand).
    */
+  var GOAL_STATUSES = ["aktiv", "nådd", "arkivert", "forlatt"];
+
+  function normalizeGoalStatus(raw) {
+    var s = String(raw || "").toLowerCase();
+    if (s === "completed" || s === "reached" || s === "naadd") s = "nådd";
+    if (s === "abandoned" || s === "dropped") s = "forlatt";
+    if (s === "archived" || s === "archive") s = "arkivert";
+    if (s === "active" || s === "aktiv") s = "aktiv";
+    if (GOAL_STATUSES.indexOf(s) >= 0) return s;
+    return "aktiv";
+  }
+
   function normalizeSavingsGoal(g, people) {
     g = g || {};
     var person = mapLegacyOwner(g.person || "samlet");
@@ -1682,13 +1697,20 @@
     var target = Number(g.target);
     var monthly = Number(g.monthly);
     var saved = Number(g.saved);
+    var status = normalizeGoalStatus(g.status);
+    // Legacy goals without status: if saved already ≥ target, treat as nådd
+    if (!g.status && Number.isFinite(target) && target > 0 && Number.isFinite(saved) && saved >= target) {
+      status = "nådd";
+    }
     return {
       id: g.id || uid(),
       name: (g.name && String(g.name).trim()) || "Sparemål",
       target: Number.isFinite(target) && target >= 0 ? target : 0,
       monthly: Number.isFinite(monthly) && monthly >= 0 ? monthly : 0,
       saved: Number.isFinite(saved) && saved >= 0 ? saved : 0,
-      person: person
+      person: person,
+      status: status,
+      statusAt: g.statusAt ? String(g.statusAt) : null
     };
   }
 
@@ -1699,18 +1721,275 @@
     });
   }
 
+  function clonePlain(obj) {
+    try {
+      return JSON.parse(JSON.stringify(obj));
+    } catch (e) {
+      return obj;
+    }
+  }
+
+  function normalizeArchives(list) {
+    if (!Array.isArray(list)) return [];
+    return list
+      .map(function (a) {
+        if (!a || typeof a !== "object") return null;
+        var year = Number(a.year);
+        if (!Number.isFinite(year)) return null;
+        return {
+          year: year,
+          archivedAt: a.archivedAt ? String(a.archivedAt) : null,
+          rollup: a.rollup && typeof a.rollup === "object" ? a.rollup : null,
+          sparingYear: Number.isFinite(Number(a.sparingYear)) ? Number(a.sparingYear) : 0,
+          months: a.months && typeof a.months === "object" ? a.months : {}
+        };
+      })
+      .filter(Boolean)
+      .sort(function (x, y) {
+        return x.year - y.year;
+      });
+  }
+
+  function findArchive(archives, year) {
+    var y = Number(year);
+    var list = archives || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].year === y) return list[i];
+    }
+    return null;
+  }
+
+  function monthKeysForYear(year) {
+    var y = Number(year);
+    var keys = [];
+    for (var month = 0; month < 12; month++) {
+      keys.push(y + "-" + String(month + 1).padStart(2, "0"));
+    }
+    return keys;
+  }
+
+  function yearHasMonthData(months, year) {
+    var keys = monthKeysForYear(year);
+    var map = months || {};
+    for (var i = 0; i < keys.length; i++) {
+      var m = map[keys[i]];
+      if (!m) continue;
+      if ((m.expenses && m.expenses.length) || (m.incomes && m.incomes.length) || (m.savings && m.savings.length)) {
+        return true;
+      }
+      if (m.budgets && Object.keys(m.budgets).length) return true;
+      if (m.plannedIncome && Object.keys(m.plannedIncome).length) return true;
+    }
+    return false;
+  }
+
+  function listYearsWithData(months, archives) {
+    var set = {};
+    Object.keys(months || {}).forEach(function (k) {
+      var y = parseInt(String(k).slice(0, 4), 10);
+      if (Number.isFinite(y)) set[y] = true;
+    });
+    (archives || []).forEach(function (a) {
+      if (a && Number.isFinite(a.year)) set[a.year] = true;
+    });
+    return Object.keys(set)
+      .map(Number)
+      .sort(function (a, b) {
+        return a - b;
+      });
+  }
+
+  /**
+   * Build archive entry for a calendar year. Full months kept for restore/export;
+   * rollup + sparingYear for year view without hot months[].
+   */
+  function buildYearArchive(months, year, people, categories, settings) {
+    var y = Number(year);
+    var roll = yearRollup(months, y, people, categories, settings || {});
+    var map = months || {};
+    var archivedMonths = {};
+    var sparingYear = 0;
+    monthKeysForYear(y).forEach(function (key) {
+      if (map[key]) {
+        archivedMonths[key] = clonePlain(map[key]);
+        sparingYear += sumSavingsForMonth(map[key], null);
+      }
+    });
+    // Enrich rollup months with savingsSum
+    (roll.months || []).forEach(function (row) {
+      row.savingsSum = sumSavingsForMonth(map[row.key], null);
+    });
+    roll.totals = roll.totals || {};
+    roll.totals.savingsSum = sparingYear;
+    return {
+      year: y,
+      archivedAt: new Date().toISOString(),
+      rollup: roll,
+      sparingYear: sparingYear,
+      months: archivedMonths
+    };
+  }
+
+  /**
+   * Archive year: remove months from hot map, append/replace archives entry.
+   * Returns { stateMonths, archives, entry } — does not mutate inputs.
+   */
+  function archiveYearInState(months, archives, year, people, categories, settings) {
+    var entry = buildYearArchive(months, year, people, categories, settings);
+    var nextMonths = Object.assign({}, months || {});
+    monthKeysForYear(year).forEach(function (key) {
+      delete nextMonths[key];
+    });
+    var nextArchives = (archives || []).filter(function (a) {
+      return a && a.year !== entry.year;
+    });
+    nextArchives.push(entry);
+    nextArchives.sort(function (a, b) {
+      return a.year - b.year;
+    });
+    return { months: nextMonths, archives: nextArchives, entry: entry };
+  }
+
+  /**
+   * Restore archived year back into months. Full months required.
+   * Returns { months, archives } or null if missing.
+   */
+  function restoreYearFromArchive(months, archives, year) {
+    var entry = findArchive(archives, year);
+    if (!entry || !entry.months || !Object.keys(entry.months).length) return null;
+    var nextMonths = Object.assign({}, months || {});
+    Object.keys(entry.months).forEach(function (key) {
+      nextMonths[key] = clonePlain(entry.months[key]);
+    });
+    var nextArchives = (archives || []).filter(function (a) {
+      return a && a.year !== Number(year);
+    });
+    return { months: nextMonths, archives: nextArchives, entry: entry };
+  }
+
+  function exportArchiveJson(entry) {
+    return JSON.stringify(
+      {
+        type: "familie-budsjett-year-archive",
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        archive: entry
+      },
+      null,
+      2
+    );
+  }
+
+  /** Years older than (currentYear - keepRecentYears) with hot data, not yet archived. */
+  function yearsSuggestedForArchive(months, archives, currentYear, keepRecentYears) {
+    var keep = keepRecentYears == null ? 3 : Number(keepRecentYears);
+    if (!Number.isFinite(keep) || keep < 1) keep = 3;
+    var cy = Number(currentYear);
+    if (!Number.isFinite(cy)) cy = new Date().getFullYear();
+    var cutoff = cy - keep;
+    var out = [];
+    listYearsWithData(months, []).forEach(function (y) {
+      if (y <= cutoff && yearHasMonthData(months, y) && !findArchive(archives, y)) {
+        out.push(y);
+      }
+    });
+    return out;
+  }
+
+  /**
+   * Sum spareinnskudd linked to a goal across hot months + archived months.
+   */
+  function sumLinkedDepositsForGoal(months, archives, goalId) {
+    if (!goalId) return 0;
+    var gid = String(goalId);
+    var sum = 0;
+    function addFromMap(map) {
+      Object.keys(map || {}).forEach(function (k) {
+        var m = map[k];
+        if (!m || !Array.isArray(m.savings)) return;
+        m.savings.forEach(function (s) {
+          if (s && s.goalId && String(s.goalId) === gid) {
+            var n = Number(s.amount);
+            if (Number.isFinite(n)) sum += n;
+          }
+        });
+      });
+    }
+    addFromMap(months);
+    (archives || []).forEach(function (a) {
+      if (a && a.months) addFromMap(a.months);
+    });
+    return sum;
+  }
+
+  function effectiveGoalSaved(goal, months, archives) {
+    var base = Number(goal && goal.saved);
+    if (!Number.isFinite(base) || base < 0) base = 0;
+    return base + sumLinkedDepositsForGoal(months, archives, goal && goal.id);
+  }
+
+  /**
+   * Auto-promote aktiv → nådd when effective saved ≥ target.
+   * Does not demote manual arkivert/forlatt. Returns updated goal (may mutate copy).
+   */
+  function applyGoalAutoStatus(goal, months, archives, atIso) {
+    var g = goal || {};
+    var status = normalizeGoalStatus(g.status);
+    var eff = effectiveGoalSaved(g, months, archives);
+    var target = Number(g.target);
+    if (!Number.isFinite(target)) target = 0;
+    if (status === "aktiv" && target > 0 && eff >= target) {
+      return Object.assign({}, g, {
+        status: "nådd",
+        statusAt: atIso || new Date().toISOString()
+      });
+    }
+    return Object.assign({}, g, { status: status });
+  }
+
+  function refreshSavingsGoalsStatus(goals, months, archives, atIso) {
+    if (!Array.isArray(goals)) return [];
+    return goals.map(function (g) {
+      return applyGoalAutoStatus(g, months, archives, atIso);
+    });
+  }
+
   /**
    * ETA for a sparemål from a reference date (defaults to today).
-   * monthsNeeded = ceil(remaining / monthly); add that many calendar months
-   * to the reference month. Label: "ca. mnd ÅÅÅÅ" / "nådd" / need monthly.
+   * Uses effective saved when months/archives provided via opts.
    */
-  function savingsGoalEta(goal, fromDate) {
+  function savingsGoalEta(goal, fromDate, opts) {
+    opts = opts || {};
     var target = Number(goal && goal.target);
-    var saved = Number(goal && goal.saved);
+    var saved =
+      opts.months || opts.archives
+        ? effectiveGoalSaved(goal, opts.months, opts.archives)
+        : Number(goal && goal.saved);
     var monthly = Number(goal && goal.monthly);
     if (!Number.isFinite(target)) target = 0;
     if (!Number.isFinite(saved)) saved = 0;
     if (!Number.isFinite(monthly)) monthly = 0;
+    var statusField = normalizeGoalStatus(goal && goal.status);
+    if (statusField === "nådd" || statusField === "arkivert") {
+      return {
+        status: "reached",
+        monthsNeeded: 0,
+        remaining: 0,
+        year: null,
+        month: null,
+        label: statusField === "arkivert" ? "arkivert" : "nådd"
+      };
+    }
+    if (statusField === "forlatt") {
+      return {
+        status: "abandoned",
+        monthsNeeded: null,
+        remaining: Math.max(0, target - saved),
+        year: null,
+        month: null,
+        label: "forlatt"
+      };
+    }
     var remaining = target - saved;
     if (remaining <= 0) {
       return {
@@ -1752,18 +2031,25 @@
     };
   }
 
-  function savingsGoalProgress(goal) {
+  function savingsGoalProgress(goal, opts) {
+    opts = opts || {};
     var target = Number(goal && goal.target);
-    var saved = Number(goal && goal.saved);
+    var saved =
+      opts.months || opts.archives
+        ? effectiveGoalSaved(goal, opts.months, opts.archives)
+        : Number(goal && goal.saved);
     if (!Number.isFinite(target)) target = 0;
     if (!Number.isFinite(saved)) saved = 0;
-    var pct = target > 0 ? Math.min(100, Math.max(0, (saved / target) * 100)) : (saved > 0 ? 100 : 0);
+    var pct = target > 0 ? Math.min(100, Math.max(0, (saved / target) * 100)) : saved > 0 ? 100 : 0;
     return {
       target: target,
       saved: saved,
+      baseSaved: Number(goal && goal.saved) || 0,
+      linkedSaved: Math.max(0, saved - (Number(goal && goal.saved) || 0)),
       remaining: Math.max(0, target - saved),
       pct: pct,
-      reached: target > 0 ? saved >= target : saved > 0
+      reached: target > 0 ? saved >= target : saved > 0,
+      status: normalizeGoalStatus(goal && goal.status)
     };
   }
 
@@ -1784,15 +2070,14 @@
    * - naa: current spare saldo from balances (manual)
    * - denneManeden: sum of logged savings in the viewed month
    * - iAar: sum of logged savings in the viewed calendar year
-   * - totalt: sum of logged savings across all stored months
+   * - totalt: sum of logged savings across all stored months (+ archives if provided)
    */
-  function sparingStats(months, year, monthIndex, people) {
+  function sparingStats(months, year, monthIndex, people, archives) {
     var y = Number(year);
     var mi = Number(monthIndex);
     if (!Number.isFinite(mi) || mi < 0) mi = 0;
     if (mi > 11) mi = 11;
-    var key =
-      y + "-" + String(mi + 1).padStart(2, "0");
+    var key = y + "-" + String(mi + 1).padStart(2, "0");
     var monthsMap = months || {};
     var m = monthsMap[key] || {
       balances: {},
@@ -1810,28 +2095,44 @@
       totalt: 0
     };
 
+    function monthFromHotOrArchive(k) {
+      if (monthsMap[k]) return monthsMap[k];
+      var yy = parseInt(String(k).slice(0, 4), 10);
+      var arch = findArchive(archives, yy);
+      if (arch && arch.months && arch.months[k]) return arch.months[k];
+      return null;
+    }
+
     function sumYearForPerson(personId) {
       var sum = 0;
       for (var month = 0; month < 12; month++) {
-        var k =
-          y + "-" + String(month + 1).padStart(2, "0");
-        sum += sumSavingsForMonth(monthsMap[k], personId);
+        var k = y + "-" + String(month + 1).padStart(2, "0");
+        sum += sumSavingsForMonth(monthFromHotOrArchive(k), personId);
       }
+      // Prefer archive sparingYear for samlet when fully archived and no hot data
       return sum;
     }
 
     function sumAllForPerson(personId) {
       var sum = 0;
+      var seen = {};
       Object.keys(monthsMap).forEach(function (k) {
+        seen[k] = true;
         sum += sumSavingsForMonth(monthsMap[k], personId);
+      });
+      (archives || []).forEach(function (a) {
+        if (!a || !a.months) return;
+        Object.keys(a.months).forEach(function (k) {
+          if (seen[k]) return;
+          sum += sumSavingsForMonth(a.months[k], personId);
+        });
       });
       return sum;
     }
 
     active.forEach(function (p) {
       var bal = (m.balances && m.balances[p.id]) || {};
-      var spare =
-        bal.spare == null || bal.spare === "" ? null : Number(bal.spare);
+      var spare = bal.spare == null || bal.spare === "" ? null : Number(bal.spare);
       var hasNaa = spare != null && !Number.isNaN(spare);
       var naa = hasNaa ? spare : 0;
       var denne = sumSavingsForMonth(m, p.id);
@@ -1868,14 +2169,21 @@
   /**
    * Year overview: planInn / planUt / actualUt / tilOvers per month + totals.
    * tilOvers = planInn − planUt (planned remainder).
+   * If months missing but archive exists, returns archive.rollup (with savingsSum).
    */
-  function yearRollup(months, year, people, categories, settings) {
-    var rows = [];
-    var totals = { planInn: 0, planUt: 0, actualUt: 0, tilOvers: 0, actualInn: 0 };
+  function yearRollup(months, year, people, categories, settings, archives) {
     var y = Number(year);
+    var hasHot = yearHasMonthData(months, y);
+    if (!hasHot && archives) {
+      var arch = findArchive(archives, y);
+      if (arch && arch.rollup) {
+        return clonePlain(arch.rollup);
+      }
+    }
+    var rows = [];
+    var totals = { planInn: 0, planUt: 0, actualUt: 0, tilOvers: 0, actualInn: 0, savingsSum: 0 };
     for (var month = 0; month < 12; month++) {
-      var key =
-        y + "-" + String(month + 1).padStart(2, "0");
+      var key = y + "-" + String(month + 1).padStart(2, "0");
       var m = (months && months[key]) || {
         balances: {},
         budgets: {},
@@ -1891,6 +2199,7 @@
       var actualUt = c.samletUtgifter || 0;
       var actualInn = c.samletInntekt || 0;
       var tilOvers = planInn - planUt;
+      var savingsSum = sumSavingsForMonth(m, null);
       rows.push({
         month: month,
         key: key,
@@ -1898,15 +2207,42 @@
         planUt: planUt,
         actualUt: actualUt,
         actualInn: actualInn,
-        tilOvers: tilOvers
+        tilOvers: tilOvers,
+        savingsSum: savingsSum
       });
       totals.planInn += planInn;
       totals.planUt += planUt;
       totals.actualUt += actualUt;
       totals.actualInn += actualInn;
       totals.tilOvers += tilOvers;
+      totals.savingsSum += savingsSum;
     }
     return { year: y, months: rows, totals: totals };
+  }
+
+  /**
+   * Multi-year trend cards: one rollup summary per year (hot or archive).
+   */
+  function multiYearSummaries(months, archives, people, categories, settings, yearList) {
+    var years = yearList && yearList.length ? yearList.slice() : listYearsWithData(months, archives);
+    years.sort(function (a, b) {
+      return a - b;
+    });
+    return years.map(function (y) {
+      var roll = yearRollup(months, y, people, categories, settings || {}, archives);
+      var t = roll.totals || {};
+      var archived = !!findArchive(archives, y) && !yearHasMonthData(months, y);
+      return {
+        year: y,
+        archived: archived,
+        planInn: t.planInn || 0,
+        planUt: t.planUt || 0,
+        actualUt: t.actualUt || 0,
+        actualInn: t.actualInn || 0,
+        tilOvers: t.tilOvers || 0,
+        savingsSum: t.savingsSum != null ? t.savingsSum : 0
+      };
+    });
   }
 
   /** True if string looks like an arithmetic expression (not a plain number). */
@@ -1966,8 +2302,24 @@
     sparingStats: sparingStats,
     normalizeSavingsGoal: normalizeSavingsGoal,
     normalizeSavingsGoals: normalizeSavingsGoals,
+    normalizeGoalStatus: normalizeGoalStatus,
+    normalizeArchives: normalizeArchives,
+    findArchive: findArchive,
+    yearHasMonthData: yearHasMonthData,
+    listYearsWithData: listYearsWithData,
+    buildYearArchive: buildYearArchive,
+    archiveYearInState: archiveYearInState,
+    restoreYearFromArchive: restoreYearFromArchive,
+    exportArchiveJson: exportArchiveJson,
+    yearsSuggestedForArchive: yearsSuggestedForArchive,
+    sumLinkedDepositsForGoal: sumLinkedDepositsForGoal,
+    effectiveGoalSaved: effectiveGoalSaved,
+    applyGoalAutoStatus: applyGoalAutoStatus,
+    refreshSavingsGoalsStatus: refreshSavingsGoalsStatus,
+    multiYearSummaries: multiYearSummaries,
     savingsGoalEta: savingsGoalEta,
     savingsGoalProgress: savingsGoalProgress,
+    GOAL_STATUSES: GOAL_STATUSES,
     actualForCategory: actualForCategory,
     actualForCategoryOwner: actualForCategoryOwner,
     calcPerson: calcPerson,
