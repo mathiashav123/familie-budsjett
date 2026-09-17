@@ -4466,3 +4466,82 @@ button.cat-group-header {
 .forward-panel-card #forwardFormulaHint code {
   font-size: 0.78em;
 }
+.forward-milestones {
+  margin-top: 0.55rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.forward-pick {
+  margin-top: 0.75rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(0,0,0,0.06);
+}
+.forward-pick-label {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+  color: var(--muted, #5a6b66);
+}
+.forward-pick-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 0.5rem;
+}
+.forward-pick-row select {
+  width: 100%;
+  font-size: 1rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid rgba(0,0,0,0.12);
+  background: var(--bg, #fff);
+}
+.forward-pick-result {
+  margin-top: 0.45rem;
+}
+.forward-years-details {
+  margin-top: 0.75rem;
+  border-radius: 10px;
+  background: var(--bg-soft, #e4ece9);
+  border: 1px solid rgba(0,0,0,0.04);
+  padding: 0.35rem 0.7rem 0.55rem;
+}
+.forward-years-details > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.95rem;
+  padding: 0.35rem 0;
+  list-style: none;
+}
+.forward-years-details > summary::-webkit-details-marker { display: none; }
+.forward-years-details > summary::before {
+  content: "▸ ";
+  color: var(--muted, #5a6b66);
+}
+.forward-years-details[open] > summary::before { content: "▾ "; }
+.forward-years-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+}
+.forward-year-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+  border-top: 1px solid rgba(0,0,0,0.05);
+  font-variant-numeric: tabular-nums;
+}
+.forward-year-row .fy-label {
+  font-size: 0.9rem;
+  color: var(--muted, #5a6b66);
+}
+.forward-year-row .fy-pot {
+  font-weight: 650;
+}
+.forward-year-row .fy-pot.is-neg {
+  color: var(--danger, #b42318);
+}

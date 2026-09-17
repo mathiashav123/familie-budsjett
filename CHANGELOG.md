@@ -1,5 +1,20 @@
 # Endringslogg – Familiebudsjett
 
+## 2026-09-17 – Fremover: flerårig projeksjon til ~2038
+
+### Ønske
+Se hva pot/Trygg kan bli hvis budsjettet følges langt frem (f.eks. **november 2038**), ikke bare 12 måneder.
+
+### Endring
+- **Calc:** `projectPotFollowBudget` støtter horizon opptil **240 mnd**; tomme måneder **gjenbruker siste kjente** planInn/variabelt budsjett (virtuelt, uten å fylle localStorage). Returnerer `potByKey`, `byYear` (desember), `milestones` (1/5/12 år).
+- **Oversikt → Fremover:** beholder **Har nå** + neste 6 mnd; legger til **Om 1 / 5 / 12 år**, **Se måned** (år+måned, standard nov 2038), og utvidbar **År for år**.
+- **Formel i UI:** start fra effektiv pot/Trygg (etter planlagte utlegg som bil én gang); hver måned `pot += planInn − planUtVariable − openPlannedThatMonth`. Fast ikke på nytt.
+
+### Tester / deploy
+- §38 multi-year roll (144 mnd, Nov 2038, bil én gang, ingen persist-bloat).
+- `pack-mobil.mjs` + synk host/pages; Pages `main`.
+
+
 ## 2026-09-17 – Calc-time bruk-fallback + Fremover-panel (persist-fail safe)
 
 ### Problem

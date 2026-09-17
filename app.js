@@ -2076,12 +2076,66 @@
   }
 
 
+  function forwardFmtMonthLabel(monthKey) {
+    const parts = String(monthKey || "").split("-");
+    const mi = parseInt(parts[1], 10) - 1;
+    const y = parts[0] || "";
+    return (MONTHS_SHORT[mi] || MONTHS[mi] || monthKey) + (y ? " " + y : "");
+  }
+
+  function forwardSetValue(el, amount) {
+    if (!el) return;
+    if (amount == null || !Number.isFinite(amount)) {
+      el.textContent = "—";
+      el.classList.remove("is-neg");
+      return;
+    }
+    el.textContent = formatNOK(amount);
+    el.classList.toggle("is-neg", amount < 0);
+  }
+
+  function forwardApplyPickResult(projection) {
+    const yearSel = $("#forwardPickYear");
+    const monthSel = $("#forwardPickMonth");
+    const labelEl = $("#forwardPickLabel");
+    const valueEl = $("#forwardPickValue");
+    if (!yearSel || !monthSel || !valueEl) return;
+    const y = yearSel.value;
+    const mo = monthSel.value;
+    if (!y || !mo) {
+      if (labelEl) labelEl.textContent = "—";
+      forwardSetValue(valueEl, null);
+      return;
+    }
+    const key = y + "-" + String(mo).padStart(2, "0");
+    const pot =
+      projection && projection.potByKey && Number.isFinite(projection.potByKey[key])
+        ? projection.potByKey[key]
+        : null;
+    if (labelEl) labelEl.textContent = forwardFmtMonthLabel(key) + ":";
+    forwardSetValue(valueEl, pot);
+  }
+
+  function ensureForwardPickWired() {
+    if (ensureForwardPickWired._done) return;
+    const yearSel = $("#forwardPickYear");
+    const monthSel = $("#forwardPickMonth");
+    if (!yearSel || !monthSel) return;
+    const onChange = function () {
+      forwardApplyPickResult(state._forwardProjection || null);
+    };
+    yearSel.addEventListener("change", onChange);
+    monthSel.addEventListener("change", onChange);
+    ensureForwardPickWired._done = true;
+  }
+
   function renderForwardPanel(c) {
     const harEl = $("#forwardHarNaValue");
     const monthsEl = $("#forwardMonths");
-    const yearEl = $("#forwardYearValue");
     const card = $("#forwardPanelCard");
-    if (!harEl || !monthsEl || !yearEl) return;
+    if (!harEl || !monthsEl) return;
+
+    ensureForwardPickWired();
 
     const view = (state.settings && state.settings.innUtView) || "samlet";
     const isPerson = view !== "samlet";
@@ -2094,13 +2148,7 @@
     } else if (c && typeof c.safeToSpend === "number") {
       harNa = c.safeToSpend;
     }
-    if (harNa == null || !Number.isFinite(harNa)) {
-      harEl.textContent = "—";
-      harEl.classList.remove("is-neg");
-    } else {
-      harEl.textContent = formatNOK(harNa);
-      harEl.classList.toggle("is-neg", harNa < 0);
-    }
+    forwardSetValue(harEl, harNa);
 
     // Projection start = effective bruk/pot (post-bank). Prefer totalBruk
     // (includes calc-time fallback / seed), not Trygg-after-future-reserve.
@@ -2114,7 +2162,8 @@
     if (startPot == null && harNa != null) startPot = harNa;
 
     const key = monthKey(state.view.year, state.view.month);
-    // Ensure next 12 months have expected budgets copied for projection
+    // Ensure near-term months have expected budgets; multi-year roll
+    // reuses last known expected virtually (no 144-month persist).
     if (typeof Calc.shiftMonthKey === "function") {
       let k = key;
       for (let i = 0; i < 12; i++) {
@@ -2128,6 +2177,7 @@
       }
     }
 
+    const HORIZON = 156; // 13y so Dec/Nov of year+12 always in range
     let projection = null;
     if (
       typeof Calc.projectPotFollowBudget === "function" &&
@@ -2141,27 +2191,32 @@
         categories: state.categories,
         plannedSpends: state.plannedSpends || [],
         startPot: startPot,
-        horizon: 12
+        horizon: HORIZON
       });
     }
+    state._forwardProjection = projection;
 
-    const showN = 6; // cards: next 6 months; summary still 12
+    const showN = 6; // cards: next 6 months
+    const clearMilestones = function () {
+      forwardSetValue($("#forwardOm1Value"), null);
+      forwardSetValue($("#forwardOm5Value"), null);
+      forwardSetValue($("#forwardOm12Value"), null);
+      const yl = $("#forwardYearsList");
+      if (yl) yl.innerHTML = "";
+      forwardApplyPickResult(null);
+    };
+
     if (!projection || !projection.months || !projection.months.length) {
       monthsEl.innerHTML =
         '<p class="hint compact">Mangler pot/bruk å projisere fra.</p>';
-      yearEl.textContent = "—";
-      yearEl.classList.remove("is-neg");
+      clearMilestones();
       return;
     }
 
     monthsEl.innerHTML = projection.months
       .slice(0, showN)
       .map(function (row) {
-        const parts = String(row.monthKey || "").split("-");
-        const mi = parseInt(parts[1], 10) - 1;
-        const label =
-          (MONTHS[mi] || row.monthKey) +
-          (parts[0] ? " " + parts[0] : "");
+        const label = forwardFmtMonthLabel(row.monthKey);
         const neg = row.pot < 0 ? " is-neg" : "";
         return (
           '<div class="forward-month-card">' +
@@ -2177,16 +2232,94 @@
       })
       .join("");
 
-    const at12 = projection.potAtHorizon;
-    if (at12 == null || !Number.isFinite(at12)) {
-      yearEl.textContent = "—";
-      yearEl.classList.remove("is-neg");
-    } else {
-      yearEl.textContent = formatNOK(at12);
-      yearEl.classList.toggle("is-neg", at12 < 0);
+    const ms = projection.milestones || {};
+    function setMilestone(labelId, valueId, row, fallbackLabel) {
+      const lab = $(labelId);
+      const val = $(valueId);
+      if (row && row.monthKey) {
+        if (lab) {
+          lab.textContent =
+            fallbackLabel + " (" + forwardFmtMonthLabel(row.monthKey) + ")";
+        }
+        forwardSetValue(val, row.pot);
+      } else {
+        if (lab) lab.textContent = fallbackLabel;
+        forwardSetValue(val, null);
+      }
     }
+    setMilestone("#forwardOm1Label", "#forwardOm1Value", ms.m12, "Om 1 år");
+    setMilestone("#forwardOm5Label", "#forwardOm5Value", ms.m60, "Om 5 år");
+    setMilestone("#forwardOm12Label", "#forwardOm12Value", ms.m144, "Om 12 år");
+
+    // Year-by-year expandable (December snapshots)
+    const yearsEl = $("#forwardYearsList");
+    if (yearsEl) {
+      const years = projection.byYear || [];
+      if (!years.length) {
+        yearsEl.innerHTML = '<p class="hint compact">Ingen år-data.</p>';
+      } else {
+        yearsEl.innerHTML = years
+          .map(function (y) {
+            const neg = y.pot < 0 ? " is-neg" : "";
+            return (
+              '<div class="forward-year-row">' +
+              '<span class="fy-label">Des ' +
+              escapeHtml(String(y.year)) +
+              "</span>" +
+              '<span class="fy-pot' +
+              neg +
+              '">' +
+              formatNOK(y.pot) +
+              "</span></div>"
+            );
+          })
+          .join("");
+      }
+    }
+
+    // Populate pick selects (preserve selection when possible)
+    const yearSel = $("#forwardPickYear");
+    const monthSel = $("#forwardPickMonth");
+    if (monthSel && !monthSel.options.length) {
+      MONTHS.forEach(function (name, i) {
+        const opt = document.createElement("option");
+        opt.value = String(i + 1);
+        opt.textContent = name;
+        monthSel.appendChild(opt);
+      });
+    }
+    if (yearSel) {
+      const prevY = yearSel.value;
+      const prevM = monthSel ? monthSel.value : "";
+      const yearsSet = {};
+      projection.months.forEach(function (row) {
+        const y = String(row.monthKey || "").slice(0, 4);
+        if (y) yearsSet[y] = true;
+      });
+      const years = Object.keys(yearsSet).sort();
+      yearSel.innerHTML = "";
+      years.forEach(function (y) {
+        const opt = document.createElement("option");
+        opt.value = y;
+        opt.textContent = y;
+        yearSel.appendChild(opt);
+      });
+      // Default pick: Nov 2038 if in range, else last year / Nov
+      let defY = "2038";
+      let defM = "11";
+      if (years.indexOf(defY) < 0) {
+        defY = years.length ? years[years.length - 1] : "";
+      }
+      if (prevY && years.indexOf(prevY) >= 0) defY = prevY;
+      if (prevM) defM = prevM;
+      if (defY) yearSel.value = defY;
+      if (monthSel) monthSel.value = defM;
+    }
+    forwardApplyPickResult(projection);
+
     if (card) card.hidden = false;
   }
+
 
   function renderSafeSpend(c) {
     const valEl = $("#safeSpendValue");

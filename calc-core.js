@@ -934,7 +934,15 @@
    *   pot_{m+1} = pot_m + planInn − planUtVariable − plannedSpendsThatMonth
    * Fast is NOT re-subtracted (pot is post-bank / trygg-envelope).
    * startPot should be current effective bruk/pot (seed or bank), not Trygg-after-future-reserve.
-   * Returns { startPot, months:[{monthKey, pot, planInn, planUtVariable, plannedSpends}], potAtHorizon }.
+   *
+   * Missing future months reuse the last known expected budgets/income (virtual
+   * carry — does not mutate months). Horizon up to 240 months (20 years).
+   *
+   * Returns {
+   *   startPot, months:[{monthKey, pot, planInn, planUtVariable, plannedSpends}],
+   *   potAtHorizon, potByKey, byYear:[{year, monthKey, pot}],
+   *   milestones:{m12,m60,m144}, formula
+   * }.
    */
   function projectPotFollowBudget(opts) {
     opts = opts || {};
@@ -944,19 +952,43 @@
     var categories = opts.categories || [];
     var plannedSpends = opts.plannedSpends || [];
     var startPot = Number(opts.startPot);
-    var horizon = opts.horizon == null ? 12 : Math.max(1, Math.min(24, Number(opts.horizon) || 12));
+    var horizon =
+      opts.horizon == null
+        ? 12
+        : Math.max(1, Math.min(240, Number(opts.horizon) || 12));
     if (!fromKey || !Number.isFinite(startPot)) {
-      return { startPot: startPot, months: [], potAtHorizon: null };
+      return {
+        startPot: startPot,
+        months: [],
+        potAtHorizon: null,
+        potByKey: {},
+        byYear: [],
+        milestones: {},
+        formula:
+          "pot = pot + planInn − planUtVariable − planlagteUtlegg (Fast ikke trukket på nytt)"
+      };
     }
     var pot = startPot;
     var rows = [];
+    var potByKey = {};
     var key = fromKey;
+    // Template for months without expected: prefer fromKey, else nearest prev.
+    var template = null;
+    if (months[fromKey] && monthHasExpected(months[fromKey])) {
+      template = months[fromKey];
+    } else {
+      var prevExp = findNearestPreviousWithExpected(months, fromKey, 60);
+      if (prevExp && months[prevExp]) template = months[prevExp];
+    }
     for (var i = 0; i < horizon; i++) {
       key = shiftMonthKey(key, 1);
       if (!key) break;
       var m = months[key];
-      if (!m) {
-        // Empty shell for projection — budgets may be missing
+      if (m && monthHasExpected(m)) {
+        template = m;
+      } else if (template) {
+        m = template;
+      } else if (!m) {
         m = {
           balances: {},
           budgets: {},
@@ -980,11 +1012,37 @@
         planUtVariable: planUtVar,
         plannedSpends: planned
       });
+      potByKey[key] = pot;
     }
+    // Year-end snapshots (December of each calendar year touched)
+    var byYear = [];
+    var seenYear = {};
+    rows.forEach(function (row) {
+      var y = String(row.monthKey || "").slice(0, 4);
+      var mo = String(row.monthKey || "").slice(5, 7);
+      if (!y || mo !== "12") return;
+      if (seenYear[y]) return;
+      seenYear[y] = true;
+      byYear.push({ year: parseInt(y, 10), monthKey: row.monthKey, pot: row.pot });
+    });
+    // Also anniversary milestones at +12/+60/+144 months when present
+    function atOffset(n) {
+      return rows.length >= n ? rows[n - 1] : null;
+    }
+    var m12 = atOffset(12);
+    var m60 = atOffset(60);
+    var m144 = atOffset(144);
     return {
       startPot: startPot,
       months: rows,
       potAtHorizon: rows.length ? rows[rows.length - 1].pot : startPot,
+      potByKey: potByKey,
+      byYear: byYear,
+      milestones: {
+        m12: m12,
+        m60: m60,
+        m144: m144
+      },
       formula:
         "pot = pot + planInn − planUtVariable − planlagteUtlegg (Fast ikke trukket på nytt)"
     };

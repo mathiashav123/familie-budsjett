@@ -3362,6 +3362,98 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
   assertEq(proj.months[1].plannedSpends, 0, "37 proj nov no bil");
 }
 
+// --- §38 Multi-year pot projection (12y / Nov 2038) ---
+{
+  console.log("\n§38 multi-year projectPotFollowBudget");
+  const people = [
+    { id: "p1", name: "Mathias", archived: false },
+    { id: "p2", name: "Andrea", archived: false }
+  ];
+  const cats = [
+    { id: "cFast", name: "Lån", type: "fast", owner: "felles", archived: false },
+    { id: "cMat", name: "Mat", type: "variabel", owner: "p1", archived: false }
+  ];
+  // Only Sep present — future months must virtual-carry budget/income
+  const sep = {
+    balances: {
+      p1: { bruk: 100000, spare: null, when: "after_salary", asOf: null },
+      p2: { bruk: null, spare: null, when: "after_salary", asOf: null }
+    },
+    budgets: { cFast: { felles: 20000 }, cMat: { p1: 5000 } },
+    budgetLines: {},
+    plannedIncome: {
+      p1: { lønn: 30000, ekstra: 0 },
+      p2: { lønn: 20000, ekstra: 0 }
+    },
+    incomes: [],
+    savings: [],
+    expenses: []
+  };
+  const bil = [
+    {
+      id: "bil1",
+      amount: 40000,
+      owner: "p1",
+      monthKey: "2026-10",
+      note: "Bil",
+      done: false
+    }
+  ];
+  const months = { "2026-09": sep };
+  // Monthly net = planInn 50000 − planUtVar 5000 = +45000 (Fast ignored)
+  // Oct: 100000 + 45000 − 40000 = 105000
+  const long = Calc.projectPotFollowBudget({
+    months: months,
+    fromKey: "2026-09",
+    people: people,
+    categories: cats,
+    plannedSpends: bil,
+    startPot: 100000,
+    horizon: 144
+  });
+  assertEq(long.months.length, 144, "38 144 months");
+  assertEq(long.months[0].monthKey, "2026-10", "38 first oct");
+  assertEq(long.months[0].pot, 105000, "38 oct after bil once");
+  assertEq(long.months[1].monthKey, "2026-11", "38 nov key");
+  assertEq(long.months[1].plannedSpends, 0, "38 bil not repeated");
+  assertEq(long.months[1].pot, 150000, "38 nov +45000");
+  // Empty months still have planInn via virtual carry
+  assertEq(long.months[1].planInn, 50000, "38 virtual planInn");
+  assertEq(long.months[1].planUtVariable, 5000, "38 virtual planUtVar");
+  // Horizon = Sep 2026 + 144m = Sep 2038
+  assertEq(long.months[143].monthKey, "2038-09", "38 horizon Sep 2038");
+  assert(long.milestones && long.milestones.m12, "38 m12 milestone");
+  assertEq(long.milestones.m12.monthKey, "2027-09", "38 om 1 år = Sep 2027");
+  assertEq(long.milestones.m60.monthKey, "2031-09", "38 om 5 år = Sep 2031");
+  assertEq(long.milestones.m144.monthKey, "2038-09", "38 om 12 år = Sep 2038");
+  // Nov 2038 not in 144 from Sep (ends Sep 2038) — extend for pick
+  const longer = Calc.projectPotFollowBudget({
+    months: months,
+    fromKey: "2026-09",
+    people: people,
+    categories: cats,
+    plannedSpends: bil,
+    startPot: 100000,
+    horizon: 146 // through Nov 2038
+  });
+  assertEq(longer.potByKey["2038-11"], longer.months[145].pot, "38 potByKey Nov 2038");
+  assert(Number.isFinite(longer.potByKey["2038-11"]), "38 Nov 2038 finite");
+  // After Oct bil: pot_n = 60000 + 45000*n
+  assertEq(longer.months[145].monthKey, "2038-11", "38 row Nov 2038");
+  assertEq(longer.months[145].pot, 6630000, "38 Nov 2038 pot formula");
+  // byYear has Dec entries
+  assert(longer.byYear.length >= 12, "38 byYear >= 12 decembers");
+  assertEq(longer.byYear[0].monthKey, "2026-12", "38 first year-end Dec 2026");
+  // Dec 2026 = month 3 → 60000 + 45000*3 = 195000
+  assertEq(longer.byYear[0].pot, 195000, "38 Dec 2026 pot");
+  // Does not mutate months map with shells
+  assertEq(Object.keys(months).length, 1, "38 no month persist bloat");
+  assert(
+    typeof longer.formula === "string" && longer.formula.indexOf("planInn") >= 0,
+    "38 formula"
+  );
+}
+
 console.log("\n=== Results:", passed, "passed,", failed, "failed ===\n");
 if (failed) {
   console.error("FAILURES:");
