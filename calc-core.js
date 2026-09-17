@@ -275,7 +275,8 @@
       spare: null,
       when: BALANCE_WHEN_AFTER,
       asOf: null,
-      suggested: false
+      suggested: false,
+      suggestedAfterPlans: false
     };
   }
 
@@ -292,6 +293,11 @@
         m.balances[p.id].asOf = normalizeBalanceAsOf(m.balances[p.id].asOf);
         if (m.balances[p.id].suggested) m.balances[p.id].suggested = true;
         else m.balances[p.id].suggested = false;
+        if (m.balances[p.id].suggestedAfterPlans) {
+          m.balances[p.id].suggestedAfterPlans = true;
+        } else {
+          m.balances[p.id].suggestedAfterPlans = false;
+        }
       }
     });
   }
@@ -376,9 +382,14 @@
     var keys = Object.keys(m.balances);
     for (var i = 0; i < keys.length; i++) {
       var b = m.balances[keys[i]];
-      if (b && b.suggested) return true;
+      if (b && (b.suggested || b.suggestedAfterPlans)) return true;
     }
     return false;
+  }
+
+  /** True if saldo was plan-seeded (suggested or suggestedAfterPlans) for bake-in. */
+  function monthHasPlanSeededBalances(m) {
+    return monthHasSuggestedBalances(m);
   }
 
   /**
@@ -490,6 +501,7 @@
       m.balances[p.id].when = BALANCE_WHEN_AFTER;
       m.balances[p.id].asOf = null;
       m.balances[p.id].suggested = true;
+      m.balances[p.id].suggestedAfterPlans = true;
       seededAny = true;
     });
     if (seededAny) {
@@ -499,19 +511,53 @@
     return { seeded: false, reason: "no-prev-bruk" };
   }
 
-  /** Clear suggested flags after user confirms/edits saldo. */
+  /** Clear suggested flags after user confirms/edits saldo.
+   * Returns true if that person (or month) had a plan-seeded balance — caller
+   * should mark same-month plannedSpends reflectedInBalance so Trygg does not
+   * reserve them again after Bekreft.
+   */
   function clearSuggestedBalanceFlag(m, personId) {
-    if (!m || !m.balances) return;
+    if (!m || !m.balances) return false;
+    var wasSeeded = false;
     if (personId && m.balances[personId]) {
-      m.balances[personId].suggested = false;
+      var bal = m.balances[personId];
+      if (bal.suggested || bal.suggestedAfterPlans || m.balancesSuggested) {
+        wasSeeded = true;
+      }
+      bal.suggested = false;
+      bal.suggestedAfterPlans = false;
     }
     var any = false;
     Object.keys(m.balances).forEach(function (pid) {
-      if (m.balances[pid] && m.balances[pid].suggested) any = true;
+      if (
+        m.balances[pid] &&
+        (m.balances[pid].suggested || m.balances[pid].suggestedAfterPlans)
+      ) {
+        any = true;
+      }
     });
     if (!any) {
       delete m.balancesSuggested;
     }
+    return wasSeeded;
+  }
+
+  /**
+   * Mark open plannedSpends for monthKey as already reflected in På konto nå
+   * (seeded/confirmed). They must not enter futureReserve again.
+   */
+  function markPlannedSpendsReflectedInBalance(plannedSpends, monthKey) {
+    var mk = String(monthKey || "");
+    if (!mk || !Array.isArray(plannedSpends)) return 0;
+    var n = 0;
+    plannedSpends.forEach(function (p) {
+      if (!p || p.done || !(p.amount > 0)) return;
+      if (String(p.monthKey || "") !== mk) return;
+      if (p.reflectedInBalance) return;
+      p.reflectedInBalance = true;
+      n++;
+    });
+    return n;
   }
 
   function findNearestPreviousWithBalances(months, monthKey, maxLookback) {
@@ -1298,11 +1344,13 @@
 
   /**
    * Feature 2 – Fremtidig / planlagt utlegg (state.plannedSpends[]).
-   * monthKey "YYYY-MM". When viewing month M, reserve = sum of open items with
-   * monthKey >= M (same month + later). Past months after the event drop out.
-   * Double-count: if a logged expense in the viewed month matches owner +
-   * categoryId (greedy 1:1), that item reserves 0 (expense already counts).
-   * No category → reserve full amount until done=true.
+   * monthKey "YYYY-MM". When viewing month M:
+   *   - Hold-back (futureReserve): open items with monthKey > M (strictly later)
+   *   - Same-month (monthKey === M): reserve only if NOT plan-seeded into bruk
+   *     and NOT reflectedInBalance; manual full bank before paying still reserves
+   *     until done / logged / reflected.
+   * Double-count: logged expense in viewed month matching owner + categoryId
+   * (greedy 1:1) → reserve 0. No category → full amount until done=true.
    */
   function normalizePlannedSpend(p, people) {
     p = p || {};
@@ -1319,7 +1367,8 @@
       monthKey: mk,
       note: p.note ? String(p.note).slice(0, 120) : "",
       done: !!p.done,
-      doneExpenseId: p.doneExpenseId || null
+      doneExpenseId: p.doneExpenseId || null,
+      reflectedInBalance: !!p.reflectedInBalance
     };
   }
 
@@ -1341,7 +1390,10 @@
     });
   }
 
-  /** Open + scheduled items with monthKey >= viewed month (YYYY-MM string order). */
+  /**
+   * Items with monthKey >= viewed (list UI). Hold-back window for reserve is
+   * monthKey > viewed; same-month handled separately (seed / reflected).
+   */
   function plannedSpendsFromMonth(list, monthKey) {
     var mk = String(monthKey || "");
     if (!mk) return [];
@@ -1350,23 +1402,45 @@
     });
   }
 
+  /** Strictly later than viewed month (YYYY-MM string order). */
+  function plannedSpendsAfterMonth(list, monthKey) {
+    var mk = String(monthKey || "");
+    if (!mk) return [];
+    return (list || []).filter(function (p) {
+      return p && p.monthKey && String(p.monthKey) > mk;
+    });
+  }
+
+  function shouldReserveSameMonthPlan(item, viewedMk, opts) {
+    opts = opts || {};
+    if (!item || !viewedMk) return false;
+    if (String(item.monthKey || "") !== viewedMk) return false;
+    if (item.reflectedInBalance) return false;
+    if (opts.excludeSameMonth) return false;
+    return true;
+  }
+
   /**
-   * Reserved amount for planned spends from viewed month onward (after matching expenses).
-   * Window: monthKey >= viewed M. Matching only for same-month plans (item.monthKey ===
-   * viewed): !done; prefer doneExpenseId; else greedy same owner + categoryId against
-   * viewed-month expenses. Later months (item.monthKey > viewed) always full-reserve
-   * unless done / doneExpenseId explicitly covers them.
+   * Reserved amount for planned spends.
+   * - Always: open items with monthKey > viewed (hold-back for future months)
+   * - Same-month: only when bruk is NOT plan-seeded (excludeSameMonth) and item
+   *   is NOT reflectedInBalance (after Bekreft of suggested seed). Manual full
+   *   bank before paying still reserves same-month until done/logged/reflected.
+   * Matching expenses only for same-month plans.
    */
   function plannedSpendReserve(plannedSpends, monthKey, expenses, opts) {
     opts = opts || {};
     var viewedMk = String(monthKey || "");
-    var items = plannedSpendsFromMonth(plannedSpends, monthKey).filter(function (p) {
-      if (!p || p.done || !(p.amount > 0)) return false;
-      // Suggested saldo already subtracted same-month planned — skip those
-      if (opts.excludeSameMonth && viewedMk && String(p.monthKey || "") === viewedMk) {
-        return false;
+    var items = (plannedSpends || []).filter(function (p) {
+      if (!p || p.done || !(p.amount > 0) || !p.monthKey) return false;
+      var mk = String(p.monthKey);
+      if (viewedMk && mk > viewedMk) return true;
+      if (viewedMk && mk === viewedMk) {
+        return shouldReserveSameMonthPlan(p, viewedMk, opts);
       }
-      return true;
+      // No viewed month → keep legacy >= behaviour via fromMonth callers
+      if (!viewedMk) return true;
+      return false;
     });
     if (!items.length) return 0;
     var exps = (expenses || []).slice();
@@ -1415,12 +1489,15 @@
   ) {
     opts = opts || {};
     var viewedMk = String(monthKey || "");
-    var items = plannedSpendsFromMonth(plannedSpends, monthKey).filter(function (p) {
-      if (!p || p.done || !(p.amount > 0)) return false;
-      if (opts.excludeSameMonth && viewedMk && String(p.monthKey || "") === viewedMk) {
-        return false;
+    var items = (plannedSpends || []).filter(function (p) {
+      if (!p || p.done || !(p.amount > 0) || !p.monthKey) return false;
+      var mk = String(p.monthKey);
+      if (viewedMk && mk > viewedMk) return true;
+      if (viewedMk && mk === viewedMk) {
+        return shouldReserveSameMonthPlan(p, viewedMk, opts);
       }
-      return true;
+      if (!viewedMk) return true;
+      return false;
     });
     if (!items.length) return 0;
     var exps = (expenses || []).slice();
@@ -1609,7 +1686,8 @@
 
     // Future planned spends reserve (Feature 2)
     var mk = monthKey || opts.monthKey || null;
-    var excludeSameMonthPlanned = monthHasSuggestedBalances(m);
+    // Same-month plans already in seeded bruk (or suggestedAfterPlans) → skip
+    var excludeSameMonthPlanned = monthHasPlanSeededBalances(m);
     var futureReserve = plannedSpendReserve(
       plannedSpends || opts.plannedSpends || [],
       mk,
@@ -3379,6 +3457,8 @@
     openPlannedSpendDeductionForPerson: openPlannedSpendDeductionForPerson,
     computeSuggestedBrukFromPrev: computeSuggestedBrukFromPrev,
     clearSuggestedBalanceFlag: clearSuggestedBalanceFlag,
+    markPlannedSpendsReflectedInBalance: markPlannedSpendsReflectedInBalance,
+    monthHasPlanSeededBalances: monthHasPlanSeededBalances,
     balanceSuggestedLabel: balanceSuggestedLabel,
     findNearestPreviousWithBalances: findNearestPreviousWithBalances,
     migrateState: migrateState,
@@ -3438,6 +3518,7 @@
     normalizePlannedSpends: normalizePlannedSpends,
     plannedSpendsForMonth: plannedSpendsForMonth,
     plannedSpendsFromMonth: plannedSpendsFromMonth,
+    plannedSpendsAfterMonth: plannedSpendsAfterMonth,
     plannedSpendReserve: plannedSpendReserve,
     plannedSpendReserveForPerson: plannedSpendReserveForPerson,
     calcPerson: calcPerson,

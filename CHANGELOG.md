@@ -1,5 +1,27 @@
 # Endringslogg – Familiebudsjett
 
+## 17. september 2026 (UTC+2) – Fix: planlagt utlegg ikke dobbelttelt i Trygg
+
+- **Bug:** «Ny bil» 160000 i oktober: september reserverte korrekt (231223−160000=**71223**), oktober foreslo seed 71223 — men etter **Bekreft** (eller uten `suggested`-flagg) trakk `futureReserve` 160k **på nytt** → Trygg ≈0.
+- **Regler (én gang totalt):**
+  - **Før mål-måned** (`monthKey >` vist M): hold-back i `futureReserve` (som før).
+  - **I mål-måned:** trekkes via foreslått På konto (`prev − planlagt`) **eller** reserve hvis rå/full bank før betaling. Ikke begge.
+  - **Etter Bekreft** av foreslått saldo: `reflectedInBalance: true` på planlagte i måneden → aldri reserve igjen. `suggested` / `suggestedAfterPlans` fjernes, beløpene beholdes.
+  - Manuell full bank i mål-måned (uten seed) reserverer fortsatt samme måneds plan til kjøpt/done.
+- **UI:** hint «trukket én gang»; planlagt rad «· i saldo»; sumlinje når allerede i På konto nå.
+- Tester §11d + §33 (Sep 71223; Oct seed+Bekreft 71223; manuell full bank reserverer). Additiv (`familie-budsjett-v1`).
+
+## 17. september 2026 (UTC+2) – Fix: planlagt utlegg ikke dobbelttelt i Trygg
+
+- **Bug:** «Ny bil» 160000 i oktober: september reserverte korrekt (231223−160000=**71223**), oktober foreslo seed 71223 — men etter **Bekreft** (eller uten `suggested`-flagg) trakk `futureReserve` 160k **på nytt** → Trygg ≈0.
+- **Regler (én gang totalt):**
+  - **Før mål-måned** (`monthKey >` vist M): hold-back i `futureReserve` (som før).
+  - **I mål-måned:** trekkes via foreslått På konto (`prev − planlagt`) **eller** reserve hvis rå/full bank før betaling. Ikke begge.
+  - **Etter Bekreft** av foreslått saldo: `reflectedInBalance: true` på planlagte i måneden → aldri reserve igjen. `suggested` / `suggestedAfterPlans` fjernes, beløpene beholdes.
+  - Manuell full bank i mål-måned (uten seed) reserverer fortsatt samme måneds plan til kjøpt/done.
+- **UI:** hint «trukket én gang»; planlagt rad «· i saldo»; sumlinje når allerede i På konto nå.
+- Tester §11d + §33 (Sep 71223; Oct seed+Bekreft 71223; manuell full bank reserverer). Additiv (`familie-budsjett-v1`).
+
 ## 17. september 2026 (UTC+2) – Foreslått saldo + Trygg uten skummelt 0
 
 - **Bug:** Ny måned uten bruk falt til plan-modus; stort planlagt utlegg → Trygg **0**. Rå `before_salary`-kopi er også feil.

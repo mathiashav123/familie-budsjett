@@ -733,12 +733,33 @@ console.log("\n11d. Suggested bruk seed = prev confirmed − plannedSpends (not 
   assertEq(cOct.futureReserve, 0, "same-month planned already in seed");
   assertEq(cOct.totalBruk, 71223, "total suggested bruk");
   assertEq(cOct.safeToSpend, 71223, "Trygg = seed (not 0)");
-  // Confirm clears suggested
-  Calc.clearSuggestedBalanceFlag(months["2026-10"], "p1");
+  // Confirm clears suggested; mark plans reflected so Trygg does not double-count
+  const was1 = Calc.clearSuggestedBalanceFlag(months["2026-10"], "p1");
+  assert(was1 === true, "p1 was seeded");
   assert(months["2026-10"].balances.p1.suggested === false, "p1 cleared");
+  assert(months["2026-10"].balances.p1.suggestedAfterPlans === false, "p1 afterPlans cleared");
   assert(months["2026-10"].balances.p2.suggested === true, "p2 still suggested");
-  Calc.clearSuggestedBalanceFlag(months["2026-10"], "p2");
+  Calc.markPlannedSpendsReflectedInBalance(planned, "2026-10");
+  assert(planned[0].reflectedInBalance === true, "plan marked reflected");
+  const cOctAfterP1 = Calc.calcFamily(months["2026-10"], people, [], {
+    monthKey: "2026-10",
+    monthIndex: 9,
+    plannedSpends: planned,
+    spendBuffer: 0
+  });
+  assertEq(cOctAfterP1.futureReserve, 0, "after p1 confirm: still no double (p2 suggested or reflected)");
+  const was2 = Calc.clearSuggestedBalanceFlag(months["2026-10"], "p2");
+  assert(was2 === true, "p2 was seeded");
   assert(!months["2026-10"].balancesSuggested, "month flag cleared");
+  const cOctConfirmed = Calc.calcFamily(months["2026-10"], people, [], {
+    monthKey: "2026-10",
+    monthIndex: 9,
+    plannedSpends: planned,
+    spendBuffer: 0
+  });
+  assertEq(cOctConfirmed.futureReserve, 0, "after both confirm: reflected blocks reserve");
+  assertEq(cOctConfirmed.safeToSpend, 71223, "Trygg stays 71223 after Bekreft");
+  assertEq(cOctConfirmed.totalBruk, 71223, "bruk unchanged after Bekreft");
 
   // before_salary prev WITHOUT planned in next month → still empty (no raw copy)
   const months2 = {
@@ -1677,7 +1698,7 @@ console.log("\n25. Fast auto-spend max-rule + opt-out + yearly once + plannedSpe
   assertEq(cMar2.autoSpendExtra, 7000 + 12000, "rent+ins auto");
   assertEq(cMar2.remainingFastBudgets, 0, "no remFast when both auto");
 
-  // Planned future spend — reserve window: monthKey >= viewed month
+  // Planned future spend — later months always; same-month unless seeded/reflected
   const planned = Calc.normalizePlannedSpends([
     { amount: 8000, owner: "p1", monthKey: "2026-09", note: "Sofa", categoryId: "cFood" },
     { amount: 2000, owner: "felles", monthKey: "2026-10", note: "Gave" }
@@ -1697,7 +1718,7 @@ console.log("\n25. Fast auto-spend max-rule + opt-out + yearly once + plannedSpe
   const cNov = Calc.calcFamily(m, people, cats, {}, 10, planned, "2026-11");
   assertEq(cNov.futureReserve, 0, "nov: past plans no longer reserve");
   // Direct helper
-  assertEq(Calc.plannedSpendReserve(planned, "2026-09", []), 10000, "helper >= window");
+  assertEq(Calc.plannedSpendReserve(planned, "2026-09", []), 10000, "helper: same+later");
   assertEq(Calc.plannedSpendReserve(planned, "2026-10", []), 2000, "helper from oct");
   assertEq(Calc.plannedSpendReserve(planned, "2026-11", []), 0, "helper after");
   assertEq(Calc.plannedSpendsFromMonth(planned, "2026-09").length, 2, "fromMonth lists 2");
@@ -2530,6 +2551,63 @@ console.log("\n33. awaiting_saldo — Oct no bruk + plannedSpend; Sep saldo unch
   assertEq(cOctSeed.totalBruk, 71223, "oct seeded total");
   assertEq(cOctSeed.futureReserve, 0, "oct reserve excludes baked-in planned");
   assertEq(cOctSeed.safeToSpend, 71223, "oct Trygg after seed");
+  assert(monthsSeed["2026-10"].balances.p1.suggestedAfterPlans === true, "suggestedAfterPlans");
+
+  // Bekreft clears suggested — without reflectedInBalance would double-hit to ~0
+  Calc.clearSuggestedBalanceFlag(monthsSeed["2026-10"], "p1");
+  Calc.clearSuggestedBalanceFlag(monthsSeed["2026-10"], "p2");
+  monthsSeed["2026-10"].balancesUpdatedAt = "2026-10-01T12:00:00.000Z";
+  Calc.markPlannedSpendsReflectedInBalance(planned, "2026-10");
+  const cOctConfirmed = Calc.calcFamily(monthsSeed["2026-10"], people, cats, {
+    monthKey: "2026-10",
+    monthIndex: 9,
+    plannedSpends: planned,
+    spendBuffer: 0
+  });
+  assertEq(cOctConfirmed.futureReserve, 0, "after Bekreft: no second reserve");
+  assertEq(cOctConfirmed.safeToSpend, 71223, "after Bekreft Trygg still 71223");
+  assert(cOctConfirmed.hasSuggestedBalances !== true, "no suggested after confirm");
+
+  // Manual full bank in target month (no seed) still reserves same-month until done
+  const octManual = {
+    balances: {
+      p1: { bruk: 150000, spare: 0 },
+      p2: { bruk: 81223, spare: 0 }
+    },
+    budgets: { cMat: { felles: 5000 } },
+    plannedIncome: {
+      p1: { lønn: 25000, ekstra: null },
+      p2: { lønn: 15000, ekstra: null }
+    },
+    incomes: [],
+    savings: [],
+    expenses: []
+  };
+  const plannedOpen = [
+    {
+      id: "ps1",
+      amount: 160000,
+      monthKey: "2026-10",
+      categoryId: "cBil",
+      owner: "felles",
+      done: false
+    }
+  ];
+  const cOctManual = Calc.calcFamily(octManual, people, cats, {
+    monthKey: "2026-10",
+    monthIndex: 9,
+    plannedSpends: plannedOpen,
+    spendBuffer: 0
+  });
+  assertEq(cOctManual.futureReserve, 160000, "manual full bank still reserves same-month");
+  assertEq(cOctManual.safeToSpend, 71223, "manual Trygg = bruk − reserve");
+
+  // Sep still holds back strictly later month
+  assertEq(
+    Calc.plannedSpendReserve(plannedOpen, "2026-09", []),
+    160000,
+    "sep hold-back monthKey > Sep"
+  );
 
   // Estimate helper: prev bruk − planned
   assert(typeof Calc.estimateSafeFromPrevBruk === "function", "estimate helper");
