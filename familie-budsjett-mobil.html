@@ -4565,7 +4565,7 @@ button.cat-group-header {
         <p class="safe-spend-secondary" id="safeSpendSecondary" hidden></p>
         <div class="safe-spend-breakdown" id="safeSpendBreakdown" hidden></div>
         <p class="meta-line" id="safeSpendReserve" hidden>Reservert til planlagte utlegg: —</p>
-        <p class="safe-spend-hint" id="safeSpendHint">Sett brukssaldo for mer treffsikkert tall. Fast holdes av automatisk; variabelt telles når du logger kjøp.</p>
+        <p class="safe-spend-hint" id="safeSpendHint">Sett brukssaldo (På konto nå) for mer treffsikkert tall. Faste er allerede i banksaldo — ikke trukket på nytt. Variabelt telles når du logger kjøp.</p>
         <div class="health-meter" id="healthMeter" hidden>
           <div class="health-meter-track">
             <div class="health-meter-fill" id="healthMeterFill"></div>
@@ -6571,17 +6571,26 @@ window.FAMILIE_BUDGET_SUPABASE = {
     return sum;
   }
 
+  /**
+   * Per-person Fast auto leftover. Uses category-level autoSpendExtra (total
+   * planned − total logged across ALL owners) so logging Fast under a person
+   * against a felles-budget still clears autoExtra (no double-count in
+   * På konto forventet / plan-mode). Attribute by budget weight:
+   * ownPlanned + fellesShare(fellesPlanned).
+   */
   function autoSpendExtraForPerson(m, personId, people, categories, monthIndex) {
     var sum = 0;
     (categories || []).forEach(function (cat) {
       if (!cat || cat.archived || !categoryAutoSpends(cat)) return;
-      var ownPlanned = budgetForOwner(m, cat.id, personId, monthIndex);
-      var ownLogged = actualForCategoryOwner(m, cat.id, cat.name, personId);
-      sum += Math.max(0, (ownPlanned || 0) - (ownLogged || 0));
-      var fellesPlanned = budgetForOwner(m, cat.id, "felles", monthIndex);
-      var fellesLogged = actualForCategoryOwner(m, cat.id, cat.name, "felles");
-      var extraF = Math.max(0, (fellesPlanned || 0) - (fellesLogged || 0));
-      if (extraF) sum += fellesShare(cat, personId, people, extraF);
+      var catExtra = autoSpendExtraForCategory(m, cat, monthIndex);
+      if (!(catExtra > 0)) return;
+      var totalPlanned = budgetFor(m, cat.id, monthIndex) || 0;
+      if (!(totalPlanned > 0)) return;
+      var ownPlanned = budgetForOwner(m, cat.id, personId, monthIndex) || 0;
+      var fellesPlanned = budgetForOwner(m, cat.id, "felles", monthIndex) || 0;
+      var weight =
+        ownPlanned + fellesShare(cat, personId, people, fellesPlanned);
+      sum += catExtra * (weight / totalPlanned);
     });
     return sum;
   }
@@ -10430,19 +10439,39 @@ window.FAMILIE_BUDGET_SUPABASE = {
         "</strong></div>"
     );
     if (ifUsed != null) {
+      const remAll =
+        typeof bd.remainingBudgetAll === "number" ? bd.remainingBudgetAll : 0;
       const remVar =
         typeof bd.remainingVariableBudgets === "number"
           ? bd.remainingVariableBudgets
-          : typeof bd.remainingBudgetAll === "number"
-            ? bd.remainingBudgetAll
-            : 0;
+          : remAll;
+      const remFast = Math.max(0, remAll - remVar);
+      let remNote = "";
+      if (remAll > 0.5) {
+        if (remFast > 0.5 && remVar > 0.5) {
+          remNote =
+            ' <em class="opt">(− ' +
+            formatNOK(remAll) +
+            " igjen: " +
+            formatNOK(remVar) +
+            " variabelt + " +
+            formatNOK(remFast) +
+            " fast uten auto)</em>";
+        } else if (remFast > 0.5) {
+          remNote =
+            ' <em class="opt">(− ' +
+            formatNOK(remFast) +
+            " fast uten auto-tell)</em>";
+        } else {
+          remNote =
+            ' <em class="opt">(− ' +
+            formatNOK(remVar) +
+            " variabelt igjen)</em>";
+        }
+      }
       rows.push(
         '<div class="safe-spend-breakdown-row is-secondary"><span>Hvis hele budsjettet brukes' +
-          (remVar > 0.5
-            ? ' <em class="opt">(− ' +
-              formatNOK(remVar) +
-              " variabelt igjen)</em>"
-            : "") +
+          remNote +
           "</span><strong>" +
           formatNOK(ifUsed) +
           "</strong></div>"
@@ -11178,8 +11207,10 @@ window.FAMILIE_BUDGET_SUPABASE = {
             formatForventetBreakdownHtml(row) +
             "</div>";
         }
+        // Hide «Etter lønn (plan)» when saldo already is after_salary —
+        // that line re-adds planInn/−planUt on top of bank and confuses vs Trygg.
         const etterLine =
-          row.etterLonn != null
+          row.etterLonn != null && whenMode !== "after_salary"
             ? '<p class="pa-konto-etter">Etter lønn (plan): <strong>' +
               formatNOK(row.etterLonn) +
               "</strong></p>"

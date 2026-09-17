@@ -1,5 +1,14 @@
 # Endringslogg – Familiebudsjett
 
+## 17. september 2026 (UTC+2) – Fix: På konto Fast-lekkasje + saldo-sim
+
+- **Bug:** Fast budsjettert som felles men logget på én person → `autoSpendExtraForPerson` ble ikke nullstilt. **På konto forventet** trakk Fast på nytt (falsk differanse). Plan-modus per person samme lekkasje.
+- **Fix:** `autoSpendExtraForPerson` = kategori-nivå `(plan−logget totalt)` fordelt etter budsjettvekt (egen + fellesandel). Samme nulling som husstands-auto.
+- **Trygg saldo** uendret og bekreftet: nå = `bruk − futureReserve − buffer`; hvis hele budsjettet = `bruk − remAll − future − buffer`; **ingen** `autoSpendExtra` på nytt.
+- **UI:** Skjuler «Etter lønn (plan)» når saldo allerede er etter lønn (unngår forvirring vs Trygg). Breakdown skiller Fast uten auto-tell. Hint: faste allerede i banksaldo.
+- **Sim:** `sim-10y-saldo.mjs` + `SIM-10Y-SALDO-RAPPORT.md` — 120 mnd, 1534 assertions (inkl. cross-owner Fast).
+- Tester §32. Lagring `familie-budsjett-v1` additiv, ingen wipe.
+
 ## 17. september 2026 (UTC+2) – Fix: Fast ikke dobbelttelt i Trygg (saldo)
 
 - **Bug:** Når «På konto nå» oppgis *etter* at faste regninger har gått fra banken, trakk saldo-modus også `autoSpendExtra` (Fast) — Fast ble trukket to ganger.

@@ -2225,6 +2225,87 @@ console.log("\n31. Saldo Trygg does not double-count Fast already in bank");
 }
 
 
+// --- Fast logged under person vs felles budget: no autoExtra leak ---
+console.log("\n32. autoSpendExtraForPerson: cross-owner Fast log clears auto");
+{
+  const people = [
+    { id: "p1", name: "M", active: true },
+    { id: "p2", name: "A", active: true }
+  ];
+  const cats = [
+    { id: "cHus", name: "Hus", type: "fast", owner: "felles" },
+    { id: "cMat", name: "Mat", type: "variabel", owner: "felles" }
+  ];
+  const prevBalances = {
+    p1: { bruk: 40000, spare: null },
+    p2: { bruk: 35000, spare: null }
+  };
+  // Fast paid from p1 account, logged as owner=p1 (not felles)
+  const m = {
+    balances: {
+      p1: { bruk: 57000, spare: null, when: "after_salary" },
+      p2: { bruk: 59000, spare: null, when: "after_salary" }
+    },
+    budgets: { cHus: { felles: 12000 }, cMat: { felles: 8000 } },
+    plannedIncome: {
+      p1: { lønn: 30000, ekstra: null },
+      p2: { lønn: 25000, ekstra: null }
+    },
+    incomes: [
+      { person: "p1", type: "lønn", amount: 30000 },
+      { person: "p2", type: "lønn", amount: 25000 }
+    ],
+    savings: [],
+    expenses: [
+      { id: "eMat", owner: "felles", categoryId: "cMat", amount: 2000 },
+      { id: "eHus", owner: "p1", categoryId: "cHus", amount: 12000, category: "Hus" }
+    ]
+  };
+  assertEq(Calc.autoSpendExtraTotal(m, cats, 8), 0, "household auto 0 when fully logged");
+  assertEq(
+    Calc.autoSpendExtraForPerson(m, "p1", people, cats, 8),
+    0,
+    "p1 auto 0 even though log owner≠felles"
+  );
+  assertEq(
+    Calc.autoSpendExtraForPerson(m, "p2", people, cats, 8),
+    0,
+    "p2 auto 0 — no ghost Fast share"
+  );
+  const rec = Calc.reconcilePaKonto(m, people, cats, 8, prevBalances);
+  assertEq(rec.byPerson.p1.forventet, 57000, "p1 forventet matches bank (no Fast re-sub)");
+  assertEq(rec.byPerson.p2.forventet, 59000, "p2 forventet matches bank");
+  assertEq(rec.byPerson.p1.differanse, 0, "p1 diff 0");
+  assertEq(rec.byPerson.p2.differanse, 0, "p2 diff 0");
+
+  const c = Calc.calcFamily(
+    m,
+    people,
+    cats,
+    { useSaldoInSafeToSpend: true, spendBuffer: 0 },
+    8,
+    [],
+    "2026-09"
+  );
+  assertEq(c.safeToSpendMode, "saldo", "saldo mode");
+  assertEq(c.autoSpendExtra, 0, "family auto 0");
+  assertEq(c.remainingFastBudgets, 0, "Fast rem 0");
+  assertEq(c.safeToSpend, c.totalBruk, "Trygg nå = bruk (no future/buffer)");
+  assertEq(
+    c.safeToSpendIfBudgetUsed,
+    c.totalBruk - c.remainingBudgetAll,
+    "if-used = bruk − remAll (no auto)"
+  );
+  assert(
+    Math.abs(
+      (c.byPerson.p1.autoSpendExtra || 0) + (c.byPerson.p2.autoSpendExtra || 0)
+    ) < 0.01,
+    "per-person autos sum ~0"
+  );
+}
+
+
+
 
 console.log("\n=== Results:", passed, "passed,", failed, "failed ===\n");
 if (failed) {

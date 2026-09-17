@@ -588,19 +588,39 @@
         "</strong></div>"
     );
     if (ifUsed != null) {
+      const remAll =
+        typeof bd.remainingBudgetAll === "number" ? bd.remainingBudgetAll : 0;
       const remVar =
         typeof bd.remainingVariableBudgets === "number"
           ? bd.remainingVariableBudgets
-          : typeof bd.remainingBudgetAll === "number"
-            ? bd.remainingBudgetAll
-            : 0;
+          : remAll;
+      const remFast = Math.max(0, remAll - remVar);
+      let remNote = "";
+      if (remAll > 0.5) {
+        if (remFast > 0.5 && remVar > 0.5) {
+          remNote =
+            ' <em class="opt">(− ' +
+            formatNOK(remAll) +
+            " igjen: " +
+            formatNOK(remVar) +
+            " variabelt + " +
+            formatNOK(remFast) +
+            " fast uten auto)</em>";
+        } else if (remFast > 0.5) {
+          remNote =
+            ' <em class="opt">(− ' +
+            formatNOK(remFast) +
+            " fast uten auto-tell)</em>";
+        } else {
+          remNote =
+            ' <em class="opt">(− ' +
+            formatNOK(remVar) +
+            " variabelt igjen)</em>";
+        }
+      }
       rows.push(
         '<div class="safe-spend-breakdown-row is-secondary"><span>Hvis hele budsjettet brukes' +
-          (remVar > 0.5
-            ? ' <em class="opt">(− ' +
-              formatNOK(remVar) +
-              " variabelt igjen)</em>"
-            : "") +
+          remNote +
           "</span><strong>" +
           formatNOK(ifUsed) +
           "</strong></div>"
@@ -1336,8 +1356,10 @@
             formatForventetBreakdownHtml(row) +
             "</div>";
         }
+        // Hide «Etter lønn (plan)» when saldo already is after_salary —
+        // that line re-adds planInn/−planUt on top of bank and confuses vs Trygg.
         const etterLine =
-          row.etterLonn != null
+          row.etterLonn != null && whenMode !== "after_salary"
             ? '<p class="pa-konto-etter">Etter lønn (plan): <strong>' +
               formatNOK(row.etterLonn) +
               "</strong></p>"
