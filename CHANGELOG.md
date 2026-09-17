@@ -1,5 +1,17 @@
 # Endringslogg – Familiebudsjett
 
+## 17. september 2026 (UTC+2) – Fix: dobbelttelling + negativ Trygg
+
+- **Bug (mål-måned):** Oktober med foreslått/seeda bruk 71223 *uten* `suggested`/`suggestedAfterPlans` (delvis migrering) trakk fortsatt samme måneds bil (160000) i `futureReserve` → `71223−160000` → `Math.max(0,…)` → **0**.
+- **Same-month reserve skip** når bruk allerede speiler planene:
+  - `suggested` / `suggestedAfterPlans` / `reflectedInBalance`, **eller**
+  - husstands-bruk ≈ `computeSuggestedBrukFromPrev(prev,…)` (±1 kr), **eller**
+  - sterkere: `bruk ≤ prevBruk − planlagt + 1` (prev bekreftet + åpne same-month plans).
+- `calcFamily` får `months` (via app) for prev-heuristikk. `ensureSuggestedBalances` **healer** manglende flagg → `reflectedInBalance`; seed setter alltid `suggested` + `suggestedAfterPlans`.
+- **Negativ Trygg tillatt:** primær «Trygg å bruke nå» / raw / plan-modus / «hvis hele budsjettet» — **ingen** `Math.max(0,…)`. Negativ = må spare inn. UI: `is-neg` (rød).
+- Tester §34 (Sep 71223; Oct uten flagg → future 0 / safe 71223; negativ ved senere plan). Additiv (`familie-budsjett-v1`).
+
+
 ## 17. september 2026 (UTC+2) – Fix: planlagt utlegg ikke dobbelttelt i Trygg
 
 - **Bug:** «Ny bil» 160000 i oktober: september reserverte korrekt (231223−160000=**71223**), oktober foreslo seed 71223 — men etter **Bekreft** (eller uten `suggested`-flagg) trakk `futureReserve` 160k **på nytt** → Trygg ≈0.

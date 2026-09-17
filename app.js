@@ -376,11 +376,14 @@
   // ——— Calculations (via calc-core) ———
   function calcFamily(m) {
     if (!Array.isArray(state.plannedSpends)) state.plannedSpends = [];
+    const settings = Object.assign({}, state.settings || {}, {
+      months: state.months
+    });
     return Calc.calcFamily(
       m,
       state.people,
       state.categories,
-      state.settings || {},
+      settings,
       state.view.month,
       state.plannedSpends,
       monthKey(state.view.year, state.view.month)
@@ -584,7 +587,9 @@
       );
     }
     rows.push(
-      '<div class="safe-spend-breakdown-row is-eq"><span>= Trygg å bruke nå</span><strong>' +
+      '<div class="safe-spend-breakdown-row is-eq' +
+        (nowAmt < 0 ? " is-neg" : "") +
+        '"><span>= Trygg å bruke nå</span><strong>' +
         formatNOK(nowAmt) +
         "</strong></div>"
     );
@@ -620,7 +625,9 @@
         }
       }
       rows.push(
-        '<div class="safe-spend-breakdown-row is-secondary"><span>Hvis hele budsjettet brukes' +
+        '<div class="safe-spend-breakdown-row is-secondary' +
+          (ifUsed < 0 ? " is-neg" : "") +
+          '"><span>Hvis hele budsjettet brukes' +
           remNote +
           "</span><strong>" +
           formatNOK(ifUsed) +
@@ -2183,13 +2190,13 @@
         valEl.className = "safe-spend-value is-needs-saldo";
       } else {
         const amt = typeof amount === "number" ? amount : 0;
-        const rawN = typeof raw === "number" ? raw : 0;
+        const rawN = typeof raw === "number" ? raw : amt;
         valEl.textContent = formatNOK(amt);
         valEl.className =
           "safe-spend-value" +
-          (amt <= 0 && rawN < 0
-            ? " is-over"
-            : amt <= 0
+          (amt < 0 || rawN < 0
+            ? " is-neg is-over"
+            : amt === 0
               ? " is-zero"
               : amt < 2000
                 ? " is-tight"
@@ -2213,9 +2220,11 @@
         secondaryEl.hidden = false;
         secondaryEl.textContent =
           "Hvis hele budsjettet brukes: " + formatNOK(ifBudgetUsed);
+        secondaryEl.classList.toggle("is-neg", ifBudgetUsed < 0);
       } else {
         secondaryEl.hidden = true;
         secondaryEl.textContent = "";
+        secondaryEl.classList.remove("is-neg");
       }
     }
 
@@ -2266,19 +2275,29 @@
         );
         const whose =
           isPerson && whoName ? " for " + whoName : "";
-        if (amt <= 0 && (rawN < 0 || saldoShort)) {
+        if (amt < 0 || (amt <= 0 && (rawN < 0 || saldoShort))) {
           hintEl.textContent =
-            "Saldo på bruk" +
-            whose +
-            " dekker ikke" +
-            (futureR > 0 ? " planlagte utlegg" : "") +
-            (futureR > 0 && buf > 0 ? " og" : "") +
-            (buf > 0 ? " buffer" : "") +
-            (futureR <= 0 && buf <= 0 ? " reserve/buffer" : "") +
-            (planHead > 0
-              ? " (plan-modus ville vist ca. " + formatNOK(planHead) + ")"
-              : "") +
-            ". Oppdater saldo eller plan. Faste er allerede i banksaldo.";
+            amt < 0
+              ? "Negativ trygg å bruke" +
+                whose +
+                " (" +
+                formatNOK(amt) +
+                ") — du må spare inn eller utsette planlagte utlegg." +
+                (futureR > 0
+                  ? " Reservert: " + formatNOK(futureR) + "."
+                  : "") +
+                " Faste er allerede i banksaldo."
+              : "Saldo på bruk" +
+                whose +
+                " dekker ikke" +
+                (futureR > 0 ? " planlagte utlegg" : "") +
+                (futureR > 0 && buf > 0 ? " og" : "") +
+                (buf > 0 ? " buffer" : "") +
+                (futureR <= 0 && buf <= 0 ? " reserve/buffer" : "") +
+                (planHead > 0
+                  ? " (plan-modus ville vist ca. " + formatNOK(planHead) + ")"
+                  : "") +
+                ". Oppdater saldo eller plan. Faste er allerede i banksaldo.";
         } else if (amt <= 0) {
           hintEl.textContent =
             "Ingen fri margin på bruk akkurat nå" +
@@ -2304,9 +2323,13 @@
         const amt = typeof amount === "number" ? amount : 0;
         const rawN = typeof raw === "number" ? raw : 0;
         let base;
-        if (amt <= 0 && rawN < 0) {
+        if (amt < 0 || (amt <= 0 && rawN < 0)) {
           base =
-            "Du har brukt mer enn forventet hittil. Juster plan eller hold igjen litt – det ordner seg.";
+            amt < 0
+              ? "Negativ trygg å bruke (" +
+                formatNOK(amt) +
+                ") — du må spare inn eller justere plan."
+              : "Du har brukt mer enn forventet hittil. Juster plan eller hold igjen litt – det ordner seg.";
         } else if (amt <= 0) {
           base =
             "Ingen fri buffer akkurat nå (faste utgifter er dekket først).";
@@ -2335,8 +2358,11 @@
         mini.hidden = false;
         if (needsSaldo) {
           miniVal.textContent = "—";
+          miniVal.classList.remove("is-neg");
         } else {
-          miniVal.textContent = formatNOK(typeof amount === "number" ? amount : 0);
+          const miniAmt = typeof amount === "number" ? amount : 0;
+          miniVal.textContent = formatNOK(miniAmt);
+          miniVal.classList.toggle("is-neg", miniAmt < 0);
         }
       } else {
         mini.hidden = true;
