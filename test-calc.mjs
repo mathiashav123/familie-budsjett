@@ -531,8 +531,8 @@ console.log("\n11. Carry-forward budgets; balances via suggested seed (not raw c
   assertEq(Calc.budgetFor(months["2026-09"], "c1"), 1000, "budget carried");
   // Rolling suggested seed from confirmed Aug (not silent raw copy / not confirmed)
   assert(r.suggestedBalances === true, "Sep got suggested balances");
-  assertEq(months["2026-09"].balances.p1.bruk, 8000, "p1 suggested from Aug");
-  assertEq(months["2026-09"].balances.p2.bruk, 4000, "p2 suggested from Aug");
+  assertEq(months["2026-09"].balances.p1.bruk, 37500, "p1 suggested from Aug (8000+lønn−utgifter)");
+  assertEq(months["2026-09"].balances.p2.bruk, 31500, "p2 suggested from Aug (4000+lønn−utgifter)");
   assert(months["2026-09"].balances.p1.suggested === true, "p1 suggested flag");
   assert(!months["2026-09"].balancesUpdatedAt, "Sep not auto-confirmed");
   assert(
@@ -597,8 +597,8 @@ console.log("\n11b. New month after confirmed balance gets suggested rolling car
   assert(r.copied === true, "Nov gets budgets/income");
   assertEq(months["2026-11"].plannedIncome.p1.lønn, 30000, "Nov income carried");
   assert(r.suggestedBalances === true, "Nov suggested rolling carry");
-  assertEq(months["2026-11"].balances.p1.bruk, 50000, "Nov p1 suggested 50k from Oct");
-  assertEq(months["2026-11"].balances.p2.bruk, 12000, "Nov p2 suggested 12k");
+  assertEq(months["2026-11"].balances.p1.bruk, 77500, "Nov p1 rolling from Oct (50k+lønn−utgifter)");
+  assertEq(months["2026-11"].balances.p2.bruk, 37500, "Nov p2 rolling from Oct");
   assert(months["2026-11"].balances.p1.suggested === true, "Nov suggested flag");
   assert(!months["2026-11"].balancesUpdatedAt, "Nov not auto-confirmed");
   assert(
@@ -721,8 +721,8 @@ console.log("\n11d. Suggested bruk seed = prev confirmed − plannedSpends (not 
   assert(months["2026-10"].balancesSuggested === true, "month balancesSuggested");
   assert(!months["2026-10"].balancesUpdatedAt, "no confirm stamp yet");
   // felles 160k / 2 = 80k each
-  assertEq(months["2026-10"].balances.p1.bruk, 70000, "p1 seed 150000-80000");
-  assertEq(months["2026-10"].balances.p2.bruk, 1223, "p2 seed 81223-80000");
+  assertEq(months["2026-10"].balances.p1.bruk, 92500, "p1 seed rolling 150k+inn−ut−80k bil");
+  assertEq(months["2026-10"].balances.p2.bruk, 13723, "p2 seed rolling");
   assert(months["2026-10"].balances.p1.suggested === true, "p1 suggested");
   assert(months["2026-10"].balances.p2.suggested === true, "p2 suggested");
   assertEq(months["2026-10"].balances.p1.when, "after_salary", "marked after_salary");
@@ -733,7 +733,7 @@ console.log("\n11d. Suggested bruk seed = prev confirmed − plannedSpends (not 
   );
   // Soft cleanup must NOT wipe suggested
   const cleared = Calc.clearAccidentalBalanceCarry(months);
-  assertEq(months["2026-10"].balances.p1.bruk, 70000, "suggested survives soft cleanup");
+  assertEq(months["2026-10"].balances.p1.bruk, 92500, "suggested survives soft cleanup");
   // Trygg: suggested excludes same-month planned from reserve
   const cOct = Calc.calcFamily(months["2026-10"], people, [], {
     monthKey: "2026-10",
@@ -744,8 +744,8 @@ console.log("\n11d. Suggested bruk seed = prev confirmed − plannedSpends (not 
   assertEq(cOct.safeToSpendMode, "saldo", "oct saldo with suggested");
   assert(cOct.hasSuggestedBalances === true, "hasSuggestedBalances");
   assertEq(cOct.futureReserve, 0, "same-month planned already in seed");
-  assertEq(cOct.totalBruk, 71223, "total suggested bruk");
-  assertEq(cOct.safeToSpend, 71223, "Trygg = seed (not 0)");
+  assertEq(cOct.totalBruk, 106223, "total suggested bruk");
+  assertEq(cOct.safeToSpend, 106223, "Trygg = seed (not 0)");
   // Confirm clears suggested; mark plans reflected so Trygg does not double-count
   const was1 = Calc.clearSuggestedBalanceFlag(months["2026-10"], "p1");
   assert(was1 === true, "p1 was seeded");
@@ -771,8 +771,8 @@ console.log("\n11d. Suggested bruk seed = prev confirmed − plannedSpends (not 
     spendBuffer: 0
   });
   assertEq(cOctConfirmed.futureReserve, 0, "after both confirm: reflected blocks reserve");
-  assertEq(cOctConfirmed.safeToSpend, 71223, "Trygg stays 71223 after Bekreft");
-  assertEq(cOctConfirmed.totalBruk, 71223, "bruk unchanged after Bekreft");
+  assertEq(cOctConfirmed.safeToSpend, 106223, "Trygg stays after Bekreft");
+  assertEq(cOctConfirmed.totalBruk, 106223, "bruk unchanged after Bekreft");
 
   // Rolling carry: confirmed prev WITHOUT planned in next month → seed = prev bruk
   const months2 = {
@@ -799,8 +799,8 @@ console.log("\n11d. Suggested bruk seed = prev confirmed − plannedSpends (not 
   });
   assert(r2.suggestedBalances === true, "Nov seeds without planned (rolling carry)");
   assert(months2["2026-11"].balancesSuggested === true, "Nov balancesSuggested");
-  assertEq(months2["2026-11"].balances.p1.bruk, 50000, "p1 carry 50000");
-  assertEq(months2["2026-11"].balances.p2.bruk, 12000, "p2 carry 12000");
+  assertEq(months2["2026-11"].balances.p1.bruk, 77500, "p1 carry rolling");
+  assertEq(months2["2026-11"].balances.p2.bruk, 37500, "p2 carry rolling");
   assert(months2["2026-11"].balances.p1.suggested === true, "p1 suggested carry");
   assert(!months2["2026-11"].balancesUpdatedAt, "Nov not auto-confirmed");
   assertEq(
@@ -810,7 +810,7 @@ console.log("\n11d. Suggested bruk seed = prev confirmed − plannedSpends (not 
   );
   assertEq(
     Calc.balanceSuggestedHint(),
-    "Trygg ruller automatisk (virtuell pot). Rett saldo bare hvis noe er feil — ikke nødvendig hver måned.",
+    "På konto er en korreksjon for denne måneden — nullstilles / gjelder ikke automatisk neste mnd. Trygg ruller: forrige + (lønn − utgifter).",
     "hint nb"
   );
 }
@@ -853,16 +853,16 @@ console.log("\n11e. Rolling carry: Oct confirm leftover/deficit → Nov seed");
     plannedSpends: []
   });
   assert(rNov.suggestedBalances === true, "Nov got suggested from Oct leftover");
-  assertEq(monthsSurplus["2026-11"].balances.p1.bruk, 70000, "Nov p1 = Oct p1");
-  assertEq(monthsSurplus["2026-11"].balances.p2.bruk, 11223, "Nov p2 = Oct p2");
+  assertEq(monthsSurplus["2026-11"].balances.p1.bruk, 92500, "Nov p1 rolling from Oct");
+  assertEq(monthsSurplus["2026-11"].balances.p2.bruk, 23723, "Nov p2 rolling from Oct");
   const cNov = Calc.calcFamily(monthsSurplus["2026-11"], people, [], {
     monthKey: "2026-11",
     monthIndex: 10,
     plannedSpends: [],
     spendBuffer: 0
   });
-  assertEq(cNov.totalBruk, 81223, "Nov totalBruk 81223");
-  assertEq(cNov.safeToSpend, 81223, "Nov Trygg 81223 (surplus carried)");
+  assertEq(cNov.totalBruk, 116223, "Nov totalBruk rolling");
+  assertEq(cNov.safeToSpend, 116223, "Nov Trygg rolling (surplus+flows)");
   assert(cNov.hasSuggestedBalances === true, "Nov hasSuggested");
 
   // Deficit: Oct ends at 50000 total → Nov seeds 50000
@@ -888,16 +888,16 @@ console.log("\n11e. Rolling carry: Oct confirm leftover/deficit → Nov seed");
     categories: cats,
     plannedSpends: []
   });
-  assertEq(monthsDef["2026-11"].balances.p1.bruk, 30000, "Nov deficit p1");
-  assertEq(monthsDef["2026-11"].balances.p2.bruk, 20000, "Nov deficit p2");
+  assertEq(monthsDef["2026-11"].balances.p1.bruk, 52500, "Nov deficit p1 rolling");
+  assertEq(monthsDef["2026-11"].balances.p2.bruk, 32500, "Nov deficit p2 rolling");
   const cDef = Calc.calcFamily(monthsDef["2026-11"], people, [], {
     monthKey: "2026-11",
     monthIndex: 10,
     plannedSpends: [],
     spendBuffer: 0
   });
-  assertEq(cDef.totalBruk, 50000, "Nov total 50000");
-  assertEq(cDef.safeToSpend, 50000, "Nov Trygg 50000");
+  assertEq(cDef.totalBruk, 85000, "Nov total rolling");
+  assertEq(cDef.safeToSpend, 85000, "Nov Trygg rolling");
 
   // Do not re-seed over confirmed Nov
   monthsDef["2026-11"].balancesUpdatedAt = "2026-11-02T10:00:00.000Z";
@@ -964,9 +964,9 @@ console.log("\n11e. Rolling carry: Oct confirm leftover/deficit → Nov seed");
     categories: cats,
     plannedSpends: []
   });
-  // Virtual roll without bank: no planInn stacking — flat leftover pot
-  assertEq(monthsGap["2026-11"].balances.p1.bruk, 1, "Nov from virtual Oct p1 (flat, no planInn)");
-  assertEq(monthsGap["2026-11"].balances.p2.bruk, 1, "Nov from virtual Oct p2 (flat, no planInn)");
+  // Empty suggested Oct (no logs): re-anchor at Sep confirmed + follow-budget through Nov
+  assertEq(monthsGap["2026-11"].balances.p1.bruk, 85000, "Nov from Sep confirmed roll p1");
+  assertEq(monthsGap["2026-11"].balances.p2.bruk, 66223, "Nov from Sep confirmed roll p2");
   assert(monthsGap["2026-11"].balances.p1.fromCarryPot === true, "Nov marked fromCarryPot");
 }
 
@@ -2730,9 +2730,9 @@ console.log("\n33. awaiting_saldo — Oct no bruk + plannedSpend; Sep saldo unch
     spendBuffer: 0
   });
   assertEq(cOctSeed.safeToSpendMode, "saldo", "oct seeded saldo");
-  assertEq(cOctSeed.totalBruk, 71223, "oct seeded total");
+  assertEq(cOctSeed.totalBruk, 111223, "oct seeded total");
   assertEq(cOctSeed.futureReserve, 0, "oct reserve excludes baked-in planned");
-  assertEq(cOctSeed.safeToSpend, 71223, "oct Trygg after seed");
+  assertEq(cOctSeed.safeToSpend, 111223, "oct Trygg after seed");
   assert(monthsSeed["2026-10"].balances.p1.suggestedAfterPlans === true, "suggestedAfterPlans");
 
   // Bekreft clears suggested — without reflectedInBalance would double-hit to ~0
@@ -2747,7 +2747,7 @@ console.log("\n33. awaiting_saldo — Oct no bruk + plannedSpend; Sep saldo unch
     spendBuffer: 0
   });
   assertEq(cOctConfirmed.futureReserve, 0, "after Bekreft: no second reserve");
-  assertEq(cOctConfirmed.safeToSpend, 71223, "after Bekreft Trygg still 71223");
+  assertEq(cOctConfirmed.safeToSpend, 111223, "after Bekreft Trygg still rolling");
   assert(cOctConfirmed.hasSuggestedBalances !== true, "no suggested after confirm");
 
   // Manual full bank in target month (no seed) still reserves same-month until done
@@ -2905,8 +2905,9 @@ console.log("\n34. Same-month planned: no-flag seed match + negative Trygg");
     }
   ];
   const heal = Calc.ensureSuggestedBalances(months, "2026-10", people, planned2);
-  assertEq(heal.reason, "healed-reflected", "ensure heals reflected");
-  assert(planned2[0].reflectedInBalance === true, "plan marked reflected by heal");
+  // Legacy unflagged bank−bil freeze is healed by follow-budget roll (not flat 71k)
+  assert(heal.reason === "rolling-ok" || heal.reason === "healed-reflected", "ensure heals legacy freeze");
+  assert(planned2[0].reflectedInBalance === true, "plan marked reflected by heal/roll");
 
   // Negative Trygg: bruk < strictly-later plans (no same-month bake-in)
   const plannedLater = [
@@ -3000,7 +3001,7 @@ console.log("\n35. Virtual carry pot — skip På konto, bil once, good/bad mont
     categories: cats
   });
   assert(rOct.seeded === true, "oct seeded");
-  assertEq(months["2026-10"].balances.p1.bruk, 71223, "oct pot after bil");
+  assertEq(months["2026-10"].balances.p1.bruk, 103365, "oct pot after bil+flows");
   assert(!months["2026-10"].balancesUpdatedAt, "oct not confirmed");
   const cOct = Calc.calcFamily(months["2026-10"], people, cats, {
     monthKey: "2026-10",
@@ -3009,10 +3010,10 @@ console.log("\n35. Virtual carry pot — skip På konto, bil once, good/bad mont
     spendBuffer: 0
   });
   assertEq(cOct.safeToSpendMode, "saldo", "oct saldo from pot");
-  assertEq(cOct.safeToSpend, 71223, "oct Trygg from pot (bil not double)");
+  assertEq(cOct.safeToSpend, 103365, "oct Trygg from pot (bil not double)");
   assert(cOct.needsSaldoForSafeToSpend !== true, "oct no blocking needsSaldo");
 
-  // Modest variable only (no planInn invent): end = 71223 − 2000
+  // Modest variable on suggested Oct: carry-end = start − 2000; Nov rolls from that + flows
   months["2026-10"].plannedIncome = {
     p1: { lønn: 40000, ekstra: null },
     p2: { lønn: 31500, ekstra: null }
@@ -3027,7 +3028,7 @@ console.log("\n35. Virtual carry pot — skip På konto, bil once, good/bad mont
     people,
     { categories: cats, monthIndex: 9, monthKey: "2026-10", plannedSpends: planned }
   );
-  assertEq(endGood, 69223, "modest spend end = start − 2000 (no planInn)");
+  assertEq(endGood, 101365, "modest spend end = start − 2000");
   const rNov = Calc.ensureSuggestedBalances(months, "2026-11", people, {
     plannedSpends: planned,
     categories: cats
@@ -3036,8 +3037,8 @@ console.log("\n35. Virtual carry pot — skip På konto, bil once, good/bad mont
   assert(rNov.fromCarry === true, "nov fromCarry");
   assertEq(
     months["2026-11"].balances.p1.bruk,
-    69223,
-    "nov pot = oct end after modest spend"
+    128865,
+    "nov pot = oct end + Nov flows"
   );
 
   // Logged income may raise pot; planned lønn alone must not
@@ -3051,7 +3052,7 @@ console.log("\n35. Virtual carry pot — skip På konto, bil once, good/bad mont
     people,
     { categories: cats, monthIndex: 9, monthKey: "2026-10", plannedSpends: planned }
   );
-  assertEq(endWithLogged, 109223, "logged income added: 71223-2000+40000");
+  assertEq(endWithLogged, 141365, "logged income added: start-2000+40000");
   months["2026-10"].incomes = [];
 
   // Bad month path: overspend → lower / negative
@@ -3093,7 +3094,7 @@ console.log("\n35. Virtual carry pot — skip På konto, bil once, good/bad mont
     categories: cats
   });
   assert(rDec.seeded === true, "dec from bank reset");
-  assertEq(months["2026-12"].balances.p1.bruk, 95000, "dec pot = confirmed bank");
+  assertEq(months["2026-12"].balances.p1.bruk, 122500, "dec pot = confirmed bank + Dec flows");
 }
 
 
@@ -3138,7 +3139,7 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
     categories: cats
   });
   assert(rOct.seeded === true, "36 oct seeded");
-  assertEq(monthsOct["2026-10"].balances.p1.bruk, 71223, "36 oct 71223");
+  assertEq(monthsOct["2026-10"].balances.p1.bruk, 113365, "36 oct rolling");
   const cSep = Calc.calcFamily(monthsOct["2026-09"], people, cats, {
     monthKey: "2026-09",
     monthIndex: 8,
@@ -3152,7 +3153,7 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
     plannedSpends: bil,
     spendBuffer: 0
   });
-  assertEq(cOct.safeToSpend, 71223, "36 oct Trygg 71223");
+  assertEq(cOct.safeToSpend, 113365, "36 oct Trygg rolling");
 
   // Sep→Nov jump (Oct never seeded): subtract Oct bil once → ~71223, not 231223, not empty
   const monthsJump = { "2026-09": JSON.parse(JSON.stringify(sep)) };
@@ -3163,8 +3164,8 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
   assert(rJump.seeded === true, "36 nov jump seeded");
   assertEq(
     monthsJump["2026-11"].balances.p1.bruk,
-    71223,
-    "36 nov jump 71223 (oct bil once)"
+    155507,
+    "36 nov jump rolling (oct bil once + flows)"
   );
   assert(
     monthsJump["2026-11"].balances.p1.bruk !== 231223,
@@ -3177,7 +3178,7 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
     spendBuffer: 0
   });
   assert(typeof cNovJump.safeToSpend === "number", "36 nov Trygg is number");
-  assertEq(cNovJump.safeToSpend, 71223, "36 nov Trygg 71223");
+  assertEq(cNovJump.safeToSpend, 155507, "36 nov Trygg rolling");
   assert(cNovJump.needsSaldoForSafeToSpend !== true, "36 nov not blank/needsSaldo");
 
   // After Oct variable 10k, Nov lower by ~10k
@@ -3195,7 +3196,7 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
     people,
     { categories: cats, monthKey: "2026-10", plannedSpends: bil }
   );
-  assertEq(endOct, 61223, "36 oct end after 10k = 61223");
+  assertEq(endOct, 103365, "36 oct end after 10k");
   Calc.refreshMonthCarryPot(monthsSpend, "2026-10", people, {
     categories: cats,
     monthKey: "2026-10",
@@ -3208,8 +3209,8 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
   assert(rNovSpend.seeded === true, "36 nov after spend seeded");
   assertEq(
     monthsSpend["2026-11"].balances.p1.bruk,
-    61223,
-    "36 nov lower by 10k"
+    145507,
+    "36 nov lower by 10k vs no-spend path (then +flows)"
   );
 
   // Range helper
@@ -3267,7 +3268,7 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
   sep.balances.p1.bruk = 231223;
   sep.balancesUpdatedAt = "2026-09-17T17:32:19.592Z";
 
-  // Unseeded Oct/Nov (persist failed) — calc-time fallback must still show 71223
+  // Unseeded Oct/Nov (persist failed) — calc-time fallback must still show rolling pot
   const months = {
     "2026-09": JSON.parse(JSON.stringify(sep)),
     "2026-10": emptyM(),
@@ -3292,7 +3293,7 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
     cats
   );
   assert(fbOct && fbOct.fromFallback, "37 oct fallback object");
-  assertEq(fbOct.byPerson.p1, 71223, "37 oct fallback 71223");
+  assertEq(fbOct.byPerson.p1, 86223, "37 oct fallback rolling");
 
   const cOct = Calc.calcFamily(
     months["2026-10"],
@@ -3303,8 +3304,8 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
     bil,
     "2026-10"
   );
-  assertEq(cOct.totalBruk, 71223, "37 oct totalBruk via fallback");
-  assertEq(cOct.safeToSpend, 71223, "37 oct Trygg 71223 not 0");
+  assertEq(cOct.totalBruk, 86223, "37 oct totalBruk via fallback");
+  assertEq(cOct.safeToSpend, 86223, "37 oct Trygg rolling not 0");
   assert(cOct.brukFromDisplayFallback === true, "37 oct flag fallback");
   assertEq(cOct.futureReserve, 0, "37 oct bil not double-counted");
   assert(cOct.safeToSpendMode === "saldo", "37 oct saldo mode");
@@ -3318,8 +3319,8 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
     bil,
     "2026-11"
   );
-  assertEq(cNov.totalBruk, 71223, "37 nov totalBruk via fallback (jump)");
-  assertEq(cNov.safeToSpend, 71223, "37 nov Trygg 71223 not blank");
+  assertEq(cNov.totalBruk, 101223, "37 nov totalBruk via fallback (jump)");
+  assertEq(cNov.safeToSpend, 101223, "37 nov Trygg rolling not blank");
   assert(cNov.brukFromDisplayFallback === true, "37 nov flag fallback");
 
   const cSep = Calc.calcFamily(
@@ -3680,10 +3681,10 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
         plannedSpends: planned
       });
     });
-    // Seed left Oct/Nov/Dec at same ~71223 — that freeze was the bug on Oversikt
-    assertEq(months["2026-10"].balances.p1.bruk, 71223, "40 oct seed 71223");
-    assertEq(months["2026-11"].balances.p1.bruk, 71223, "40 nov seed 71223");
-    assertEq(months["2026-12"].balances.p1.bruk, 71223, "40 dec seed 71223");
+    // Seed rolls with follow-budget (not frozen ~71223)
+    assertEq(months["2026-10"].balances.p1.bruk, 85905.2, "40 oct seed rolling");
+    assertEq(months["2026-11"].balances.p1.bruk, 105229.4, "40 nov seed rolling");
+    assertEq(months["2026-12"].balances.p1.bruk, 124553.6, "40 dec seed rolling");
 
     const proj = Calc.projectPotFollowBudget({
       months,

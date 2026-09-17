@@ -40,8 +40,8 @@ function calc(key) {
 
 const expected = {
   "2026-09": { trygg: 71223, bank: 231223, mode: "saldo" },
-  "2026-10": { trygg: 71223, mode: "saldo" },
-  "2026-11": { trygg: 71223, mode: "saldo" }
+  "2026-10": { trygg: 85905.2, mode: "saldo" },
+  "2026-11": { trygg: 105229.4, mode: "saldo" }
 };
 
 const report = {};
@@ -88,7 +88,7 @@ console.log(
 
 const allOk = Object.values(report).every((r) => r.ok);
 if (!allOk) {
-  console.error("QA FAILED — Sep/Oct/Nov Trygg not 71223 saldo");
+  console.error("QA FAILED — Sep/Oct/Nov Trygg not expected rolling saldo");
   process.exit(1);
 }
 
@@ -105,4 +105,4 @@ if (write) {
   console.log("Wrote", outPath);
 }
 
-console.log("QA OK — Sep/Oct/Nov Trygg = 71223");
+console.log("QA OK — Sep=71223, Oct/Nov rolling (not frozen 71k)");

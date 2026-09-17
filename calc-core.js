@@ -663,6 +663,143 @@
     return pot;
   }
 
+  /**
+   * Rolling suggested bruk for one person: pot = confirmed/prev + Σ(lønn − Fast − var − planlagt).
+   * Prefer nearest confirmed På konto as anchor (never freeze at bank−bil only).
+   * Returns { amount, anchorKey, startPot } or null.
+   */
+  function computeRollingSuggestedForPerson(
+    months,
+    key,
+    personId,
+    people,
+    categories,
+    plannedSpends
+  ) {
+    if (!months || !key || !personId) return null;
+    var cats = categories || [];
+    var planned = plannedSpends || [];
+    // If the immediately previous month is a suggested/virtual month WITH logged
+    // activity, chain from its carry-end (so overspend lowers next pot). Otherwise
+    // re-anchor at nearest confirmed På konto and follow-budget roll (fixes 71k freeze).
+    var prevImmediate = shiftMonthKey(key, -1);
+    var prevM = prevImmediate && months[prevImmediate];
+    var prevHasLogs =
+      prevM &&
+      ((Array.isArray(prevM.expenses) && prevM.expenses.length > 0) ||
+        (Array.isArray(prevM.incomes) && prevM.incomes.length > 0) ||
+        (Array.isArray(prevM.savings) && prevM.savings.length > 0));
+    var anchorKey = null;
+    var startPot = null;
+    if (
+      prevM &&
+      !prevM.balancesUpdatedAt &&
+      monthHasSuggestedBalances(prevM) &&
+      prevHasLogs
+    ) {
+      ensureBalancesShape(prevM, people);
+      refreshMonthCarryPot(months, prevImmediate, people, {
+        categories: cats,
+        monthIndex: monthIndexFromKey(prevImmediate),
+        monthKey: prevImmediate,
+        plannedSpends: planned
+      });
+      if (
+        prevM.carryPot &&
+        prevM.carryPot[personId] != null &&
+        Number.isFinite(Number(prevM.carryPot[personId]))
+      ) {
+        startPot = Number(prevM.carryPot[personId]);
+      } else {
+        startPot = computeCarryEndBrukForPerson(prevM, personId, people, {
+          categories: cats,
+          monthIndex: monthIndexFromKey(prevImmediate),
+          monthKey: prevImmediate,
+          plannedSpends: planned
+        });
+      }
+      anchorKey = prevImmediate;
+      if (startPot != null && Number.isFinite(startPot)) {
+        // One month of follow-budget from that carry-end into `key`
+        var proj1 = projectPotFollowBudget({
+          months: months,
+          fromKey: anchorKey,
+          people: people,
+          categories: cats,
+          plannedSpends: planned,
+          startPot: startPot,
+          horizon: 1,
+          personId: personId
+        });
+        var pot1 = proj1 && proj1.potByKey ? proj1.potByKey[key] : null;
+        if (Number.isFinite(pot1)) {
+          return {
+            amount: Math.round(pot1 * 100) / 100,
+            anchorKey: anchorKey,
+            startPot: startPot
+          };
+        }
+      }
+    }
+    anchorKey = findNearestPreviousWithConfirmedBalances(months, key);
+    startPot = null;
+    if (anchorKey && months[anchorKey]) {
+      ensureBalancesShape(months[anchorKey], people);
+      startPot = parseBalanceAmount(
+        (months[anchorKey].balances[personId] || {}).bruk
+      );
+    }
+    if (startPot == null) {
+      // No confirmed bank — fall back to nearest carry/suggested source
+      anchorKey = findNearestPreviousWithCarrySource(months, key);
+      if (!anchorKey || !months[anchorKey]) return null;
+      var prev = months[anchorKey];
+      ensureBalancesShape(prev, people);
+      if (prev.balancesUpdatedAt) {
+        startPot = parseBalanceAmount((prev.balances[personId] || {}).bruk);
+      } else if (
+        prev.carryPot &&
+        prev.carryPot[personId] != null &&
+        Number.isFinite(Number(prev.carryPot[personId]))
+      ) {
+        startPot = Number(prev.carryPot[personId]);
+      } else {
+        startPot = parseBalanceAmount((prev.balances[personId] || {}).bruk);
+      }
+    }
+    if (startPot == null || !Number.isFinite(startPot)) return null;
+    var dist = monthsBetweenKeys(anchorKey, key);
+    if (dist == null || dist <= 0) return null;
+    // Do NOT call ensureMonthExpected here (it seeds → recurse). projectPotFollowBudget
+    // reuses last known expected budgets virtually for missing months.
+    var proj = projectPotFollowBudget({
+      months: months,
+      fromKey: anchorKey,
+      people: people,
+      categories: cats,
+      plannedSpends: planned,
+      startPot: startPot,
+      horizon: dist,
+      personId: personId
+    });
+    if (!proj || !proj.potByKey) return null;
+    var pot = proj.potByKey[key];
+    if (!Number.isFinite(pot)) return null;
+    return {
+      amount: Math.round(pot * 100) / 100,
+      anchorKey: anchorKey,
+      startPot: startPot
+    };
+  }
+
+  /**
+   * Seed suggested starting bruk for a new month that has no confirmed saldo.
+   * Formula (Mathias-regelen): nearest confirmed På konto, then
+   *   pot += planInn − Fast − variabelt − planlagte utlegg
+   * each month through the viewed month. Never freeze at bank−bil (~71223).
+   * Marks suggested:true. Does not write balancesUpdatedAt (På konto is correction).
+   * Refreshes stale suggested seeds on revisit so localStorage 71223 heals.
+   */
   function ensureSuggestedBalances(months, key, people, plannedSpends, maybeOpts) {
     // Compat: 4th arg may be opts { plannedSpends, categories }
     var categoriesOpt = [];
@@ -700,10 +837,7 @@
     ensureBalancesShape(m, people);
     var active = activePeople(people);
     var i;
-    // Heal partial-migrate: bruk matches seed but flags missing → mark reflected
-    if (healBrukReflectedSameMonthPlans(months, key, people, plannedSpends)) {
-      return { seeded: false, reason: "healed-reflected" };
-    }
+    // User-typed draft (non-suggested, no confirm) — do not overwrite
     for (i = 0; i < active.length; i++) {
       var bal0 = m.balances[active[i].id];
       if (
@@ -711,76 +845,61 @@
         bal0.bruk != null &&
         bal0.bruk !== "" &&
         Number.isFinite(Number(bal0.bruk)) &&
-        !bal0.suggested
+        !bal0.suggested &&
+        !m.balancesSuggested
       ) {
-        return { seeded: false, reason: "has-bruk" };
+        // Legacy unflagged bank−bil freeze (~71223): still allow rolling heal
+        var legacyFreeze = false;
+        var prevConf = findNearestPreviousWithConfirmedBalances(months, key);
+        if (prevConf && months[prevConf]) {
+          var prevB = parseBalanceAmount(
+            (months[prevConf].balances[active[i].id] || {}).bruk
+          );
+          var ded = openPlannedSpendDeductionForPersonRange(
+            plannedSpends,
+            prevConf,
+            key,
+            active[i].id,
+            people
+          );
+          var legacy = computeSuggestedBrukFromPrev(prevB, ded);
+          if (
+            legacy != null &&
+            Math.abs(Number(bal0.bruk) - legacy) < 0.02
+          ) {
+            legacyFreeze = true;
+          }
+        }
+        if (!legacyFreeze) {
+          return { seeded: false, reason: "has-bruk" };
+        }
       }
     }
-    // Already suggested — ensure reflected-ready flags (idempotent)
-    if (monthHasSuggestedBalances(m)) {
-      active.forEach(function (p) {
-        var bal = m.balances[p.id];
-        if (!bal || typeof bal !== "object") return;
-        if (bal.suggested || bal.suggestedAfterPlans || m.balancesSuggested) {
-          bal.suggested = true;
-          bal.suggestedAfterPlans = true;
-        }
-      });
-      m.balancesSuggested = true;
-      return { seeded: false, reason: "already-suggested" };
-    }
-
-    // Carry pot: prefer nearest confirmed OR virtual/suggested month
-    var prevKey = findNearestPreviousWithCarrySource(months, key);
-    var prev = prevKey && months[prevKey];
-    if (!prev) {
-      return { seeded: false, reason: "no-prev-carry" };
-    }
-    ensureBalancesShape(prev, people);
 
     var cats = categoriesOpt || [];
-    var prevMonthIndex = monthIndexFromKey(prevKey);
-    // Refresh ending pot on prev (virtual months roll with net − variable)
-    refreshMonthCarryPot(months, prevKey, people, {
-      categories: cats,
-      monthIndex: prevMonthIndex,
-      monthKey: prevKey,
-      plannedSpends: plannedSpends || []
-    });
-
     var seededAny = false;
+    var changed = false;
     var potMap = {};
+    var anchorUsed = null;
+    var hadSuggested = monthHasSuggestedBalances(m);
     active.forEach(function (p) {
-      var base = null;
-      if (prev.balancesUpdatedAt) {
-        // Bank correction / confirmed → start from real bruk
-        base = parseBalanceAmount((prev.balances[p.id] || {}).bruk);
-      } else {
-        // Virtual roll: ending carry pot after prev month effects
-        if (prev.carryPot && prev.carryPot[p.id] != null && Number.isFinite(Number(prev.carryPot[p.id]))) {
-          base = Number(prev.carryPot[p.id]);
-        } else {
-          base = computeCarryEndBrukForPerson(prev, p.id, people, {
-            categories: cats,
-            monthIndex: prevMonthIndex,
-            monthKey: prevKey,
-            plannedSpends: plannedSpends || []
-          });
-        }
-      }
-      if (base == null) return;
-      // After prev … through new month (e.g. Sep→Nov subtracts Oct bil)
-      var deduct = openPlannedSpendDeductionForPersonRange(
-        plannedSpends || [],
-        prevKey,
+      var rolled = computeRollingSuggestedForPerson(
+        months,
         key,
         p.id,
-        people
+        people,
+        cats,
+        plannedSpends
       );
-      var suggestedAmt = computeSuggestedBrukFromPrev(base, deduct);
-      if (suggestedAmt == null) return;
+      if (!rolled || rolled.amount == null) return;
+      var suggestedAmt = rolled.amount;
+      anchorUsed = rolled.anchorKey;
       if (!m.balances[p.id] || typeof m.balances[p.id] !== "object") {
         m.balances[p.id] = emptyBalance();
+      }
+      var prevAmt = parseBalanceAmount(m.balances[p.id].bruk);
+      if (prevAmt == null || Math.abs(prevAmt - suggestedAmt) > 0.005) {
+        changed = true;
       }
       m.balances[p.id].bruk = suggestedAmt;
       m.balances[p.id].spare = null;
@@ -795,10 +914,19 @@
     if (seededAny) {
       m.balancesSuggested = true;
       m.carryPot = potMap;
-      m.carryPotSource = prev.balancesUpdatedAt ? "from-bank" : "virtual-roll";
-      // Same-month planned already in seed → mark reflected so Trygg does not double-count
+      m.carryPotSource = "follow-budget";
+      // Same-month planned already in rolling seed → mark reflected (no double-count)
       markPlannedSpendsReflectedInBalance(plannedSpends || [], key);
-      return { seeded: true, reason: "ok", fromCarry: !prev.balancesUpdatedAt };
+      return {
+        seeded: changed || !hadSuggested,
+        reason: changed ? "rolling-ok" : "rolling-unchanged",
+        fromCarry: true,
+        anchorKey: anchorUsed
+      };
+    }
+    // No rolling anchor — still try reflected heal for partial migrate
+    if (healBrukReflectedSameMonthPlans(months, key, people, plannedSpends)) {
+      return { seeded: false, reason: "healed-reflected" };
     }
     return { seeded: false, reason: "no-prev-bruk" };
   }
@@ -806,8 +934,7 @@
 
   /**
    * Calc-time display bruk when month M has no persisted bruk/seed.
-   * Same formula as ensureSuggestedBalances:
-   *   displayBruk = prevEnd − openPlanned(after prev … through M]
+   * Same follow-budget formula as ensureSuggestedBalances (lønn − utgifter roll).
    * Does NOT mutate months — pure fallback so Trygg never shows 0/blank
    * just because localStorage/cloud seed persist failed.
    * Returns { byPerson, total, prevKey, fromFallback:true } or null.
@@ -833,45 +960,24 @@
         return null; // real non-suggested bruk present
       }
     }
-    var prevKey = findNearestPreviousWithCarrySource(months, key);
-    var prev = prevKey && months[prevKey];
-    if (!prev) return null;
-    ensureBalancesShape(prev, people);
     var cats = categories || [];
-    var prevMonthIndex = monthIndexFromKey(prevKey);
     var byPerson = {};
     var total = 0;
     var any = false;
+    var prevKey = null;
     active.forEach(function (p) {
-      var base = null;
-      if (prev.balancesUpdatedAt) {
-        base = parseBalanceAmount((prev.balances[p.id] || {}).bruk);
-      } else if (
-        prev.carryPot &&
-        prev.carryPot[p.id] != null &&
-        Number.isFinite(Number(prev.carryPot[p.id]))
-      ) {
-        base = Number(prev.carryPot[p.id]);
-      } else {
-        base = computeCarryEndBrukForPerson(prev, p.id, people, {
-          categories: cats,
-          monthIndex: prevMonthIndex,
-          monthKey: prevKey,
-          plannedSpends: plannedSpends || []
-        });
-      }
-      if (base == null) return;
-      var deduct = openPlannedSpendDeductionForPersonRange(
-        plannedSpends || [],
-        prevKey,
+      var rolled = computeRollingSuggestedForPerson(
+        months,
         key,
         p.id,
-        people
+        people,
+        cats,
+        plannedSpends || []
       );
-      var suggestedAmt = computeSuggestedBrukFromPrev(base, deduct);
-      if (suggestedAmt == null) return;
-      byPerson[p.id] = suggestedAmt;
-      total += suggestedAmt;
+      if (!rolled || rolled.amount == null) return;
+      byPerson[p.id] = rolled.amount;
+      total += rolled.amount;
+      prevKey = rolled.anchorKey;
       any = true;
     });
     if (!any) return null;
@@ -944,24 +1050,18 @@
 
   /**
    * Oversikt Trygg: when to replace seed/fallback with follow-budget projected pot.
-   * Empty future months (ahead > 0) with only suggested seed / display-fallback,
-   * or far-future (>12m) even without seed. Never overrides confirmed På konto.
+   * Any empty future month (ahead > 0) without confirmed På konto — so sticky
+   * suggested seeds (~71223) never win over rolling pot = prev + (lønn − utgifter).
+   * Never overrides confirmed På konto or months with logged expenses.
    */
   function shouldUseProjectedPotForOversikt(opts) {
     opts = opts || {};
     var ahead = opts.ahead;
     var viewEmpty = !!opts.viewEmpty;
     var confirmed = !!opts.balancesUpdatedAt;
-    var seedOrFallback = !!(
-      opts.balancesSuggested ||
-      opts.hasSuggestedBalances ||
-      opts.brukFromDisplayFallback ||
-      (ahead != null && ahead > 12)
-    );
     return (
       viewEmpty &&
       !confirmed &&
-      seedOrFallback &&
       ahead != null &&
       ahead > 0
     );
@@ -3999,7 +4099,7 @@
 
   /** Hint under På konto when balances are suggested (unconfirmed). */
   function balanceSuggestedHint() {
-    return "Trygg ruller automatisk (virtuell pot). Rett saldo bare hvis noe er feil — ikke nødvendig hver måned.";
+    return "På konto er en korreksjon for denne måneden — nullstilles / gjelder ikke automatisk neste mnd. Trygg ruller: forrige + (lønn − utgifter).";
   }
 
   /** Short nb label for mode/date badge. */
@@ -4255,6 +4355,7 @@
     copyBalancesFrom: copyBalancesFrom,
     clearAccidentalBalanceCarry: clearAccidentalBalanceCarry,
     ensureSuggestedBalances: ensureSuggestedBalances,
+    computeRollingSuggestedForPerson: computeRollingSuggestedForPerson,
     resolveDisplayBrukFallback: resolveDisplayBrukFallback,
     shouldUseProjectedPotForOversikt: shouldUseProjectedPotForOversikt,
     projectPotFollowBudget: projectPotFollowBudget,
