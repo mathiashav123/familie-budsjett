@@ -2046,8 +2046,18 @@
       .join("");
   }
 
+  function healthBruktForDisplay(c) {
+    // Empty month (no logged expenses) → 0 brukt. Never show another month's
+    // spend or Fast-auto as "brukt" just because budgets were copied forward.
+    if (!c) return 0;
+    if (typeof c.healthBudgeted === "number") return c.healthBudgeted;
+    if ((c.expenseCount != null ? c.expenseCount : c.samletUtgifter) === 0) return 0;
+    return typeof c.actualBudgeted === "number" ? c.actualBudgeted : 0;
+  }
+
   function monthHealthStatus(c) {
-    const ratio = c.plannedTotal > 0 ? c.actualBudgeted / c.plannedTotal : null;
+    const brukt = healthBruktForDisplay(c);
+    const ratio = c.plannedTotal > 0 ? brukt / c.plannedTotal : null;
     let status = "ok";
     let label = "På plan";
     if (ratio == null && c.samletUtgifter > 0) {
@@ -2065,14 +2075,17 @@
     } else if (!c.hasAnyData || (c.plannedTotal <= 0 && c.samletUtgifter <= 0)) {
       status = "idle";
       label = "";
+    } else if (c.plannedTotal > 0 && brukt === 0 && (c.samletUtgifter || 0) === 0) {
+      status = "ok";
+      label = "Ingen forbruk";
     }
     const pct =
       c.plannedTotal > 0
-        ? Math.min(120, Math.round((c.actualBudgeted / c.plannedTotal) * 100))
+        ? Math.min(120, Math.round((brukt / c.plannedTotal) * 100))
         : c.samletUtgifter > 0
           ? 100
           : 0;
-    return { status: status, label: label, ratio: ratio, pct: pct };
+    return { status: status, label: label, ratio: ratio, pct: pct, brukt: brukt };
   }
 
 
@@ -2213,19 +2226,49 @@
       return;
     }
 
-    monthsEl.innerHTML = projection.months
-      .slice(0, showN)
-      .map(function (row) {
+    // Show cumulative pot + monthly delta so a flat +63542/mo is explained,
+    // not mistaken for a stuck duplicate number. Year markers when year flips.
+    const near = projection.months.slice(0, showN);
+    let prevYear = null;
+    monthsEl.innerHTML = near
+      .map(function (row, idx) {
+        const y = String(row.monthKey || "").slice(0, 4);
+        let yearMark = "";
+        if (y && y !== prevYear) {
+          yearMark =
+            '<div class="forward-year-mark" role="presentation">' +
+            escapeHtml(y) +
+            "</div>";
+          prevYear = y;
+        }
         const label = forwardFmtMonthLabel(row.monthKey);
         const neg = row.pot < 0 ? " is-neg" : "";
+        const delta =
+          typeof row.delta === "number" && Number.isFinite(row.delta)
+            ? row.delta
+            : idx === 0
+              ? row.pot - (projection.startPot || 0)
+              : row.pot - near[idx - 1].pot;
+        const deltaCls =
+          "fm-delta" + (delta < 0 ? " is-neg" : delta > 0 ? " is-pos" : "");
+        const deltaTxt =
+          (delta > 0 ? "+" : "") + formatNOK(delta) + " denne mnd";
         return (
+          yearMark +
           '<div class="forward-month-card">' +
+          '<div class="fm-left">' +
           '<span class="fm-label">' +
           escapeHtml(label) +
           "</span>" +
+          '<span class="' +
+          deltaCls +
+          '">' +
+          escapeHtml(deltaTxt) +
+          "</span>" +
+          "</div>" +
           '<span class="fm-pot' +
           neg +
-          '">' +
+          '" title="Akkumulert pot">' +
           formatNOK(row.pot) +
           "</span></div>"
         );
@@ -2259,18 +2302,38 @@
         yearsEl.innerHTML = '<p class="hint compact">Ingen år-data.</p>';
       } else {
         yearsEl.innerHTML = years
-          .map(function (y) {
+          .map(function (y, idx) {
             const neg = y.pot < 0 ? " is-neg" : "";
+            const prevPot = idx > 0 ? years[idx - 1].pot : projection.startPot;
+            const d =
+              prevPot != null && Number.isFinite(prevPot)
+                ? y.pot - prevPot
+                : null;
+            const dCls =
+              d == null
+                ? ""
+                : " fy-delta" + (d < 0 ? " is-neg" : d > 0 ? " is-pos" : "");
+            const dTxt =
+              d == null
+                ? ""
+                : '<span class="' +
+                  dCls.trim() +
+                  '">' +
+                  (d > 0 ? "+" : "") +
+                  formatNOK(d) +
+                  "</span>";
             return (
               '<div class="forward-year-row">' +
               '<span class="fy-label">Des ' +
               escapeHtml(String(y.year)) +
               "</span>" +
+              '<span class="fy-right">' +
+              dTxt +
               '<span class="fy-pot' +
               neg +
               '">' +
               formatNOK(y.pot) +
-              "</span></div>"
+              "</span></span></div>"
             );
           })
           .join("");
@@ -2320,6 +2383,88 @@
     if (card) card.hidden = false;
   }
 
+
+
+  /**
+   * Projected pot at viewKey if budget is followed from the nearest
+   * confirmed/seeded anchor month. Used so Nov 2038 ≠ Nov 2026 on Oversikt.
+   */
+  function projectedPotForViewKey(viewKey) {
+    if (!viewKey || typeof Calc.projectPotFollowBudget !== "function") return null;
+    if (typeof Calc.shiftMonthKey !== "function") return null;
+    // Anchor: prefer nearest CONFIRMED bank month; else nearest suggested/carry.
+    let anchorKey = null;
+    let startPot = null;
+    let fallbackKey = null;
+    let fallbackPot = null;
+    let k = viewKey;
+    for (let i = 0; i < 240; i++) {
+      k = Calc.shiftMonthKey(k, -1);
+      if (!k) break;
+      const mm = state.months[k];
+      if (!mm) continue;
+      let total = 0;
+      let any = false;
+      activePeopleList().forEach(function (p) {
+        const bal = mm.balances && mm.balances[p.id];
+        if (
+          bal &&
+          bal.bruk != null &&
+          bal.bruk !== "" &&
+          Number.isFinite(Number(bal.bruk))
+        ) {
+          total += Number(bal.bruk);
+          any = true;
+        }
+      });
+      if (!any) continue;
+      if (mm.balancesUpdatedAt) {
+        anchorKey = k;
+        startPot = total;
+        break;
+      }
+      if (!fallbackKey) {
+        fallbackKey = k;
+        fallbackPot = total;
+      }
+    }
+    if (!anchorKey && fallbackKey) {
+      anchorKey = fallbackKey;
+      startPot = fallbackPot;
+    }
+    if (!anchorKey || startPot == null) return null;
+    const dist =
+      typeof Calc.monthsBetweenKeys === "function"
+        ? Calc.monthsBetweenKeys(anchorKey, viewKey)
+        : null;
+    if (dist == null || dist <= 0) return null;
+    const horizon = Math.min(240, dist);
+    // Ensure near expected budgets for a year ahead of anchor (virtual after that)
+    let ek = anchorKey;
+    for (let i = 0; i < 12; i++) {
+      ek = Calc.shiftMonthKey(ek, 1);
+      if (!ek) break;
+      Calc.ensureMonthExpected(state.months, ek, state.people, {
+        copyExpectedToNewMonths: state.settings.copyExpectedToNewMonths !== false,
+        categories: state.categories,
+        plannedSpends: state.plannedSpends || []
+      });
+    }
+    const proj = Calc.projectPotFollowBudget({
+      months: state.months,
+      fromKey: anchorKey,
+      people: state.people,
+      categories: state.categories,
+      plannedSpends: state.plannedSpends || [],
+      startPot: startPot,
+      horizon: horizon
+    });
+    if (!proj || !proj.potByKey) return null;
+    const pot = proj.potByKey[viewKey];
+    return Number.isFinite(pot)
+      ? { pot: pot, anchorKey: anchorKey, startPot: startPot, dist: dist }
+      : null;
+  }
 
   function renderSafeSpend(c) {
     const valEl = $("#safeSpendValue");
@@ -2488,6 +2633,41 @@
       }
     }
 
+    // Far-future empty months: show follow-budget projected pot so
+    // Nov 2038 accumulates (≠ seeded 71223 forever). Near empty months keep seed.
+    let projectionOverride = null;
+    const viewKeyNow = monthKey(state.view.year, state.view.month);
+    const cal = new Date();
+    const calKey = monthKey(cal.getFullYear(), cal.getMonth());
+    const ahead =
+      typeof Calc.monthsBetweenKeys === "function"
+        ? Calc.monthsBetweenKeys(calKey, viewKeyNow)
+        : null;
+    const viewMonthObj = state.months[viewKeyNow];
+    const viewEmpty =
+      !viewMonthObj ||
+      !Array.isArray(viewMonthObj.expenses) ||
+      viewMonthObj.expenses.length === 0;
+    // Far future (>12m): project even if seed lookback cannot reach 2026.
+    const onlySeedOrFallback =
+      viewMonthObj &&
+      !viewMonthObj.balancesUpdatedAt &&
+      (viewMonthObj.balancesSuggested ||
+        (c && (c.hasSuggestedBalances || c.brukFromDisplayFallback)) ||
+        (ahead != null && ahead > 12));
+    if (
+      viewEmpty &&
+      onlySeedOrFallback &&
+      ahead != null &&
+      ahead > 12
+    ) {
+      projectionOverride = projectedPotForViewKey(viewKeyNow);
+      if (projectionOverride && Number.isFinite(projectionOverride.pot)) {
+        amount = projectionOverride.pot;
+        mode = "projection";
+      }
+    }
+
     if (valEl) {
       if (!show) {
         valEl.textContent = "—";
@@ -2502,7 +2682,7 @@
               : typeof raw === "number"
                 ? raw
                 : 0;
-        if (needsSaldo && typeof planHead === "number") {
+        if (needsSaldo && typeof planHead === "number" && mode !== "projection") {
           amt = planHead;
         }
         const rawN = typeof raw === "number" ? raw : amt;
@@ -2569,6 +2749,12 @@
         hintEl.textContent = wantSaldo
           ? "Trygg ruller automatisk (virtuell pot). På konto er valgfritt for å rette hvis noe er feil. Faste allerede i banksaldo — ikke trukket på nytt."
           : "Det du trygt kan bruke nå: forventet inntekt minus det du har brukt, minus faste utgifter som gjenstår.";
+      } else if (mode === "projection" && projectionOverride) {
+        hintEl.classList.remove("is-saldo-short");
+        hintEl.textContent =
+          "Projeksjon hvis budsjettet følges (fra " +
+          projectionOverride.anchorKey +
+          "). Tomme nær-måneder viser seed; langt frem akkumulert pot. Se Fremover for detaljer.";
       } else if (needsSaldo) {
         hintEl.classList.remove("is-saldo-short");
         hintEl.textContent =
@@ -2758,23 +2944,28 @@
     }
 
     if (!box) return;
-    const overCats = c.catStats
+    const brukt = health.brukt != null ? health.brukt : healthBruktForDisplay(c);
+    // Over-budget list: only LOGGED spend (not Fast-auto) so empty months stay clean
+    const overCats = (c.catStats || [])
       .filter(function (s) {
-        return s.actual > s.planned && (s.planned > 0 || s.actual > 0);
+        const logged = s.loggedActual != null ? s.loggedActual : 0;
+        return logged > s.planned && (s.planned > 0 || logged > 0);
       })
       .sort(function (a, b) {
-        return b.actual - b.planned - (a.actual - a.planned);
+        const la = a.loggedActual != null ? a.loggedActual : 0;
+        const lb = b.loggedActual != null ? b.loggedActual : 0;
+        return lb - b.planned - (la - a.planned);
       });
 
     let html = "<strong>Månedhelse:</strong> ";
     if (c.plannedTotal > 0) {
       html +=
         "brukt " +
-        formatNOK(c.actualBudgeted) +
+        formatNOK(brukt) +
         " av " +
         formatNOK(c.plannedTotal) +
         " budsjettert (" +
-        percent(c.actualBudgeted, c.plannedTotal) +
+        percent(brukt, c.plannedTotal) +
         "%).";
     } else {
       html += "ingen budsjettbeløp satt ennå.";
@@ -2782,18 +2973,21 @@
     if (overCats.length) {
       html += "<ul>";
       overCats.slice(0, 3).forEach(function (s) {
-        const diff = s.actual - s.planned;
+        const logged = s.loggedActual != null ? s.loggedActual : 0;
+        const diff = logged - s.planned;
         html +=
           "<li>" +
           escapeHtml(s.cat.name) +
           ": " +
-          formatNOK(s.actual) +
+          formatNOK(logged) +
           (s.planned > 0 ? " / " + formatNOK(s.planned) : "") +
           " (" +
           formatNOKSigned(diff) +
           ")</li>";
       });
       html += "</ul>";
+    } else if (c.plannedTotal > 0 && brukt === 0 && (c.samletUtgifter || 0) === 0) {
+      html += "<ul><li>Ingen forbruk logget denne måneden</li></ul>";
     } else if (c.plannedTotal > 0) {
       html += "<ul><li>Ingen kategorier over budsjett 👍</li></ul>";
     }

@@ -4545,3 +4545,56 @@ button.cat-group-header {
 .forward-year-row .fy-pot.is-neg {
   color: var(--danger, #b42318);
 }
+
+
+/* Fremover: cumulative pot + monthly delta + year markers */
+.forward-year-mark {
+  grid-column: 1 / -1;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted, #5a6b66);
+  padding: 0.35rem 0.15rem 0.1rem;
+  margin-top: 0.25rem;
+}
+.forward-month-card .fm-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.forward-month-card .fm-delta {
+  font-size: 0.75rem;
+  color: var(--muted, #5a6b66);
+  font-variant-numeric: tabular-nums;
+}
+.forward-month-card .fm-delta.is-pos {
+  color: var(--ok, #1b7f4a);
+}
+.forward-month-card .fm-delta.is-neg {
+  color: var(--danger, #b42318);
+}
+.forward-year-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.35rem 0.15rem;
+}
+.forward-year-row .fy-right {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+}
+.forward-year-row .fy-delta {
+  font-size: 0.78rem;
+  color: var(--muted, #5a6b66);
+  font-variant-numeric: tabular-nums;
+}
+.forward-year-row .fy-delta.is-pos {
+  color: var(--ok, #1b7f4a);
+}
+.forward-year-row .fy-delta.is-neg {
+  color: var(--danger, #b42318);
+}

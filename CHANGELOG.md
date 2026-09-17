@@ -1,5 +1,19 @@
 # Endringslogg – Familiebudsjett
 
+## 2026-09-17 – Fix: månedhelse-lekkasje + Fremover delta til 2038
+
+### Rotårsak
+Tomme måneder (okt/nov/…) kopierte budsjett fra forrige måned. **Månedhelse** brukte `actualBudgeted` som inkluderer Fast-auto — så «brukt 31 323 av 43 923 (71 %)» ble vist selv uten utgifter. Trygg seed ~71 223 for alle fremtidige måneder (carry uten planInn) fikk Nov 2038 til å se lik Nov 2026 ut.
+
+### Fix
+1. **Månedisolasjon / helse:** `healthBudgeted` = 0 når måneden har 0 utgifter; ellers `actualBudgeted` (Fast-auto kun når det faktisk er logget forbruk). UI viser «Ingen forbruk logget». Over-liste bruker `loggedActual`.
+2. **Fremover:** hver månedskort viser **akkumulert pot + månedsdelta** (`+63 542 denne mnd`), årsmarkører i lista, år-for-år med delta. Projeksjon deler ikke expenses-array med template-måned.
+3. **Trygg langt frem (>12 mnd tom):** Oversikt viser **projisert pot** (følg budsjett fra nærmeste bekreftede bank-måned) så Nov 2038 ≫ Nov 2026. Nære tomme måneder beholder seed ~71 223.
+4. **Tester §39** + `monthsBetweenKeys`.
+
+### Deploy
+- `pack-mobil.mjs` + synk host/pages; Pages `main`.
+
 ## 2026-09-17 – Fremover: flerårig projeksjon til ~2038
 
 ### Ønske

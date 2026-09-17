@@ -4562,6 +4562,59 @@ button.cat-group-header {
   color: var(--danger, #b42318);
 }
 
+
+/* Fremover: cumulative pot + monthly delta + year markers */
+.forward-year-mark {
+  grid-column: 1 / -1;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted, #5a6b66);
+  padding: 0.35rem 0.15rem 0.1rem;
+  margin-top: 0.25rem;
+}
+.forward-month-card .fm-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.forward-month-card .fm-delta {
+  font-size: 0.75rem;
+  color: var(--muted, #5a6b66);
+  font-variant-numeric: tabular-nums;
+}
+.forward-month-card .fm-delta.is-pos {
+  color: var(--ok, #1b7f4a);
+}
+.forward-month-card .fm-delta.is-neg {
+  color: var(--danger, #b42318);
+}
+.forward-year-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.35rem 0.15rem;
+}
+.forward-year-row .fy-right {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+}
+.forward-year-row .fy-delta {
+  font-size: 0.78rem;
+  color: var(--muted, #5a6b66);
+  font-variant-numeric: tabular-nums;
+}
+.forward-year-row .fy-delta.is-pos {
+  color: var(--ok, #1b7f4a);
+}
+.forward-year-row .fy-delta.is-neg {
+  color: var(--danger, #b42318);
+}
+
 </style>
 </head>
 <body>
@@ -6341,7 +6394,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
         plannedIncome: {},
         incomes: [],
         savings: [],
-        expenses: []
+        expenses: [] // always a fresh array — never share refs across months
       };
     }
     var m = months[key];
@@ -6642,7 +6695,16 @@ window.FAMILIE_BUDGET_SUPABASE = {
       if (m && monthHasExpected(m)) {
         template = m;
       } else if (template) {
-        m = template;
+        // Virtual month: reuse expected budgets/income by VALUE, never share expenses array
+        m = {
+          balances: {},
+          budgets: template.budgets || {},
+          budgetLines: template.budgetLines || {},
+          plannedIncome: template.plannedIncome || {},
+          incomes: [],
+          savings: [],
+          expenses: []
+        };
       } else if (!m) {
         m = {
           balances: {},
@@ -6660,9 +6722,12 @@ window.FAMILIE_BUDGET_SUPABASE = {
       var planned = openPlannedSpendTotalForMonth(plannedSpends, key);
       pot = pot + planInn - planUtVar - planned;
       pot = Math.round(pot * 100) / 100;
+      var delta = planInn - planUtVar - planned;
+      delta = Math.round(delta * 100) / 100;
       rows.push({
         monthKey: key,
         pot: pot,
+        delta: delta,
         planInn: planInn,
         planUtVariable: planUtVar,
         plannedSpends: planned
@@ -7835,6 +7900,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
 
     var plannedTotal = 0;
     var actualBudgeted = 0;
+    var loggedBudgeted = 0;
     var activeCats = (categories || []).filter(function (c) {
       return !c.archived;
     });
@@ -7845,6 +7911,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
       var autoSpent = autoSpendExtraForCategory(m, cat, monthIndex);
       plannedTotal += planned;
       actualBudgeted += effectiveActual;
+      loggedBudgeted += logged;
       var plannedByOwner = { felles: budgetForOwner(m, cat.id, "felles", monthIndex) };
       active.forEach(function (p) {
         plannedByOwner[p.id] = budgetForOwner(m, cat.id, p.id, monthIndex);
@@ -7863,6 +7930,13 @@ window.FAMILIE_BUDGET_SUPABASE = {
           (planned === 0 && effectiveActual > 0)
       };
     });
+
+    // Månedhelse: empty months must show 0 brukt (do NOT invent Fast auto as spend).
+    // Months with logged expenses keep effectiveActual (Fast auto counts as spent).
+    var expenseCount = Array.isArray(m.expenses) ? m.expenses.length : 0;
+    var healthBudgeted = expenseCount === 0 ? 0 : actualBudgeted;
+    loggedBudgeted = Math.round(loggedBudgeted * 100) / 100;
+    healthBudgeted = Math.round(healthBudgeted * 100) / 100;
 
     var netPlan = planInn - plannedTotal;
     // netActual uses logged only; overview may show effectiveUtgifter separately
@@ -8147,6 +8221,9 @@ window.FAMILIE_BUDGET_SUPABASE = {
       plannedTotal: plannedTotal,
       planUtFelles: plannedUtFelles(m, categories, monthIndex),
       actualBudgeted: actualBudgeted,
+      loggedBudgeted: loggedBudgeted,
+      healthBudgeted: healthBudgeted,
+      expenseCount: expenseCount,
       netPlan: netPlan,
       netActual: netActual,
       remainingFastBudgets: remainingFastBudgets,
@@ -8276,6 +8353,22 @@ window.FAMILIE_BUDGET_SUPABASE = {
     return y + "-" + String(mo + 1).padStart(2, "0");
   }
 
+  /** Signed month distance: toKey - fromKey (e.g. 2026-11 - 2026-09 = 2). */
+  function monthsBetweenKeys(fromKey, toKey) {
+    if (!fromKey || !toKey) return null;
+    var a = String(fromKey).split("-");
+    var b = String(toKey).split("-");
+    if (a.length < 2 || b.length < 2) return null;
+    var ay = parseInt(a[0], 10);
+    var am = parseInt(a[1], 10);
+    var by = parseInt(b[0], 10);
+    var bm = parseInt(b[1], 10);
+    if (!Number.isFinite(ay) || !Number.isFinite(am) || !Number.isFinite(by) || !Number.isFinite(bm)) {
+      return null;
+    }
+    return (by - ay) * 12 + (bm - am);
+  }
+
   function findNearestPreviousWithExpected(months, monthKey, maxLookback) {
     var look = maxLookback == null ? 36 : maxLookback;
     var key = monthKey;
@@ -8345,7 +8438,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
         plannedIncome: {},
         incomes: [],
         savings: [],
-        expenses: []
+        expenses: [] // always a fresh array — never share refs across months
       };
     }
     var m = months[key];
@@ -9807,6 +9900,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     reassignPersonData: reassignPersonData,
     monthHasExpected: monthHasExpected,
     shiftMonthKey: shiftMonthKey,
+    monthsBetweenKeys: monthsBetweenKeys,
     findNearestPreviousWithExpected: findNearestPreviousWithExpected,
     copyExpectedFrom: copyExpectedFrom,
     ensureMonthExpected: ensureMonthExpected,
@@ -13060,8 +13154,18 @@ window.FAMILIE_BUDGET_SUPABASE = {
       .join("");
   }
 
+  function healthBruktForDisplay(c) {
+    // Empty month (no logged expenses) → 0 brukt. Never show another month's
+    // spend or Fast-auto as "brukt" just because budgets were copied forward.
+    if (!c) return 0;
+    if (typeof c.healthBudgeted === "number") return c.healthBudgeted;
+    if ((c.expenseCount != null ? c.expenseCount : c.samletUtgifter) === 0) return 0;
+    return typeof c.actualBudgeted === "number" ? c.actualBudgeted : 0;
+  }
+
   function monthHealthStatus(c) {
-    const ratio = c.plannedTotal > 0 ? c.actualBudgeted / c.plannedTotal : null;
+    const brukt = healthBruktForDisplay(c);
+    const ratio = c.plannedTotal > 0 ? brukt / c.plannedTotal : null;
     let status = "ok";
     let label = "På plan";
     if (ratio == null && c.samletUtgifter > 0) {
@@ -13079,14 +13183,17 @@ window.FAMILIE_BUDGET_SUPABASE = {
     } else if (!c.hasAnyData || (c.plannedTotal <= 0 && c.samletUtgifter <= 0)) {
       status = "idle";
       label = "";
+    } else if (c.plannedTotal > 0 && brukt === 0 && (c.samletUtgifter || 0) === 0) {
+      status = "ok";
+      label = "Ingen forbruk";
     }
     const pct =
       c.plannedTotal > 0
-        ? Math.min(120, Math.round((c.actualBudgeted / c.plannedTotal) * 100))
+        ? Math.min(120, Math.round((brukt / c.plannedTotal) * 100))
         : c.samletUtgifter > 0
           ? 100
           : 0;
-    return { status: status, label: label, ratio: ratio, pct: pct };
+    return { status: status, label: label, ratio: ratio, pct: pct, brukt: brukt };
   }
 
 
@@ -13227,19 +13334,49 @@ window.FAMILIE_BUDGET_SUPABASE = {
       return;
     }
 
-    monthsEl.innerHTML = projection.months
-      .slice(0, showN)
-      .map(function (row) {
+    // Show cumulative pot + monthly delta so a flat +63542/mo is explained,
+    // not mistaken for a stuck duplicate number. Year markers when year flips.
+    const near = projection.months.slice(0, showN);
+    let prevYear = null;
+    monthsEl.innerHTML = near
+      .map(function (row, idx) {
+        const y = String(row.monthKey || "").slice(0, 4);
+        let yearMark = "";
+        if (y && y !== prevYear) {
+          yearMark =
+            '<div class="forward-year-mark" role="presentation">' +
+            escapeHtml(y) +
+            "</div>";
+          prevYear = y;
+        }
         const label = forwardFmtMonthLabel(row.monthKey);
         const neg = row.pot < 0 ? " is-neg" : "";
+        const delta =
+          typeof row.delta === "number" && Number.isFinite(row.delta)
+            ? row.delta
+            : idx === 0
+              ? row.pot - (projection.startPot || 0)
+              : row.pot - near[idx - 1].pot;
+        const deltaCls =
+          "fm-delta" + (delta < 0 ? " is-neg" : delta > 0 ? " is-pos" : "");
+        const deltaTxt =
+          (delta > 0 ? "+" : "") + formatNOK(delta) + " denne mnd";
         return (
+          yearMark +
           '<div class="forward-month-card">' +
+          '<div class="fm-left">' +
           '<span class="fm-label">' +
           escapeHtml(label) +
           "</span>" +
+          '<span class="' +
+          deltaCls +
+          '">' +
+          escapeHtml(deltaTxt) +
+          "</span>" +
+          "</div>" +
           '<span class="fm-pot' +
           neg +
-          '">' +
+          '" title="Akkumulert pot">' +
           formatNOK(row.pot) +
           "</span></div>"
         );
@@ -13273,18 +13410,38 @@ window.FAMILIE_BUDGET_SUPABASE = {
         yearsEl.innerHTML = '<p class="hint compact">Ingen år-data.</p>';
       } else {
         yearsEl.innerHTML = years
-          .map(function (y) {
+          .map(function (y, idx) {
             const neg = y.pot < 0 ? " is-neg" : "";
+            const prevPot = idx > 0 ? years[idx - 1].pot : projection.startPot;
+            const d =
+              prevPot != null && Number.isFinite(prevPot)
+                ? y.pot - prevPot
+                : null;
+            const dCls =
+              d == null
+                ? ""
+                : " fy-delta" + (d < 0 ? " is-neg" : d > 0 ? " is-pos" : "");
+            const dTxt =
+              d == null
+                ? ""
+                : '<span class="' +
+                  dCls.trim() +
+                  '">' +
+                  (d > 0 ? "+" : "") +
+                  formatNOK(d) +
+                  "</span>";
             return (
               '<div class="forward-year-row">' +
               '<span class="fy-label">Des ' +
               escapeHtml(String(y.year)) +
               "</span>" +
+              '<span class="fy-right">' +
+              dTxt +
               '<span class="fy-pot' +
               neg +
               '">' +
               formatNOK(y.pot) +
-              "</span></div>"
+              "</span></span></div>"
             );
           })
           .join("");
@@ -13334,6 +13491,88 @@ window.FAMILIE_BUDGET_SUPABASE = {
     if (card) card.hidden = false;
   }
 
+
+
+  /**
+   * Projected pot at viewKey if budget is followed from the nearest
+   * confirmed/seeded anchor month. Used so Nov 2038 ≠ Nov 2026 on Oversikt.
+   */
+  function projectedPotForViewKey(viewKey) {
+    if (!viewKey || typeof Calc.projectPotFollowBudget !== "function") return null;
+    if (typeof Calc.shiftMonthKey !== "function") return null;
+    // Anchor: prefer nearest CONFIRMED bank month; else nearest suggested/carry.
+    let anchorKey = null;
+    let startPot = null;
+    let fallbackKey = null;
+    let fallbackPot = null;
+    let k = viewKey;
+    for (let i = 0; i < 240; i++) {
+      k = Calc.shiftMonthKey(k, -1);
+      if (!k) break;
+      const mm = state.months[k];
+      if (!mm) continue;
+      let total = 0;
+      let any = false;
+      activePeopleList().forEach(function (p) {
+        const bal = mm.balances && mm.balances[p.id];
+        if (
+          bal &&
+          bal.bruk != null &&
+          bal.bruk !== "" &&
+          Number.isFinite(Number(bal.bruk))
+        ) {
+          total += Number(bal.bruk);
+          any = true;
+        }
+      });
+      if (!any) continue;
+      if (mm.balancesUpdatedAt) {
+        anchorKey = k;
+        startPot = total;
+        break;
+      }
+      if (!fallbackKey) {
+        fallbackKey = k;
+        fallbackPot = total;
+      }
+    }
+    if (!anchorKey && fallbackKey) {
+      anchorKey = fallbackKey;
+      startPot = fallbackPot;
+    }
+    if (!anchorKey || startPot == null) return null;
+    const dist =
+      typeof Calc.monthsBetweenKeys === "function"
+        ? Calc.monthsBetweenKeys(anchorKey, viewKey)
+        : null;
+    if (dist == null || dist <= 0) return null;
+    const horizon = Math.min(240, dist);
+    // Ensure near expected budgets for a year ahead of anchor (virtual after that)
+    let ek = anchorKey;
+    for (let i = 0; i < 12; i++) {
+      ek = Calc.shiftMonthKey(ek, 1);
+      if (!ek) break;
+      Calc.ensureMonthExpected(state.months, ek, state.people, {
+        copyExpectedToNewMonths: state.settings.copyExpectedToNewMonths !== false,
+        categories: state.categories,
+        plannedSpends: state.plannedSpends || []
+      });
+    }
+    const proj = Calc.projectPotFollowBudget({
+      months: state.months,
+      fromKey: anchorKey,
+      people: state.people,
+      categories: state.categories,
+      plannedSpends: state.plannedSpends || [],
+      startPot: startPot,
+      horizon: horizon
+    });
+    if (!proj || !proj.potByKey) return null;
+    const pot = proj.potByKey[viewKey];
+    return Number.isFinite(pot)
+      ? { pot: pot, anchorKey: anchorKey, startPot: startPot, dist: dist }
+      : null;
+  }
 
   function renderSafeSpend(c) {
     const valEl = $("#safeSpendValue");
@@ -13502,6 +13741,41 @@ window.FAMILIE_BUDGET_SUPABASE = {
       }
     }
 
+    // Far-future empty months: show follow-budget projected pot so
+    // Nov 2038 accumulates (≠ seeded 71223 forever). Near empty months keep seed.
+    let projectionOverride = null;
+    const viewKeyNow = monthKey(state.view.year, state.view.month);
+    const cal = new Date();
+    const calKey = monthKey(cal.getFullYear(), cal.getMonth());
+    const ahead =
+      typeof Calc.monthsBetweenKeys === "function"
+        ? Calc.monthsBetweenKeys(calKey, viewKeyNow)
+        : null;
+    const viewMonthObj = state.months[viewKeyNow];
+    const viewEmpty =
+      !viewMonthObj ||
+      !Array.isArray(viewMonthObj.expenses) ||
+      viewMonthObj.expenses.length === 0;
+    // Far future (>12m): project even if seed lookback cannot reach 2026.
+    const onlySeedOrFallback =
+      viewMonthObj &&
+      !viewMonthObj.balancesUpdatedAt &&
+      (viewMonthObj.balancesSuggested ||
+        (c && (c.hasSuggestedBalances || c.brukFromDisplayFallback)) ||
+        (ahead != null && ahead > 12));
+    if (
+      viewEmpty &&
+      onlySeedOrFallback &&
+      ahead != null &&
+      ahead > 12
+    ) {
+      projectionOverride = projectedPotForViewKey(viewKeyNow);
+      if (projectionOverride && Number.isFinite(projectionOverride.pot)) {
+        amount = projectionOverride.pot;
+        mode = "projection";
+      }
+    }
+
     if (valEl) {
       if (!show) {
         valEl.textContent = "—";
@@ -13516,7 +13790,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
               : typeof raw === "number"
                 ? raw
                 : 0;
-        if (needsSaldo && typeof planHead === "number") {
+        if (needsSaldo && typeof planHead === "number" && mode !== "projection") {
           amt = planHead;
         }
         const rawN = typeof raw === "number" ? raw : amt;
@@ -13583,6 +13857,12 @@ window.FAMILIE_BUDGET_SUPABASE = {
         hintEl.textContent = wantSaldo
           ? "Trygg ruller automatisk (virtuell pot). På konto er valgfritt for å rette hvis noe er feil. Faste allerede i banksaldo — ikke trukket på nytt."
           : "Det du trygt kan bruke nå: forventet inntekt minus det du har brukt, minus faste utgifter som gjenstår.";
+      } else if (mode === "projection" && projectionOverride) {
+        hintEl.classList.remove("is-saldo-short");
+        hintEl.textContent =
+          "Projeksjon hvis budsjettet følges (fra " +
+          projectionOverride.anchorKey +
+          "). Tomme nær-måneder viser seed; langt frem akkumulert pot. Se Fremover for detaljer.";
       } else if (needsSaldo) {
         hintEl.classList.remove("is-saldo-short");
         hintEl.textContent =
@@ -13772,23 +14052,28 @@ window.FAMILIE_BUDGET_SUPABASE = {
     }
 
     if (!box) return;
-    const overCats = c.catStats
+    const brukt = health.brukt != null ? health.brukt : healthBruktForDisplay(c);
+    // Over-budget list: only LOGGED spend (not Fast-auto) so empty months stay clean
+    const overCats = (c.catStats || [])
       .filter(function (s) {
-        return s.actual > s.planned && (s.planned > 0 || s.actual > 0);
+        const logged = s.loggedActual != null ? s.loggedActual : 0;
+        return logged > s.planned && (s.planned > 0 || logged > 0);
       })
       .sort(function (a, b) {
-        return b.actual - b.planned - (a.actual - a.planned);
+        const la = a.loggedActual != null ? a.loggedActual : 0;
+        const lb = b.loggedActual != null ? b.loggedActual : 0;
+        return lb - b.planned - (la - a.planned);
       });
 
     let html = "<strong>Månedhelse:</strong> ";
     if (c.plannedTotal > 0) {
       html +=
         "brukt " +
-        formatNOK(c.actualBudgeted) +
+        formatNOK(brukt) +
         " av " +
         formatNOK(c.plannedTotal) +
         " budsjettert (" +
-        percent(c.actualBudgeted, c.plannedTotal) +
+        percent(brukt, c.plannedTotal) +
         "%).";
     } else {
       html += "ingen budsjettbeløp satt ennå.";
@@ -13796,18 +14081,21 @@ window.FAMILIE_BUDGET_SUPABASE = {
     if (overCats.length) {
       html += "<ul>";
       overCats.slice(0, 3).forEach(function (s) {
-        const diff = s.actual - s.planned;
+        const logged = s.loggedActual != null ? s.loggedActual : 0;
+        const diff = logged - s.planned;
         html +=
           "<li>" +
           escapeHtml(s.cat.name) +
           ": " +
-          formatNOK(s.actual) +
+          formatNOK(logged) +
           (s.planned > 0 ? " / " + formatNOK(s.planned) : "") +
           " (" +
           formatNOKSigned(diff) +
           ")</li>";
       });
       html += "</ul>";
+    } else if (c.plannedTotal > 0 && brukt === 0 && (c.samletUtgifter || 0) === 0) {
+      html += "<ul><li>Ingen forbruk logget denne måneden</li></ul>";
     } else if (c.plannedTotal > 0) {
       html += "<ul><li>Ingen kategorier over budsjett 👍</li></ul>";
     }
