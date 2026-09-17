@@ -1,5 +1,30 @@
 # Endringslogg – Familiebudsjett
 
+## 2026-09-17 — Fix: På konto lekker ikke / ingen 71k-frys
+
+### Rotårsak
+`ensureSuggestedBalances` satte foreslått bruk = forrige bank − planlagte utlegg (f.eks. 231223 − 160000 bil = **71223**) uten månedsnetto (lønn − Fast − variabelt). Virtuell carry frøs deretter samme tall i alle fremtidige måneder. Oversikt/Fremover hadde projeksjons-override, men seed/calcFamily vant fortsatt i flere stier → hopp tilbake til ~71k.
+
+### Fix
+1. **Rullende seed:** foreslått pot = follow-budget fra siste bekreftede På konto (`pot += planInn − Fast − var − planlagt`). Stale 71223 heales ved navigering.
+2. **På konto UI:** foreslått verdi vises ikke i feltet (tomt / «Valgfri korreksjon») — korreksjon for *denne* måneden, nullstilles / gjelder ikke automatisk neste mnd.
+3. **Oversikt/Fremover:** tomme ubekreftede fremtidige måneder bruker alltid projisert pot.
+4. Tester §11/§35–§40 + QA oppdatert; `node test-calc.mjs` 807 passed.
+
+### Tall (Mathias live, start Sep bank 231223)
+| Måned | Før (fryst seed) | Etter (rull) |
+| --- | ---: | ---: |
+| 2026-09 Trygg | 71223 | 71223 (uendret, bil-reserve) |
+| 2026-10 | 71223 | **85905,2** |
+| 2026-11 | 71223 | **105229,4** |
+| 2030-12 | ~71k | **1 045 479** |
+
+### 150k innen 2030
+JA — pot des 2030 ≈ 1,05 M; etter 150k igjen ≈ **895 479**. Ekstra månedlig utover budsjett: **0**.
+
+### Deploy
+- `pack-mobil.mjs` + synk host/pages/budsjett-app; Pages `main`.
+
 ## 2026-09-17 — Trygg-rull: Mathias-regelen i klartekst + Fremover-anker
 
 ### Hva

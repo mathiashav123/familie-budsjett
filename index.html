@@ -178,7 +178,7 @@
         <p class="safe-spend-secondary" id="safeSpendSecondary" hidden></p>
         <div class="safe-spend-breakdown" id="safeSpendBreakdown" hidden></div>
         <p class="meta-line" id="safeSpendReserve" hidden>Reservert til planlagte utlegg: —</p>
-        <p class="safe-spend-hint" id="safeSpendHint">Trygg ruller automatisk (virtuell pot). På konto er valgfritt for å rette hvis noe er feil. Faste er allerede i banksaldo — ikke trukket på nytt.</p>
+        <p class="safe-spend-hint" id="safeSpendHint">Trygg ruller automatisk: forrige pot + (lønn − utgifter). «På konto nå» er valgfri korreksjon for denne måneden — nullstilles / gjelder ikke automatisk neste mnd. Faste er allerede i banksaldo — ikke trukket på nytt.</p>
         <div class="health-meter" id="healthMeter" hidden>
           <div class="health-meter-track">
             <div class="health-meter-fill" id="healthMeterFill"></div>
@@ -236,8 +236,8 @@
         <div class="card-head">
           <h2 id="kontoerTitle">På konto nå <em class="opt">(valgfritt)</em></h2>
         </div>
-        <p class="hint compact pa-konto-lead">Valgfritt rettingsverktøy — ikke månedlig plikt. Trygg ruller automatisk via virtuell pot. Bruk <strong>Rett saldo</strong> bare hvis noe er feil (avstemming mot bank).</p>
-        <p class="hint compact pa-konto-new-month" id="paKontoNewMonthHint" hidden>Ny måned — Trygg ruller automatisk. Rett saldo bare hvis banken ikke stemmer.</p>
+        <p class="hint compact pa-konto-lead">Valgfri korreksjon for <em>denne</em> måneden — nullstilles / gjelder ikke automatisk neste mnd. Trygg ruller: forrige + (lønn − utgifter). Bruk <strong>Rett saldo</strong> bare hvis banken ikke stemmer.</p>
+        <p class="hint compact pa-konto-new-month" id="paKontoNewMonthHint" hidden>Ny måned — feltet er tomt. Trygg ruller automatisk. Rett saldo bare hvis banken ikke stemmer.</p>
         <div id="kontoerGrid" class="kontoer-grid pa-konto-grid"></div>
         <div class="pa-konto-samlet" id="paKontoSamlet" aria-label="Samlet husstand" hidden></div>
         <div class="kontoer-totals" id="kontoerTotals" aria-label="Totalt husstand">

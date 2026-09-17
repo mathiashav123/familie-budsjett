@@ -1491,8 +1491,9 @@
           escapeAttr(brukKey) +
           '" data-calc-input-key="' +
           escapeAttr(brukKey) +
-          '" placeholder="0" autocomplete="off" value="' +
-          escapeAttr(formatPlanInput(bal.bruk)) +
+          '" placeholder="Valgfri korreksjon" autocomplete="off" value="' +
+          // Suggested seed is internal rolling pot — field stays empty (not a bank confirm)
+          escapeAttr(isSuggested ? "" : formatPlanInput(bal.bruk)) +
           '" /><span>kr</span></div></label>' +
           '<button type="button" class="btn primary sm pa-konto-confirm" data-bal-confirm="' +
           escapeAttr(person.id) +
@@ -1571,11 +1572,11 @@
         newMonthHint.textContent =
           typeof Calc.balanceSuggestedHint === "function"
             ? Calc.balanceSuggestedHint()
-            : "Trygg ruller automatisk (virtuell pot). Rett saldo bare hvis noe er feil — ikke nødvendig hver måned.";
+            : "På konto er en korreksjon for denne måneden — nullstilles / gjelder ikke automatisk neste mnd. Trygg ruller: forrige + (lønn − utgifter).";
       } else if (emptyBal) {
         newMonthHint.hidden = false;
         newMonthHint.textContent =
-          "Ny måned — Trygg ruller automatisk. Rett saldo bare hvis banken ikke stemmer.";
+          "Ny måned — feltet er tomt. Trygg ruller automatisk (forrige + lønn − utgifter). Rett saldo bare hvis banken ikke stemmer.";
       } else {
         newMonthHint.hidden = true;
       }
@@ -2243,22 +2244,20 @@
         personId: scopePersonId
       });
     }
-    // Suggested empty months: show projected pot as «har nå» (not flat seed).
+    // Empty unconfirmed months: show projected pot as «har nå» (not flat ~71k seed).
     if (
       projection &&
       projection.potByKey &&
       Number.isFinite(projection.potByKey[key])
     ) {
       const viewM = state.months[key];
-      const anySuggested =
-        viewM &&
-        !viewM.balancesUpdatedAt &&
-        (viewM.balancesSuggested ||
-          (viewM.balances &&
-            Object.keys(viewM.balances).some(function (pid) {
-              return viewM.balances[pid] && viewM.balances[pid].suggested;
-            })));
-      if (anySuggested) {
+      const viewEmptyFwd =
+        !viewM ||
+        !Array.isArray(viewM.expenses) ||
+        viewM.expenses.length === 0;
+      const unconfirmedEmpty =
+        viewEmptyFwd && viewM && !viewM.balancesUpdatedAt;
+      if (unconfirmedEmpty) {
         harNa = projection.potByKey[key];
         forwardSetValue(harEl, harNa);
       }
