@@ -1,5 +1,17 @@
 # Endringslogg – Familiebudsjett
 
+## 17. september 2026 (UTC+2) – Rullerende saldo: rest midler inn i neste måned
+
+- **Ønske:** Trygg å bruke skal gå pluss/minus etter hvordan måneden gikk. Bekreftet På konto (f.eks. Oct 81223 etter godt overskudd) skal foreslå samme tall i neste måned — ikke sitte fast på gammel Sep-seed (71223).
+- **Formel:** `suggestedBruk = nearestPrev.confirmedBruk − openPlannedSpends(newMonth)`  
+  der `nearestPrev` = nærmeste tidligere måned med `balancesUpdatedAt` (ikke bare −1 mnd).
+- **Alltid seed** når ny måned mangler bekreftet saldo og forrige bekreftet finnes — også når planlagte utlegg = 0 (overskudd/underskudd ruller). Underskudd (f.eks. 50000) seeds videre; negativ Trygg tillatt som før.
+- **Ikke** re-seed over måned med `balancesUpdatedAt` / eksisterende ikke-foreslått bruk. Soft-cleanup rører fortsatt ikke `suggested`.
+- Same-month reserve-regler uendret (ingen dobbelttelling av planlagte).
+- **Hint:** «Bygger på forrige bekreftede saldo (± planlagte utlegg). Bekreft eller endre.»
+- Tester §11 / §11b / §11d / §11e (Sep→Oct bil 71223; Oct 81223→Nov 81223; Oct 50000→Nov 50000; nearest confirmed hopper over gap).
+- Additiv (`familie-budsjett-v1`).
+
 ## 17. september 2026 (UTC+2) – Fix: dobbelttelling + negativ Trygg
 
 - **Bug (mål-måned):** Oktober med foreslått/seeda bruk 71223 *uten* `suggested`/`suggestedAfterPlans` (delvis migrering) trakk fortsatt samme måneds bil (160000) i `futureReserve` → `71223−160000` → `Math.max(0,…)` → **0**.

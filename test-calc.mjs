@@ -492,8 +492,8 @@ console.log("\n10. safeToSpend uses bruk (not spare); spare ignored");
   assertEq(cOff.safeToSpend, 39000, "plan safe when toggle off");
 }
 
-// --- Carry-forward must NOT copy balances (point-in-time) ---
-console.log("\n11. Carry-forward does NOT copy balances into new months");
+// --- Carry-forward: budgets yes; balances only as suggested seed (not raw copyBalances) ---
+console.log("\n11. Carry-forward budgets; balances via suggested seed (not raw copy)");
 {
   const people = Calc.defaultPeople();
   const months = {
@@ -529,22 +529,31 @@ console.log("\n11. Carry-forward does NOT copy balances into new months");
   assertEq(r.mode, "all", "mode all");
   assertEq(months["2026-09"].plannedIncome.p1.lønn, 30000, "planned income carried");
   assertEq(Calc.budgetFor(months["2026-09"], "c1"), 1000, "budget carried");
-  // Point-in-time: bruk/spare must stay empty
+  // Rolling suggested seed from confirmed Aug (not silent raw copy / not confirmed)
+  assert(r.suggestedBalances === true, "Sep got suggested balances");
+  assertEq(months["2026-09"].balances.p1.bruk, 8000, "p1 suggested from Aug");
+  assertEq(months["2026-09"].balances.p2.bruk, 4000, "p2 suggested from Aug");
+  assert(months["2026-09"].balances.p1.suggested === true, "p1 suggested flag");
+  assert(!months["2026-09"].balancesUpdatedAt, "Sep not auto-confirmed");
   assert(
-    months["2026-09"].balances.p1.bruk == null || months["2026-09"].balances.p1.bruk === "",
-    "p1 bruk NOT carried"
+    months["2026-09"].balances.p1.spare == null || months["2026-09"].balances.p1.spare === "",
+    "p1 spare NOT carried"
   );
   assert(
     months["2026-09"].balances.p2.spare == null || months["2026-09"].balances.p2.spare === "",
     "p2 spare NOT carried"
   );
-  assert(Calc.monthHasBalances(months["2026-09"]) === false, "Sep has no balances");
-  // copyBalancesFrom is explicit no-op
+  // copyBalancesFrom remains explicit no-op (does not overwrite suggested)
   const sep = months["2026-09"];
+  const beforeCopy = sep.balances.p1.bruk;
   Calc.copyBalancesFrom(months["2026-08"], sep, people);
-  assert(Calc.monthHasBalances(sep) === false, "copyBalancesFrom is no-op");
+  assertEq(sep.balances.p1.bruk, beforeCopy, "copyBalancesFrom is no-op");
+  assert(
+    sep.balances.p1.spare == null || sep.balances.p1.spare === "",
+    "copyBalancesFrom still does not add spare"
+  );
 
-  // Existing balances in a month are still left alone
+  // Existing non-suggested balances in a month are still left alone
   months["2026-10"] = {
     balances: { p1: { bruk: 1, spare: null }, p2: { bruk: null, spare: null } },
     budgets: {},
@@ -560,8 +569,8 @@ console.log("\n11. Carry-forward does NOT copy balances into new months");
   assertEq(months["2026-10"].balances.p1.bruk, 1, "existing balances kept");
 }
 
-// --- New month after before_salary must not inherit bruk ---
-console.log("\n11b. New month after before_salary balance does not inherit bruk");
+// --- New month after confirmed before_salary: suggested rolling carry (not silent raw) ---
+console.log("\n11b. New month after confirmed balance gets suggested rolling carry");
 {
   const people = Calc.defaultPeople();
   const months = {
@@ -587,12 +596,15 @@ console.log("\n11b. New month after before_salary balance does not inherit bruk"
   });
   assert(r.copied === true, "Nov gets budgets/income");
   assertEq(months["2026-11"].plannedIncome.p1.lønn, 30000, "Nov income carried");
-  assert(Calc.monthHasBalances(months["2026-11"]) === false, "Nov starts without balances");
+  assert(r.suggestedBalances === true, "Nov suggested rolling carry");
+  assertEq(months["2026-11"].balances.p1.bruk, 50000, "Nov p1 suggested 50k from Oct");
+  assertEq(months["2026-11"].balances.p2.bruk, 12000, "Nov p2 suggested 12k");
+  assert(months["2026-11"].balances.p1.suggested === true, "Nov suggested flag");
+  assert(!months["2026-11"].balancesUpdatedAt, "Nov not auto-confirmed");
   assert(
-    !months["2026-11"].balances.p1 ||
-      months["2026-11"].balances.p1.bruk == null ||
-      months["2026-11"].balances.p1.bruk === "",
-    "Nov p1 bruk empty after Oct before_salary 50k"
+    months["2026-11"].balances.p1.spare == null ||
+      months["2026-11"].balances.p1.spare === "",
+    "spare still not carried"
   );
 }
 
@@ -762,7 +774,7 @@ console.log("\n11d. Suggested bruk seed = prev confirmed − plannedSpends (not 
   assertEq(cOctConfirmed.safeToSpend, 71223, "Trygg stays 71223 after Bekreft");
   assertEq(cOctConfirmed.totalBruk, 71223, "bruk unchanged after Bekreft");
 
-  // before_salary prev WITHOUT planned in next month → still empty (no raw copy)
+  // Rolling carry: confirmed prev WITHOUT planned in next month → seed = prev bruk
   const months2 = {
     "2026-10": {
       balances: {
@@ -780,17 +792,175 @@ console.log("\n11d. Suggested bruk seed = prev confirmed − plannedSpends (not 
       expenses: []
     }
   };
-  Calc.ensureMonthExpected(months2, "2026-11", people, {
+  const r2 = Calc.ensureMonthExpected(months2, "2026-11", people, {
     copyExpectedToNewMonths: true,
     categories: [{ id: "cMat", name: "Mat", type: "variabel", owner: "felles", archived: false }],
     plannedSpends: []
   });
-  assert(Calc.monthHasBalances(months2["2026-11"]) === false, "no seed without planned");
+  assert(r2.suggestedBalances === true, "Nov seeds without planned (rolling carry)");
+  assert(months2["2026-11"].balancesSuggested === true, "Nov balancesSuggested");
+  assertEq(months2["2026-11"].balances.p1.bruk, 50000, "p1 carry 50000");
+  assertEq(months2["2026-11"].balances.p2.bruk, 12000, "p2 carry 12000");
+  assert(months2["2026-11"].balances.p1.suggested === true, "p1 suggested carry");
+  assert(!months2["2026-11"].balancesUpdatedAt, "Nov not auto-confirmed");
   assertEq(
     Calc.computeSuggestedBrukFromPrev(231223, 160000),
     71223,
     "helper formula"
   );
+  assertEq(
+    Calc.balanceSuggestedHint(),
+    "Bygger på forrige bekreftede saldo (± planlagte utlegg). Bekreft eller endre.",
+    "hint nb"
+  );
+}
+
+// --- Rolling carry: leftover / deficit into next month ---
+console.log("\n11e. Rolling carry: Oct confirm leftover/deficit → Nov seed");
+{
+  const people = Calc.defaultPeople();
+  const cats = [
+    { id: "cMat", name: "Mat", type: "variabel", owner: "felles", archived: false }
+  ];
+  // Sep → Oct with bil: seed 71223 total (already covered in 11d). Here Oct confirmed
+  // at end-of-month leftover 81223 → Nov should suggest 81223 (no Nov plans).
+  const monthsSurplus = {
+    "2026-10": {
+      balances: {
+        p1: { bruk: 70000, spare: null, when: "after_salary", asOf: null },
+        p2: { bruk: 11223, spare: null, when: "after_salary", asOf: null }
+      },
+      balancesUpdatedAt: "2026-10-31T18:00:00.000Z",
+      budgets: { cMat: 5000 },
+      plannedIncome: {
+        p1: { lønn: 25000, ekstra: null },
+        p2: { lønn: 15000, ekstra: null }
+      },
+      incomes: [],
+      savings: [],
+      expenses: []
+    }
+  };
+  assertEq(
+    monthsSurplus["2026-10"].balances.p1.bruk +
+      monthsSurplus["2026-10"].balances.p2.bruk,
+    81223,
+    "Oct confirmed total 81223"
+  );
+  const rNov = Calc.ensureMonthExpected(monthsSurplus, "2026-11", people, {
+    copyExpectedToNewMonths: true,
+    categories: cats,
+    plannedSpends: []
+  });
+  assert(rNov.suggestedBalances === true, "Nov got suggested from Oct leftover");
+  assertEq(monthsSurplus["2026-11"].balances.p1.bruk, 70000, "Nov p1 = Oct p1");
+  assertEq(monthsSurplus["2026-11"].balances.p2.bruk, 11223, "Nov p2 = Oct p2");
+  const cNov = Calc.calcFamily(monthsSurplus["2026-11"], people, [], {
+    monthKey: "2026-11",
+    monthIndex: 10,
+    plannedSpends: [],
+    spendBuffer: 0
+  });
+  assertEq(cNov.totalBruk, 81223, "Nov totalBruk 81223");
+  assertEq(cNov.safeToSpend, 81223, "Nov Trygg 81223 (surplus carried)");
+  assert(cNov.hasSuggestedBalances === true, "Nov hasSuggested");
+
+  // Deficit: Oct ends at 50000 total → Nov seeds 50000
+  const monthsDef = {
+    "2026-10": {
+      balances: {
+        p1: { bruk: 30000, spare: null, when: "after_salary", asOf: null },
+        p2: { bruk: 20000, spare: null, when: "after_salary", asOf: null }
+      },
+      balancesUpdatedAt: "2026-10-31T18:00:00.000Z",
+      budgets: { cMat: 5000 },
+      plannedIncome: {
+        p1: { lønn: 25000, ekstra: null },
+        p2: { lønn: 15000, ekstra: null }
+      },
+      incomes: [],
+      savings: [],
+      expenses: []
+    }
+  };
+  Calc.ensureMonthExpected(monthsDef, "2026-11", people, {
+    copyExpectedToNewMonths: true,
+    categories: cats,
+    plannedSpends: []
+  });
+  assertEq(monthsDef["2026-11"].balances.p1.bruk, 30000, "Nov deficit p1");
+  assertEq(monthsDef["2026-11"].balances.p2.bruk, 20000, "Nov deficit p2");
+  const cDef = Calc.calcFamily(monthsDef["2026-11"], people, [], {
+    monthKey: "2026-11",
+    monthIndex: 10,
+    plannedSpends: [],
+    spendBuffer: 0
+  });
+  assertEq(cDef.totalBruk, 50000, "Nov total 50000");
+  assertEq(cDef.safeToSpend, 50000, "Nov Trygg 50000");
+
+  // Do not re-seed over confirmed Nov
+  monthsDef["2026-11"].balancesUpdatedAt = "2026-11-02T10:00:00.000Z";
+  monthsDef["2026-11"].balances.p1.bruk = 99999;
+  delete monthsDef["2026-11"].balancesSuggested;
+  monthsDef["2026-11"].balances.p1.suggested = false;
+  monthsDef["2026-11"].balances.p2.suggested = false;
+  const rConf = Calc.ensureSuggestedBalances(
+    monthsDef,
+    "2026-11",
+    people,
+    []
+  );
+  assert(rConf.seeded === false, "no re-seed when confirmed");
+  assertEq(rConf.reason, "confirmed", "reason confirmed");
+  assertEq(monthsDef["2026-11"].balances.p1.bruk, 99999, "confirmed bruk kept");
+
+  // Nearest confirmed skips unconfirmed gap month
+  const monthsGap = {
+    "2026-09": {
+      balances: {
+        p1: { bruk: 40000, spare: null, when: "after_salary", asOf: null },
+        p2: { bruk: 41223, spare: null, when: "after_salary", asOf: null }
+      },
+      balancesUpdatedAt: "2026-09-30T12:00:00.000Z",
+      budgets: { cMat: 5000 },
+      plannedIncome: {
+        p1: { lønn: 25000, ekstra: null },
+        p2: { lønn: 15000, ekstra: null }
+      },
+      incomes: [],
+      savings: [],
+      expenses: []
+    },
+    "2026-10": {
+      // suggested only — not confirmed
+      balances: {
+        p1: { bruk: 1, spare: null, when: "after_salary", asOf: null, suggested: true },
+        p2: { bruk: 1, spare: null, when: "after_salary", asOf: null, suggested: true }
+      },
+      balancesSuggested: true,
+      budgets: { cMat: 5000 },
+      plannedIncome: {
+        p1: { lønn: 25000, ekstra: null },
+        p2: { lønn: 15000, ekstra: null }
+      },
+      incomes: [],
+      savings: [],
+      expenses: []
+    }
+  };
+  assertEq(
+    Calc.findNearestPreviousWithConfirmedBalances(monthsGap, "2026-11"),
+    "2026-09",
+    "nearest confirmed is Sep not Oct"
+  );
+  Calc.ensureMonthExpected(monthsGap, "2026-11", people, {
+    copyExpectedToNewMonths: true,
+    categories: cats,
+    plannedSpends: []
+  });
+  assertEq(monthsGap["2026-11"].balances.p1.bruk, 40000, "Nov from Sep p1");
+  assertEq(monthsGap["2026-11"].balances.p2.bruk, 41223, "Nov from Sep p2");
 }
 
 

@@ -1322,7 +1322,7 @@
         const whenLabel = isSuggested
           ? (typeof Calc.balanceSuggestedLabel === "function"
               ? Calc.balanceSuggestedLabel()
-              : "Foreslått etter planlagte utlegg")
+              : "Bygger på forrige bekreftede saldo")
           : row.whenLabel || Calc.balanceWhenLabel(whenMode, asOfVal || null);
         const varMeta = row.variance;
         let diffHtml = "";
@@ -1509,7 +1509,9 @@
       if (hasSuggested) {
         newMonthHint.hidden = false;
         newMonthHint.textContent =
-          "Foreslått etter planlagte utlegg (trukket én gang) — bekreft eller endre";
+          typeof Calc.balanceSuggestedHint === "function"
+            ? Calc.balanceSuggestedHint()
+            : "Bygger på forrige bekreftede saldo (± planlagte utlegg). Bekreft eller endre.";
       } else if (emptyBal) {
         newMonthHint.hidden = false;
         newMonthHint.textContent =
