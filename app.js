@@ -2226,8 +2226,9 @@
       return;
     }
 
-    // Show cumulative pot + monthly delta so a flat +63542/mo is explained,
-    // not mistaken for a stuck duplicate number. Year markers when year flips.
+    // Show cumulative pot + monthly delta (planInn − Fast − variabelt − planlagt)
+    // so a flat surplus/deficit is explained, not mistaken for a stuck duplicate.
+    // Year markers when year flips.
     const near = projection.months.slice(0, showN);
     let prevYear = null;
     monthsEl.innerHTML = near
@@ -2388,7 +2389,8 @@
   /**
    * Projected pot at viewKey if budget is followed from the nearest
    * confirmed/seeded anchor month. Used on Oversikt for all empty future
-   * months so Oct ≠ Nov ≠ Dec ≠ Nov 2038 when plan surplus accumulates.
+   * months so Oct ≠ Nov ≠ Dec ≠ Nov 2038 when plan net (inn − Fast − var − planlagt) rolls.
+   * Never overrides a month with confirmed På konto (bank already includes Fast).
    */
   function projectedPotForViewKey(viewKey) {
     if (!viewKey || typeof Calc.projectPotFollowBudget !== "function") return null;
@@ -2762,7 +2764,7 @@
         hintEl.textContent =
           "Projeksjon hvis budsjettet følges (fra " +
           projectionOverride.anchorKey +
-          "). Tomme fremtidige måneder viser akkumulert pot (ruller måned for måned). Se Fremover for detaljer.";
+          "). Tomme fremtidige måneder: lønn − Fast − variabelt − planlagte utlegg. Bekreftet På konto beholder bank-Trygg. Se Fremover for detaljer.";
       } else if (needsSaldo) {
         hintEl.classList.remove("is-saldo-short");
         hintEl.textContent =

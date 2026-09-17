@@ -3352,10 +3352,11 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
     horizon: 12
   });
   assertEq(proj.months.length, 12, "37 proj 12 rows");
-  // Oct: 231223 + 70000 - 10000 - 160000 = 131223
+  // Oct: 231223 + 70000 - 30000 Fast - 10000 var - 160000 = 101223
   assertEq(proj.months[0].monthKey, "2026-10", "37 proj first oct");
   assertEq(proj.months[0].plannedSpends, 160000, "37 proj oct bil once");
-  assertEq(proj.months[0].pot, 131223, "37 proj oct pot");
+  assertEq(proj.months[0].planUtFixed, 30000, "37 proj oct Fast");
+  assertEq(proj.months[0].pot, 101223, "37 proj oct pot");
   assert(typeof proj.potAtHorizon === "number", "37 potAtHorizon number");
   assert(Number.isFinite(proj.potAtHorizon), "37 potAtHorizon finite");
   // Bil not applied again in Nov
@@ -3400,8 +3401,8 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
     }
   ];
   const months = { "2026-09": sep };
-  // Monthly net = planInn 50000 − planUtVar 5000 = +45000 (Fast ignored)
-  // Oct: 100000 + 45000 − 40000 = 105000
+  // Monthly net = planInn 50000 − Fast 20000 − planUtVar 5000 = +25000
+  // Oct: 100000 + 25000 − 40000 = 85000
   const long = Calc.projectPotFollowBudget({
     months: months,
     fromKey: "2026-09",
@@ -3413,12 +3414,13 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
   });
   assertEq(long.months.length, 144, "38 144 months");
   assertEq(long.months[0].monthKey, "2026-10", "38 first oct");
-  assertEq(long.months[0].pot, 105000, "38 oct after bil once");
+  assertEq(long.months[0].pot, 85000, "38 oct after bil once");
   assertEq(long.months[1].monthKey, "2026-11", "38 nov key");
   assertEq(long.months[1].plannedSpends, 0, "38 bil not repeated");
-  assertEq(long.months[1].pot, 150000, "38 nov +45000");
+  assertEq(long.months[1].pot, 110000, "38 nov +25000");
   // Empty months still have planInn via virtual carry
   assertEq(long.months[1].planInn, 50000, "38 virtual planInn");
+  assertEq(long.months[1].planUtFixed, 20000, "38 virtual planUtFixed");
   assertEq(long.months[1].planUtVariable, 5000, "38 virtual planUtVar");
   // Horizon = Sep 2026 + 144m = Sep 2038
   assertEq(long.months[143].monthKey, "2038-09", "38 horizon Sep 2038");
@@ -3438,19 +3440,21 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
   });
   assertEq(longer.potByKey["2038-11"], longer.months[145].pot, "38 potByKey Nov 2038");
   assert(Number.isFinite(longer.potByKey["2038-11"]), "38 Nov 2038 finite");
-  // After Oct bil: pot_n = 60000 + 45000*n
+  // After Oct bil: pot at month index i = 85000 + 25000*i
   assertEq(longer.months[145].monthKey, "2038-11", "38 row Nov 2038");
-  assertEq(longer.months[145].pot, 6630000, "38 Nov 2038 pot formula");
+  assertEq(longer.months[145].pot, 3710000, "38 Nov 2038 pot formula");
   // byYear has Dec entries
   assert(longer.byYear.length >= 12, "38 byYear >= 12 decembers");
   assertEq(longer.byYear[0].monthKey, "2026-12", "38 first year-end Dec 2026");
-  // Dec 2026 = month 3 → 60000 + 45000*3 = 195000
-  assertEq(longer.byYear[0].pot, 195000, "38 Dec 2026 pot");
+  // Dec 2026 = month index 2 → 85000 + 25000*2 = 135000
+  assertEq(longer.byYear[0].pot, 135000, "38 Dec 2026 pot");
   // Does not mutate months map with shells
   assertEq(Object.keys(months).length, 1, "38 no month persist bloat");
   assert(
-    typeof longer.formula === "string" && longer.formula.indexOf("planInn") >= 0,
-    "38 formula"
+    typeof longer.formula === "string" &&
+      longer.formula.indexOf("planInn") >= 0 &&
+      longer.formula.indexOf("planUtFixed") >= 0,
+    "38 formula includes Fast"
   );
 }
 
@@ -3552,6 +3556,16 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
     proj.potByKey["2038-11"] > proj.potByKey["2026-11"],
     "39 Nov 2038 accumulates above Nov 2026"
   );
+  // Fast must be in the monthly delta (not the old +63542 fantasy without Fast)
+  assertEq(proj.months[2].planUtFixed, 31323, "39 Dec includes Fast");
+  assertEq(proj.months[2].delta, 32219, "39 steady delta = inn−Fast−var");
+  assert(
+    proj.potByKey["2038-11"] < 5000000,
+    "39 Nov 2038 not ~9.8M fantasy (Fast subtracted)"
+  );
+  assertEq(proj.potByKey["2026-10"], 98800, "39 Oct pot after bil+Fast");
+  assertEq(proj.potByKey["2026-11"], 131019, "39 Nov 2026 pot");
+  assertEq(proj.potByKey["2038-11"], 4750647, "39 Nov 2038 pot");
   // Flat monthly delta after bil month should be explained (same delta, rising pot)
   const d1 = proj.months[2].delta;
   const d2 = proj.months[3].delta;
@@ -3684,10 +3698,10 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
     const nov = proj.potByKey["2026-11"];
     const dec = proj.potByKey["2026-12"];
     const jan = proj.potByKey["2027-01"];
-    assertEq(oct, 130123, "40 oct projected pot after bil+flows");
-    assertEq(nov, 193665, "40 nov projected pot");
-    assertEq(dec, 257207, "40 dec projected pot");
-    assertEq(jan, 320749, "40 jan 2027 projected pot");
+    assertEq(oct, 98800, "40 oct projected pot after bil+Fast+flows");
+    assertEq(nov, 131019, "40 nov projected pot");
+    assertEq(dec, 163238, "40 dec projected pot");
+    assertEq(jan, 195457, "40 jan 2027 projected pot");
     assert(oct !== nov, "40 Oct ≠ Nov");
     assert(nov !== dec, "40 Nov ≠ Dec");
     assert(dec !== jan, "40 Dec ≠ Jan");

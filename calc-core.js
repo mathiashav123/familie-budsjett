@@ -897,6 +897,19 @@
   }
 
   /**
+   * Fixed (fast) planned budget total for a month.
+   */
+  function plannedFixedBudgetTotal(m, categories, monthIndex) {
+    var sum = 0;
+    (categories || []).forEach(function (cat) {
+      if (!cat || cat.archived) return;
+      if (cat.type !== "fast") return;
+      sum += budgetFor(m, cat.id, monthIndex) || 0;
+    });
+    return sum;
+  }
+
+  /**
    * Planned income total (lønn+ekstra) for active people in a month.
    */
   function plannedIncomeTotal(m, people) {
@@ -957,15 +970,17 @@
   /**
    * Project pot forward if user follows budget.
    * Formula (documented in UI):
-   *   pot_{m+1} = pot_m + planInn − planUtVariable − plannedSpendsThatMonth
-   * Fast is NOT re-subtracted (pot is post-bank / trygg-envelope).
+   *   pot_{m+1} = pot_m + planInn − planUtFixed − planUtVariable − plannedSpendsThatMonth
+   * Lønn minus alle planlagte utgifter (Fast + variabelt + planlagte utlegg) → neste Trygg.
    * startPot should be current effective bruk/pot (seed or bank), not Trygg-after-future-reserve.
+   * Confirmed bank months on Oversikt keep bank-based Trygg (caller must not override
+   * those with this projection — Fast already sits in the bank saldo).
    *
    * Missing future months reuse the last known expected budgets/income (virtual
    * carry — does not mutate months). Horizon up to 240 months (20 years).
    *
    * Returns {
-   *   startPot, months:[{monthKey, pot, planInn, planUtVariable, plannedSpends}],
+   *   startPot, months:[{monthKey, pot, planInn, planUtFixed, planUtVariable, plannedSpends, delta}],
    *   potAtHorizon, potByKey, byYear:[{year, monthKey, pot}],
    *   milestones:{m12,m60,m144}, formula
    * }.
@@ -991,7 +1006,7 @@
         byYear: [],
         milestones: {},
         formula:
-          "pot = pot + planInn − planUtVariable − planlagteUtlegg (Fast ikke trukket på nytt)"
+          "pot = pot + planInn − planUtFixed − planUtVariable − planlagteUtlegg"
       };
     }
     var pot = startPot;
@@ -1036,17 +1051,19 @@
       }
       var mi = monthIndexFromKey(key);
       var planInn = plannedIncomeTotal(m, people);
+      var planUtFixed = plannedFixedBudgetTotal(m, categories, mi);
       var planUtVar = plannedVariableBudgetTotal(m, categories, mi);
       var planned = openPlannedSpendTotalForMonth(plannedSpends, key);
-      pot = pot + planInn - planUtVar - planned;
+      pot = pot + planInn - planUtFixed - planUtVar - planned;
       pot = Math.round(pot * 100) / 100;
-      var delta = planInn - planUtVar - planned;
+      var delta = planInn - planUtFixed - planUtVar - planned;
       delta = Math.round(delta * 100) / 100;
       rows.push({
         monthKey: key,
         pot: pot,
         delta: delta,
         planInn: planInn,
+        planUtFixed: planUtFixed,
         planUtVariable: planUtVar,
         plannedSpends: planned
       });
@@ -1082,7 +1099,7 @@
         m144: m144
       },
       formula:
-        "pot = pot + planInn − planUtVariable − planlagteUtlegg (Fast ikke trukket på nytt)"
+        "pot = pot + planInn − planUtFixed − planUtVariable − planlagteUtlegg"
     };
   }
 
@@ -4132,6 +4149,7 @@
     resolveDisplayBrukFallback: resolveDisplayBrukFallback,
     shouldUseProjectedPotForOversikt: shouldUseProjectedPotForOversikt,
     projectPotFollowBudget: projectPotFollowBudget,
+    plannedFixedBudgetTotal: plannedFixedBudgetTotal,
     plannedVariableBudgetTotal: plannedVariableBudgetTotal,
     computeCarryEndBrukForPerson: computeCarryEndBrukForPerson,
     computeMonthCarryPot: computeMonthCarryPot,

@@ -4830,7 +4830,7 @@ button.cat-group-header {
           <summary>År for år</summary>
           <div class="forward-years-list" id="forwardYearsList" aria-label="Projeksjon per år"></div>
         </details>
-        <p class="hint compact" id="forwardFormulaHint">Formel: start fra effektiv pot/Trygg (etter planlagte utlegg som bil én gang); hver fremtidig måned <code>pot += planInn − planUtVariable − openPlannedThatMonth</code>. Fast trekkes ikke på nytt (allerede i bank/pot). Tomme måneder gjenbruker siste kjente budsjett.</p>
+        <p class="hint compact" id="forwardFormulaHint">Formel: start fra effektiv pot/Trygg (etter planlagte utlegg som bil én gang); hver fremtidig måned <code>pot += planInn − planUtFixed − planUtVariable − openPlannedThatMonth</code> (lønn minus alle utgifter). Bekreftet På konto beholder bank-Trygg (Fast allerede i saldo). Tomme måneder gjenbruker siste kjente budsjett.</p>
       </section>
 
       
@@ -6605,6 +6605,19 @@ window.FAMILIE_BUDGET_SUPABASE = {
   }
 
   /**
+   * Fixed (fast) planned budget total for a month.
+   */
+  function plannedFixedBudgetTotal(m, categories, monthIndex) {
+    var sum = 0;
+    (categories || []).forEach(function (cat) {
+      if (!cat || cat.archived) return;
+      if (cat.type !== "fast") return;
+      sum += budgetFor(m, cat.id, monthIndex) || 0;
+    });
+    return sum;
+  }
+
+  /**
    * Planned income total (lønn+ekstra) for active people in a month.
    */
   function plannedIncomeTotal(m, people) {
@@ -6665,15 +6678,17 @@ window.FAMILIE_BUDGET_SUPABASE = {
   /**
    * Project pot forward if user follows budget.
    * Formula (documented in UI):
-   *   pot_{m+1} = pot_m + planInn − planUtVariable − plannedSpendsThatMonth
-   * Fast is NOT re-subtracted (pot is post-bank / trygg-envelope).
+   *   pot_{m+1} = pot_m + planInn − planUtFixed − planUtVariable − plannedSpendsThatMonth
+   * Lønn minus alle planlagte utgifter (Fast + variabelt + planlagte utlegg) → neste Trygg.
    * startPot should be current effective bruk/pot (seed or bank), not Trygg-after-future-reserve.
+   * Confirmed bank months on Oversikt keep bank-based Trygg (caller must not override
+   * those with this projection — Fast already sits in the bank saldo).
    *
    * Missing future months reuse the last known expected budgets/income (virtual
    * carry — does not mutate months). Horizon up to 240 months (20 years).
    *
    * Returns {
-   *   startPot, months:[{monthKey, pot, planInn, planUtVariable, plannedSpends}],
+   *   startPot, months:[{monthKey, pot, planInn, planUtFixed, planUtVariable, plannedSpends, delta}],
    *   potAtHorizon, potByKey, byYear:[{year, monthKey, pot}],
    *   milestones:{m12,m60,m144}, formula
    * }.
@@ -6699,7 +6714,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
         byYear: [],
         milestones: {},
         formula:
-          "pot = pot + planInn − planUtVariable − planlagteUtlegg (Fast ikke trukket på nytt)"
+          "pot = pot + planInn − planUtFixed − planUtVariable − planlagteUtlegg"
       };
     }
     var pot = startPot;
@@ -6744,17 +6759,19 @@ window.FAMILIE_BUDGET_SUPABASE = {
       }
       var mi = monthIndexFromKey(key);
       var planInn = plannedIncomeTotal(m, people);
+      var planUtFixed = plannedFixedBudgetTotal(m, categories, mi);
       var planUtVar = plannedVariableBudgetTotal(m, categories, mi);
       var planned = openPlannedSpendTotalForMonth(plannedSpends, key);
-      pot = pot + planInn - planUtVar - planned;
+      pot = pot + planInn - planUtFixed - planUtVar - planned;
       pot = Math.round(pot * 100) / 100;
-      var delta = planInn - planUtVar - planned;
+      var delta = planInn - planUtFixed - planUtVar - planned;
       delta = Math.round(delta * 100) / 100;
       rows.push({
         monthKey: key,
         pot: pot,
         delta: delta,
         planInn: planInn,
+        planUtFixed: planUtFixed,
         planUtVariable: planUtVar,
         plannedSpends: planned
       });
@@ -6790,7 +6807,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
         m144: m144
       },
       formula:
-        "pot = pot + planInn − planUtVariable − planlagteUtlegg (Fast ikke trukket på nytt)"
+        "pot = pot + planInn − planUtFixed − planUtVariable − planlagteUtlegg"
     };
   }
 
@@ -9840,6 +9857,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     resolveDisplayBrukFallback: resolveDisplayBrukFallback,
     shouldUseProjectedPotForOversikt: shouldUseProjectedPotForOversikt,
     projectPotFollowBudget: projectPotFollowBudget,
+    plannedFixedBudgetTotal: plannedFixedBudgetTotal,
     plannedVariableBudgetTotal: plannedVariableBudgetTotal,
     computeCarryEndBrukForPerson: computeCarryEndBrukForPerson,
     computeMonthCarryPot: computeMonthCarryPot,
@@ -13361,8 +13379,9 @@ window.FAMILIE_BUDGET_SUPABASE = {
       return;
     }
 
-    // Show cumulative pot + monthly delta so a flat +63542/mo is explained,
-    // not mistaken for a stuck duplicate number. Year markers when year flips.
+    // Show cumulative pot + monthly delta (planInn − Fast − variabelt − planlagt)
+    // so a flat surplus/deficit is explained, not mistaken for a stuck duplicate.
+    // Year markers when year flips.
     const near = projection.months.slice(0, showN);
     let prevYear = null;
     monthsEl.innerHTML = near
@@ -13523,7 +13542,8 @@ window.FAMILIE_BUDGET_SUPABASE = {
   /**
    * Projected pot at viewKey if budget is followed from the nearest
    * confirmed/seeded anchor month. Used on Oversikt for all empty future
-   * months so Oct ≠ Nov ≠ Dec ≠ Nov 2038 when plan surplus accumulates.
+   * months so Oct ≠ Nov ≠ Dec ≠ Nov 2038 when plan net (inn − Fast − var − planlagt) rolls.
+   * Never overrides a month with confirmed På konto (bank already includes Fast).
    */
   function projectedPotForViewKey(viewKey) {
     if (!viewKey || typeof Calc.projectPotFollowBudget !== "function") return null;
@@ -13897,7 +13917,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
         hintEl.textContent =
           "Projeksjon hvis budsjettet følges (fra " +
           projectionOverride.anchorKey +
-          "). Tomme fremtidige måneder viser akkumulert pot (ruller måned for måned). Se Fremover for detaljer.";
+          "). Tomme fremtidige måneder: lønn − Fast − variabelt − planlagte utlegg. Bekreftet På konto beholder bank-Trygg. Se Fremover for detaljer.";
       } else if (needsSaldo) {
         hintEl.classList.remove("is-saldo-short");
         hintEl.textContent =
