@@ -686,7 +686,7 @@
         plannedIncome: {},
         incomes: [],
         savings: [],
-        expenses: []
+        expenses: [] // always a fresh array — never share refs across months
       };
     }
     var m = months[key];
@@ -987,7 +987,16 @@
       if (m && monthHasExpected(m)) {
         template = m;
       } else if (template) {
-        m = template;
+        // Virtual month: reuse expected budgets/income by VALUE, never share expenses array
+        m = {
+          balances: {},
+          budgets: template.budgets || {},
+          budgetLines: template.budgetLines || {},
+          plannedIncome: template.plannedIncome || {},
+          incomes: [],
+          savings: [],
+          expenses: []
+        };
       } else if (!m) {
         m = {
           balances: {},
@@ -1005,9 +1014,12 @@
       var planned = openPlannedSpendTotalForMonth(plannedSpends, key);
       pot = pot + planInn - planUtVar - planned;
       pot = Math.round(pot * 100) / 100;
+      var delta = planInn - planUtVar - planned;
+      delta = Math.round(delta * 100) / 100;
       rows.push({
         monthKey: key,
         pot: pot,
+        delta: delta,
         planInn: planInn,
         planUtVariable: planUtVar,
         plannedSpends: planned
@@ -2180,6 +2192,7 @@
 
     var plannedTotal = 0;
     var actualBudgeted = 0;
+    var loggedBudgeted = 0;
     var activeCats = (categories || []).filter(function (c) {
       return !c.archived;
     });
@@ -2190,6 +2203,7 @@
       var autoSpent = autoSpendExtraForCategory(m, cat, monthIndex);
       plannedTotal += planned;
       actualBudgeted += effectiveActual;
+      loggedBudgeted += logged;
       var plannedByOwner = { felles: budgetForOwner(m, cat.id, "felles", monthIndex) };
       active.forEach(function (p) {
         plannedByOwner[p.id] = budgetForOwner(m, cat.id, p.id, monthIndex);
@@ -2208,6 +2222,13 @@
           (planned === 0 && effectiveActual > 0)
       };
     });
+
+    // Månedhelse: empty months must show 0 brukt (do NOT invent Fast auto as spend).
+    // Months with logged expenses keep effectiveActual (Fast auto counts as spent).
+    var expenseCount = Array.isArray(m.expenses) ? m.expenses.length : 0;
+    var healthBudgeted = expenseCount === 0 ? 0 : actualBudgeted;
+    loggedBudgeted = Math.round(loggedBudgeted * 100) / 100;
+    healthBudgeted = Math.round(healthBudgeted * 100) / 100;
 
     var netPlan = planInn - plannedTotal;
     // netActual uses logged only; overview may show effectiveUtgifter separately
@@ -2492,6 +2513,9 @@
       plannedTotal: plannedTotal,
       planUtFelles: plannedUtFelles(m, categories, monthIndex),
       actualBudgeted: actualBudgeted,
+      loggedBudgeted: loggedBudgeted,
+      healthBudgeted: healthBudgeted,
+      expenseCount: expenseCount,
       netPlan: netPlan,
       netActual: netActual,
       remainingFastBudgets: remainingFastBudgets,
@@ -2621,6 +2645,22 @@
     return y + "-" + String(mo + 1).padStart(2, "0");
   }
 
+  /** Signed month distance: toKey - fromKey (e.g. 2026-11 - 2026-09 = 2). */
+  function monthsBetweenKeys(fromKey, toKey) {
+    if (!fromKey || !toKey) return null;
+    var a = String(fromKey).split("-");
+    var b = String(toKey).split("-");
+    if (a.length < 2 || b.length < 2) return null;
+    var ay = parseInt(a[0], 10);
+    var am = parseInt(a[1], 10);
+    var by = parseInt(b[0], 10);
+    var bm = parseInt(b[1], 10);
+    if (!Number.isFinite(ay) || !Number.isFinite(am) || !Number.isFinite(by) || !Number.isFinite(bm)) {
+      return null;
+    }
+    return (by - ay) * 12 + (bm - am);
+  }
+
   function findNearestPreviousWithExpected(months, monthKey, maxLookback) {
     var look = maxLookback == null ? 36 : maxLookback;
     var key = monthKey;
@@ -2690,7 +2730,7 @@
         plannedIncome: {},
         incomes: [],
         savings: [],
-        expenses: []
+        expenses: [] // always a fresh array — never share refs across months
       };
     }
     var m = months[key];
@@ -4152,6 +4192,7 @@
     reassignPersonData: reassignPersonData,
     monthHasExpected: monthHasExpected,
     shiftMonthKey: shiftMonthKey,
+    monthsBetweenKeys: monthsBetweenKeys,
     findNearestPreviousWithExpected: findNearestPreviousWithExpected,
     copyExpectedFrom: copyExpectedFrom,
     ensureMonthExpected: ensureMonthExpected,

@@ -3454,6 +3454,118 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
   );
 }
 
+
+// --- §39 Month isolation (health) + Fremover delta / 2038 ---
+{
+  console.log("\n§39 month health isolation + forward delta to 2038");
+  const fs = require("fs");
+  const path = require("path");
+  const { fileURLToPath } = require("url");
+  const livePath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "familie-budsjett-export-live.json");
+  let live = null;
+  try {
+    live = JSON.parse(fs.readFileSync(livePath, "utf8"));
+  } catch (e) {
+    live = null;
+  }
+  assert(live && live.months, "39 live export present");
+  if (!live || !live.months) {
+    console.log("  (skipping §39 body — no live export)");
+  } else {
+  const months = JSON.parse(JSON.stringify(live.months));
+  const people = live.people;
+  const cats = live.categories;
+  const planned = live.plannedSpends || [];
+  const settings = Object.assign({}, live.settings || {}, { months });
+
+  function ensureAndCalc(key) {
+    Calc.ensureMonthExpected(months, key, people, {
+      copyExpectedToNewMonths: true,
+      categories: cats,
+      plannedSpends: planned
+    });
+    if (typeof Calc.ensureSuggestedBalances === "function") {
+      Calc.ensureSuggestedBalances(months, key, people, {
+        plannedSpends: planned,
+        categories: cats
+      });
+    }
+    const mi = Number(key.split("-")[1]) - 1;
+    return Calc.calcFamily(months[key], people, cats, settings, mi, planned, key);
+  }
+
+  const sep = ensureAndCalc("2026-09");
+  const oct = ensureAndCalc("2026-10");
+  const nov = ensureAndCalc("2026-11");
+  assertEq(sep.expenseCount, 23, "39 sep has expenses");
+  assertEq(oct.expenseCount, 0, "39 oct empty expenses");
+  assertEq(nov.expenseCount, 0, "39 nov empty expenses");
+  assert(sep.healthBudgeted > 0, "39 sep healthBudgeted > 0");
+  assertEq(sep.healthBudgeted, sep.actualBudgeted, "39 sep health = actual (has logs)");
+  assertEq(oct.healthBudgeted, 0, "39 oct healthBudgeted 0 (no invent Fast)");
+  assertEq(nov.healthBudgeted, 0, "39 nov healthBudgeted 0");
+  assert(oct.actualBudgeted > 0, "39 oct actualBudgeted still has Fast auto for Trygg math");
+  assertEq(oct.loggedBudgeted, 0, "39 oct loggedBudgeted 0");
+  // Expense arrays must not be shared
+  assert(
+    months["2026-10"].expenses !== months["2026-11"].expenses,
+    "39 oct/nov expenses distinct refs"
+  );
+  assert(
+    months["2026-09"].expenses !== months["2026-10"].expenses,
+    "39 sep/oct expenses distinct refs"
+  );
+
+  // Past empty month must not inherit 2026 health
+  const jan24 = ensureAndCalc("2024-01");
+  assertEq(jan24.healthBudgeted, 0, "39 jan 2024 health 0");
+  assertEq(jan24.expenseCount, 0, "39 jan 2024 no expenses");
+
+  // Projection deltas + Nov 2026 ≠ Nov 2038
+  assert(typeof Calc.monthsBetweenKeys === "function", "39 monthsBetweenKeys");
+  assertEq(Calc.monthsBetweenKeys("2026-09", "2026-11"), 2, "39 between 2");
+  assertEq(Calc.monthsBetweenKeys("2026-09", "2038-11"), 146, "39 between to 2038-11");
+
+  const proj = Calc.projectPotFollowBudget({
+    months,
+    fromKey: "2026-09",
+    people,
+    categories: cats,
+    plannedSpends: planned,
+    startPot: 231223,
+    horizon: 156
+  });
+  assert(proj.months[0].delta != null, "39 first row has delta");
+  assert(
+    Number.isFinite(proj.potByKey["2026-11"]),
+    "39 pot Nov 2026"
+  );
+  assert(
+    Number.isFinite(proj.potByKey["2038-11"]),
+    "39 pot Nov 2038"
+  );
+  assert(
+    proj.potByKey["2038-11"] !== proj.potByKey["2026-11"],
+    "39 Nov 2038 ≠ Nov 2026"
+  );
+  assert(
+    proj.potByKey["2038-11"] > proj.potByKey["2026-11"],
+    "39 Nov 2038 accumulates above Nov 2026"
+  );
+  // Flat monthly delta after bil month should be explained (same delta, rising pot)
+  const d1 = proj.months[2].delta;
+  const d2 = proj.months[3].delta;
+  assertEq(d1, d2, "39 steady delta after bil month");
+  assert(
+    proj.months[3].pot > proj.months[2].pot,
+    "39 cumulative pot still rises when delta flat"
+  );
+  assert(proj.byYear.length >= 12, "39 byYear has many years");
+  const y2038 = proj.byYear.find((y) => y.year === 2038);
+  assert(y2038, "39 byYear includes 2038");
+  } // end live export body
+}
+
 console.log("\n=== Results:", passed, "passed,", failed, "failed ===\n");
 if (failed) {
   console.error("FAILURES:");
