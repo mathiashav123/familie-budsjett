@@ -1,5 +1,17 @@
 # Endringslogg – Familiebudsjett
 
+## 17. september 2026 (UTC+2) – Fix: månedshopp-seed + Trygg alltid tall + carry uten lønns-stack
+
+- **Bug 1 (Sep→Nov):** Seed trakk bare `plannedSpends` med `monthKey ===` ny måned. Hopp over Oct lot bil 160k stå → Nov tom/feil. **Fix:** `openPlannedSpendDeductionForPersonRange(prev … through new)` — Oct bil trekkes én gang ved Sep→Nov → seed **~71223**.
+- **Bug 2:** Fremtidige måneder viste «—» når bruk/seed manglet. **Fix:** alltid tall (seed/pot eller plan-rå, kan være negativ) + hint.
+- **Bug 3 (app.js):** `getMonth` refresher `refreshMonthCarryPot` på forrige måned før seed; lagrer når `suggestedBalances` seeded.
+- **Bug 4 (carry-pot):** Virtuell månedslutt la til full `planInn` → Oct carry ~111223 / pot eksploderte. **Ny formel uten bankbekreftelse:**
+  `end = startSuggestedBruk − logget variabel − same-month planlagt (hvis ikke i start) + logget inntekt (kun hvis finnes)`
+  Ikke automatisk planlagt lønn. Bekreftet bank = bruk (uendret).
+- **Beholdt:** Sep=Oct begge ~71223 til Oct-forbruk endres.
+- Tester §36 (Sep→Oct 71223; Sep→Nov 71223; Oct −10k → Nov 61223) + oppdaterte §11e/§35/sim-10y-carry.
+- Additiv (`familie-budsjett-v1`).
+
 ## 17. september 2026 (UTC+2) – Valgfri På konto + virtuell carry-pot
 
 - **Produkt:** «På konto nå» er **rettingsverktøy** (når noe er feil) — ikke månedlig plikt. Trygg pluss/minus drives av **virtuell carry-pot**.

@@ -964,9 +964,9 @@ console.log("\n11e. Rolling carry: Oct confirm leftover/deficit → Nov seed");
     categories: cats,
     plannedSpends: []
   });
-  // Virtual roll: Oct suggested 1 + planInn (no expenses/auto) → Nov
-  assertEq(monthsGap["2026-11"].balances.p1.bruk, 25001, "Nov from virtual Oct p1 (1+25000)");
-  assertEq(monthsGap["2026-11"].balances.p2.bruk, 15001, "Nov from virtual Oct p2 (1+15000)");
+  // Virtual roll without bank: no planInn stacking — flat leftover pot
+  assertEq(monthsGap["2026-11"].balances.p1.bruk, 1, "Nov from virtual Oct p1 (flat, no planInn)");
+  assertEq(monthsGap["2026-11"].balances.p2.bruk, 1, "Nov from virtual Oct p2 (flat, no planInn)");
   assert(monthsGap["2026-11"].balances.p1.fromCarryPot === true, "Nov marked fromCarryPot");
 }
 
@@ -3012,7 +3012,7 @@ console.log("\n35. Virtual carry pot — skip På konto, bil once, good/bad mont
   assertEq(cOct.safeToSpend, 71223, "oct Trygg from pot (bil not double)");
   assert(cOct.needsSaldoForSafeToSpend !== true, "oct no blocking needsSaldo");
 
-  // Good Oct: income − modest variable → higher Nov
+  // Modest variable only (no planInn invent): end = 71223 − 2000
   months["2026-10"].plannedIncome = {
     p1: { lønn: 40000, ekstra: null },
     p2: { lønn: 31500, ekstra: null }
@@ -3025,19 +3025,34 @@ console.log("\n35. Virtual carry pot — skip På konto, bil once, good/bad mont
     months["2026-10"],
     "p1",
     people,
-    { categories: cats, monthIndex: 9, monthKey: "2026-10" }
+    { categories: cats, monthIndex: 9, monthKey: "2026-10", plannedSpends: planned }
   );
-  assert(endGood > 71223, "good month end pot > start");
+  assertEq(endGood, 69223, "modest spend end = start − 2000 (no planInn)");
   const rNov = Calc.ensureSuggestedBalances(months, "2026-11", people, {
     plannedSpends: planned,
     categories: cats
   });
   assert(rNov.seeded === true, "nov seeded from virtual");
   assert(rNov.fromCarry === true, "nov fromCarry");
-  assert(
-    months["2026-11"].balances.p1.bruk > 71223,
-    "nov pot higher after good oct"
+  assertEq(
+    months["2026-11"].balances.p1.bruk,
+    69223,
+    "nov pot = oct end after modest spend"
   );
+
+  // Logged income may raise pot; planned lønn alone must not
+  months["2026-10"].incomes = [
+    { id: "i1", person: "p1", type: "lønn", amount: 40000 }
+  ];
+  delete months["2026-10"].carryPot;
+  const endWithLogged = Calc.computeCarryEndBrukForPerson(
+    months["2026-10"],
+    "p1",
+    people,
+    { categories: cats, monthIndex: 9, monthKey: "2026-10", plannedSpends: planned }
+  );
+  assertEq(endWithLogged, 109223, "logged income added: 71223-2000+40000");
+  months["2026-10"].incomes = [];
 
   // Bad month path: overspend → lower / negative
   const monthsBad = JSON.parse(JSON.stringify({
@@ -3079,6 +3094,133 @@ console.log("\n35. Virtual carry pot — skip På konto, bil once, good/bad mont
   });
   assert(rDec.seeded === true, "dec from bank reset");
   assertEq(months["2026-12"].balances.p1.bruk, 95000, "dec pot = confirmed bank");
+}
+
+
+
+// --- Month jump seed + no planInn explode + always Trygg number ---
+console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
+{
+  const people = Calc.defaultPeople();
+  const cats = [
+    { id: "cMat", name: "Mat", type: "variabel", owner: "felles", archived: false }
+  ];
+  const bil = [
+    {
+      id: "bil1",
+      amount: 160000,
+      owner: "p1",
+      monthKey: "2026-10",
+      note: "Ny bil",
+      done: false
+    }
+  ];
+  const sep = {
+    balances: {
+      p1: { bruk: 231223, spare: null, when: "dated", asOf: "2026-09-17" },
+      p2: { bruk: null, spare: null, when: "after_salary", asOf: null }
+    },
+    balancesUpdatedAt: "2026-09-17T17:32:19.592Z",
+    budgets: { cMat: { felles: 5000 } },
+    plannedIncome: {
+      p1: { lønn: 40910, ekstra: 3732 },
+      p2: { lønn: 31500, ekstra: null }
+    },
+    incomes: [],
+    savings: [],
+    expenses: []
+  };
+
+  // Sep→Oct both ~71223
+  const monthsOct = { "2026-09": JSON.parse(JSON.stringify(sep)) };
+  const rOct = Calc.ensureSuggestedBalances(monthsOct, "2026-10", people, {
+    plannedSpends: bil,
+    categories: cats
+  });
+  assert(rOct.seeded === true, "36 oct seeded");
+  assertEq(monthsOct["2026-10"].balances.p1.bruk, 71223, "36 oct 71223");
+  const cSep = Calc.calcFamily(monthsOct["2026-09"], people, cats, {
+    monthKey: "2026-09",
+    monthIndex: 8,
+    plannedSpends: bil,
+    spendBuffer: 0
+  });
+  assertEq(cSep.safeToSpend, 71223, "36 sep Trygg 71223 (reserve bil)");
+  const cOct = Calc.calcFamily(monthsOct["2026-10"], people, cats, {
+    monthKey: "2026-10",
+    monthIndex: 9,
+    plannedSpends: bil,
+    spendBuffer: 0
+  });
+  assertEq(cOct.safeToSpend, 71223, "36 oct Trygg 71223");
+
+  // Sep→Nov jump (Oct never seeded): subtract Oct bil once → ~71223, not 231223, not empty
+  const monthsJump = { "2026-09": JSON.parse(JSON.stringify(sep)) };
+  const rJump = Calc.ensureSuggestedBalances(monthsJump, "2026-11", people, {
+    plannedSpends: bil,
+    categories: cats
+  });
+  assert(rJump.seeded === true, "36 nov jump seeded");
+  assertEq(
+    monthsJump["2026-11"].balances.p1.bruk,
+    71223,
+    "36 nov jump 71223 (oct bil once)"
+  );
+  assert(
+    monthsJump["2026-11"].balances.p1.bruk !== 231223,
+    "36 nov not raw sep bank"
+  );
+  const cNovJump = Calc.calcFamily(monthsJump["2026-11"], people, cats, {
+    monthKey: "2026-11",
+    monthIndex: 10,
+    plannedSpends: bil,
+    spendBuffer: 0
+  });
+  assert(typeof cNovJump.safeToSpend === "number", "36 nov Trygg is number");
+  assertEq(cNovJump.safeToSpend, 71223, "36 nov Trygg 71223");
+  assert(cNovJump.needsSaldoForSafeToSpend !== true, "36 nov not blank/needsSaldo");
+
+  // After Oct variable 10k, Nov lower by ~10k
+  const monthsSpend = { "2026-09": JSON.parse(JSON.stringify(sep)) };
+  Calc.ensureSuggestedBalances(monthsSpend, "2026-10", people, {
+    plannedSpends: bil,
+    categories: cats
+  });
+  monthsSpend["2026-10"].expenses = [
+    { id: "e10k", owner: "p1", categoryId: "cMat", amount: 10000 }
+  ];
+  const endOct = Calc.computeCarryEndBrukForPerson(
+    monthsSpend["2026-10"],
+    "p1",
+    people,
+    { categories: cats, monthKey: "2026-10", plannedSpends: bil }
+  );
+  assertEq(endOct, 61223, "36 oct end after 10k = 61223");
+  Calc.refreshMonthCarryPot(monthsSpend, "2026-10", people, {
+    categories: cats,
+    monthKey: "2026-10",
+    plannedSpends: bil
+  });
+  const rNovSpend = Calc.ensureSuggestedBalances(monthsSpend, "2026-11", people, {
+    plannedSpends: bil,
+    categories: cats
+  });
+  assert(rNovSpend.seeded === true, "36 nov after spend seeded");
+  assertEq(
+    monthsSpend["2026-11"].balances.p1.bruk,
+    61223,
+    "36 nov lower by 10k"
+  );
+
+  // Range helper
+  const rangeDeduct = Calc.openPlannedSpendDeductionForPersonRange(
+    bil,
+    "2026-09",
+    "2026-11",
+    "p1",
+    people
+  );
+  assertEq(rangeDeduct, 160000, "36 range Sep..Nov = oct bil");
 }
 
 
