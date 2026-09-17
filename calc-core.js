@@ -2608,6 +2608,142 @@
     return /[+\-*/×÷()]/.test(s) || /[−]/.test(s);
   }
 
+
+  /**
+   * Parse bruk/spare amount; empty → null.
+   */
+  function parseBalanceAmount(v) {
+    if (v == null || v === "") return null;
+    var n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  /** Oppgitt − forventet (null if either missing). */
+  function balanceVariance(oppgitt, forventet) {
+    if (oppgitt == null || forventet == null) return null;
+    return oppgitt - forventet;
+  }
+
+  /**
+   * Forventet bruk nå = forrige måneds bruk-saldo + til overs (faktisk)
+   * til overs = inn − sparing − ut (inkl. fellesandel).
+   */
+  function expectedBrukFromPrev(prevBruk, tilOvers) {
+    if (prevBruk == null) return null;
+    var t =
+      tilOvers == null || !Number.isFinite(Number(tilOvers))
+        ? 0
+        : Number(tilOvers);
+    return prevBruk + t;
+  }
+
+  /** Etter lønn (plan) = bruk + planInn − planUt. */
+  function etterLonnFromBruk(bruk, planInn, planUt) {
+    if (bruk == null) return null;
+    return bruk + (Number(planInn) || 0) - (Number(planUt) || 0);
+  }
+
+  /**
+   * Varians-meta for UI: mer/mindre/ok.
+   * Toleranse 0.5 kr (øre-støy).
+   */
+  function varianceMeta(diff) {
+    if (diff == null || !Number.isFinite(Number(diff))) return null;
+    var d = Number(diff);
+    if (Math.abs(d) < 0.5) {
+      return { kind: "ok", amount: 0, abs: 0 };
+    }
+    if (d > 0) {
+      return { kind: "more", amount: d, abs: d };
+    }
+    return { kind: "less", amount: d, abs: -d };
+  }
+
+  /**
+   * «På konto nå» reconciliation per person + samlet.
+   * prevBalances: previous month balances map { [pid]: { bruk, spare } } or null.
+   * Forventet = prev.bruk + this month tilOvers (cashflow). Independent of oppgitt.
+   */
+  function reconcilePaKonto(m, people, categories, monthIndex, prevBalances) {
+    var active = activePeople(people);
+    ensureMonthShape(m, people);
+    var prev = prevBalances && typeof prevBalances === "object" ? prevBalances : null;
+    var byPerson = {};
+    var totalOppgitt = 0;
+    var totalForventet = 0;
+    var totalEtterLonn = 0;
+    var totalDiff = 0;
+    var hasOppgitt = false;
+    var hasForventet = false;
+    var hasEtterLonn = false;
+    var hasDiff = false;
+    var nOppgitt = 0;
+    var nForventet = 0;
+
+    active.forEach(function (p) {
+      var bal = (m.balances && m.balances[p.id]) || {};
+      var oppgitt = parseBalanceAmount(bal.bruk);
+      var spare = parseBalanceAmount(bal.spare);
+      var cp = calcPerson(m, p.id, people, categories);
+      var planUt = plannedUtForPerson(m, p.id, categories, people, monthIndex);
+      var planInn = cp.planInn || 0;
+      var prevBal = prev && prev[p.id] ? prev[p.id] : null;
+      var prevBruk = prevBal ? parseBalanceAmount(prevBal.bruk) : null;
+      var forventet = expectedBrukFromPrev(prevBruk, cp.tilOvers);
+      var etterLonn = etterLonnFromBruk(oppgitt, planInn, planUt);
+      var differanse = balanceVariance(oppgitt, forventet);
+      var source = forventet != null ? "prev+cashflow" : null;
+
+      byPerson[p.id] = {
+        personId: p.id,
+        name: p.name,
+        oppgitt: oppgitt,
+        spare: spare,
+        forventet: forventet,
+        differanse: differanse,
+        variance: varianceMeta(differanse),
+        etterLonn: etterLonn,
+        planInn: planInn,
+        planUt: planUt,
+        tilOvers: cp.tilOvers,
+        prevBruk: prevBruk,
+        source: source
+      };
+
+      if (oppgitt != null) {
+        hasOppgitt = true;
+        nOppgitt += 1;
+        totalOppgitt += oppgitt;
+      }
+      if (forventet != null) {
+        hasForventet = true;
+        nForventet += 1;
+        totalForventet += forventet;
+      }
+      if (etterLonn != null) {
+        hasEtterLonn = true;
+        totalEtterLonn += etterLonn;
+      }
+      if (differanse != null) {
+        hasDiff = true;
+        totalDiff += differanse;
+      }
+    });
+
+    return {
+      byPerson: byPerson,
+      totalOppgitt: hasOppgitt ? totalOppgitt : null,
+      totalForventet: hasForventet ? totalForventet : null,
+      totalDifferanse: hasDiff ? totalDiff : null,
+      totalVariance: varianceMeta(hasDiff ? totalDiff : null),
+      totalEtterLonn: hasEtterLonn ? totalEtterLonn : null,
+      hasOppgitt: hasOppgitt,
+      hasForventet: hasForventet,
+      hasDifferanse: hasDiff,
+      counts: { oppgitt: nOppgitt, forventet: nForventet, people: active.length }
+    };
+  }
+
   return {
     ID_A: ID_A,
     ID_B: ID_B,
@@ -2715,6 +2851,12 @@
     plannedSpendsForMonth: plannedSpendsForMonth,
     plannedSpendsFromMonth: plannedSpendsFromMonth,
     plannedSpendReserve: plannedSpendReserve,
-    normalizePlannedSpends: normalizePlannedSpends
+    normalizePlannedSpends: normalizePlannedSpends,
+    parseBalanceAmount: parseBalanceAmount,
+    balanceVariance: balanceVariance,
+    expectedBrukFromPrev: expectedBrukFromPrev,
+    etterLonnFromBruk: etterLonnFromBruk,
+    varianceMeta: varianceMeta,
+    reconcilePaKonto: reconcilePaKonto
   };
 });

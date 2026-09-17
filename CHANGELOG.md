@@ -1,5 +1,15 @@
 # Endringslogg – Familiebudsjett
 
+## 17. september 2026 (UTC+2) – På konto nå (avstemming)
+
+- Oversikt: nytt fremhevet kort **«På konto nå»** rett under Trygg å bruke (per person + samlet).
+- Stor **bruk**-saldo (kalkulator), spare under valgfri detalj. Lagrer `balances[person].bruk` med en gang; stamp `balancesUpdatedAt`.
+- **Forventet** = forrige måneds bruk + faktisk til overs denne måneden (inn − ut − sparing, inkl. fellesandel).
+- **Oppgitt nå** vs **Differanse** (grønn/rød): «X kr mer/mindre enn forventet». Etter lønn (plan) vises fortsatt.
+- Hint: oppdater når du sjekker banken — ingen bankinnlogging. Trygg å bruke bruker oppdatert bruk.
+- Lagring additiv (`familie-budsjett-v1`). Tester for variance-hjelpere / reconcile.
+
+
 ## 17. september 2026 (UTC+2) – Fix: planlagt utlegg matches kun samme måned
 
 - Bug: `plannedSpendReserve` / `plannedSpendReserveForPerson` matchet kategori+eier mot **vist måneds** utgifter også for *senere* planlagte utlegg. Oktober-plan ble nullstilt i september-visning hvis september hadde utgift i samme kategori.

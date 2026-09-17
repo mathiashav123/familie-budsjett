@@ -483,6 +483,131 @@ code {
 .saldo-hero-value.is-muted { color: var(--muted); font-weight: 600; font-size: .95rem; }
 .saldo-hero-hint { margin: .15rem 0 0; }
 
+/* ——— På konto nå (reconciliation) ——— */
+.pa-konto-card {
+  border-color: #93c5fd;
+  background: linear-gradient(180deg, #f8fbff 0%, var(--card, #fff) 48%);
+}
+.pa-konto-lead {
+  margin: -.15rem 0 .65rem;
+}
+.pa-konto-person {
+  background: #fff;
+}
+.pa-konto-bruk-field {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+  margin: 0 0 .55rem;
+}
+.pa-konto-bruk-field .field-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: .5rem;
+}
+.pa-konto-bruk-field .field-label-row > span {
+  font-size: .85rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.pa-konto-bruk-input {
+  border-color: #60a5fa !important;
+  border-width: 2px;
+}
+.pa-konto-bruk-input input.pa-konto-bruk {
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  min-height: 2.6rem;
+  font-variant-numeric: tabular-nums;
+}
+.pa-konto-compare {
+  display: flex;
+  flex-direction: column;
+  gap: .25rem;
+  margin: .15rem 0 .35rem;
+  padding: .45rem .55rem;
+  border-radius: 10px;
+  background: var(--bg, #f5f7fa);
+  border: 1px solid var(--border);
+}
+.pa-konto-compare-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: .75rem;
+  font-size: .88rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.pa-konto-compare-row strong {
+  color: var(--text);
+  font-weight: 700;
+}
+.pa-konto-diff {
+  margin: .2rem 0 0;
+  font-size: .92rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.pa-konto-diff.is-more { color: var(--teal-dark, #0b5f59); }
+.pa-konto-diff.is-less { color: var(--red, #c0392b); }
+.pa-konto-diff.is-ok { color: var(--teal-dark, #0b5f59); }
+.pa-konto-diff.is-muted { color: var(--muted); font-weight: 600; font-size: .82rem; }
+.pa-konto-etter {
+  margin: .2rem 0 .35rem;
+  font-size: .82rem;
+  color: var(--muted);
+}
+.pa-konto-etter strong {
+  color: var(--text);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.pa-konto-spare {
+  margin: .25rem 0 .35rem;
+}
+.pa-konto-spare summary {
+  cursor: pointer;
+  font-size: .82rem;
+  font-weight: 600;
+  color: var(--muted);
+  list-style: none;
+}
+.pa-konto-spare summary::-webkit-details-marker { display: none; }
+.pa-konto-spare summary::before {
+  content: "▸ ";
+  color: #6366f1;
+}
+.pa-konto-spare[open] summary::before { content: "▾ "; }
+.pa-konto-spare .field {
+  margin-top: .4rem;
+}
+.pa-konto-samlet {
+  margin: .35rem 0 .55rem;
+  padding: .7rem .75rem;
+  border-radius: 12px;
+  background: #eef6ff;
+  border: 1px solid #bfdbfe;
+}
+.pa-konto-samlet h3 {
+  margin: 0 0 .4rem;
+  font-size: .95rem;
+  font-weight: 800;
+}
+#paKontoUpdated {
+  margin: .25rem 0 .1rem;
+  font-size: .8rem;
+}
+
+@media (max-width: 480px) {
+  .pa-konto-bruk-input input.pa-konto-bruk {
+    font-size: 1.35rem;
+  }
+}
+
+
 .setting-buffer {
   margin-top: .35rem;
 }
