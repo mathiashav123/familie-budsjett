@@ -2535,6 +2535,12 @@ button.cat-group-header {
   line-height: 1.15;
 }
 .safe-spend-value.is-zero { color: var(--muted); }
+.safe-spend-value.is-needs-saldo {
+  color: var(--blue, #2b6cb0);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
 .safe-spend-value.is-tight { color: var(--orange); }
 .safe-spend-value.is-over { color: var(--red); }
 .safe-spend-hint {

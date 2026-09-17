@@ -1482,13 +1482,22 @@
       safeToSpendSaldo = Math.max(0, safeToSpendSaldoRaw);
     }
 
+    // When saldo-mode is intended but bruk is missing, do NOT fall back to a
+    // scary plan-mode 0 (e.g. October with large plannedSpend + no På konto nå).
+    // UI shows «Sett på konto nå» / «—» instead of clamping planInn−reserve to 0.
     var safeToSpendMode = "plan";
     var safeToSpendRaw = safeToSpendPlanRaw;
     var safeToSpend = safeToSpendPlan;
+    var needsSaldoForSafeToSpend = false;
     if (useSaldo && hasBruk) {
       safeToSpendMode = "saldo";
       safeToSpendRaw = safeToSpendNowRaw;
       safeToSpend = safeToSpendNow;
+    } else if (useSaldo && !hasBruk) {
+      safeToSpendMode = "awaiting_saldo";
+      safeToSpendRaw = null;
+      safeToSpend = null;
+      needsSaldoForSafeToSpend = true;
     }
 
     // Per-person Trygg å bruke (same mode rules; buffer split equally by people count)
@@ -1552,10 +1561,16 @@
       var modeP = "plan";
       var rawP = planRawP;
       var safeP = planSafeP;
+      var needsSaldoP = false;
       if (useSaldo && hasPersonBruk) {
         modeP = "saldo";
         rawP = nowRawP;
         safeP = nowSafeP;
+      } else if (useSaldo && !hasPersonBruk) {
+        modeP = "awaiting_saldo";
+        rawP = null;
+        safeP = null;
+        needsSaldoP = true;
       }
 
       cp.remainingBudgetAll = remAllP;
@@ -1565,6 +1580,7 @@
       cp.futureReserve = futureP;
       cp.spendBufferShare = bufferShareEach;
       cp.hasBrukBalance = hasPersonBruk;
+      cp.needsSaldoForSafeToSpend = needsSaldoP;
       cp.safeToSpendMode = modeP;
       cp.safeToSpendPlanRaw = planRawP;
       cp.safeToSpendPlan = planSafeP;
@@ -1621,6 +1637,7 @@
       spendBuffer: spendBuffer,
       hasBrukBalances: hasBruk,
       useSaldoInSafeToSpend: useSaldo,
+      needsSaldoForSafeToSpend: needsSaldoForSafeToSpend,
       safeToSpendMode: safeToSpendMode,
       safeToSpendPlanRaw: safeToSpendPlanRaw,
       safeToSpendPlan: safeToSpendPlan,
@@ -2940,6 +2957,24 @@
    * autoSpendExtra is returned for transparency / cashflow paths only.
    * safeToSpend / raw follow primary "nå".
    */
+
+  /**
+   * Rough estimate when current month lacks bruk: prev month bruk minus
+   * planned spends reserved for the viewed month (does NOT write balances).
+   * Returns null if prevBruk missing.
+   */
+  function estimateSafeFromPrevBruk(prevBruk, plannedReserve) {
+    if (prevBruk == null || prevBruk === "") return null;
+    var b = Number(prevBruk);
+    if (!Number.isFinite(b)) return null;
+    var r =
+      plannedReserve == null || plannedReserve === ""
+        ? 0
+        : Number(plannedReserve);
+    if (!Number.isFinite(r)) r = 0;
+    return b - r;
+  }
+
   function safeToSpendSaldoBreakdown(parts) {
     var src = parts && typeof parts === "object" ? parts : {};
     var bruk = Number(src.bruk);
@@ -3218,6 +3253,7 @@
     etterLonnFromBruk: etterLonnFromBruk,
     varianceMeta: varianceMeta,
     reconcilePaKonto: reconcilePaKonto,
+    estimateSafeFromPrevBruk: estimateSafeFromPrevBruk,
     safeToSpendSaldoBreakdown: safeToSpendSaldoBreakdown,
     BALANCE_WHEN_BEFORE: BALANCE_WHEN_BEFORE,
     BALANCE_WHEN_AFTER: BALANCE_WHEN_AFTER,

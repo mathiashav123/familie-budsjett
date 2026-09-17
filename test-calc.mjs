@@ -382,7 +382,8 @@ console.log("\n8. safeToSpend = planInn − actualExpenses − remainingFast");
       { id: "e3", owner: "felles", categoryId: "cMat", amount: 3000 }   // variabel — not in remainingFast
     ]
   };
-  const c = Calc.calcFamily(m, people, cats);
+  const planOpts = { useSaldoInSafeToSpend: false };
+  const c = Calc.calcFamily(m, people, cats, planOpts);
   assertEq(c.planInn, 50000, "planInn 50000");
   assertEq(c.samletUtgifter, 13500, "actual expenses 13500");
   // Fast auto-spend: effectiveActual=max(plan,logged) → remFast=0; autoSpendExtra=1500 (Strøm)
@@ -390,12 +391,13 @@ console.log("\n8. safeToSpend = planInn − actualExpenses − remainingFast");
   assertEq(c.autoSpendExtra, 1500, "autoSpendExtra 1500");
   assertEq(c.effectiveUtgifter, 15000, "effectiveUtgifter 15000");
   // safe = planInn − effectiveUtgifter − remFast = 50000 − 15000 − 0 = 35000
+  assertEq(c.safeToSpendMode, "plan", "explicit plan mode");
   assertEq(c.safeToSpend, 35000, "safeToSpend 35000");
   assertEq(c.safeToSpendRaw, 35000, "safeToSpendRaw 35000");
 
   // Overspending so raw negative → clamped to 0
   m.expenses.push({ id: "e4", owner: "felles", categoryId: "cMat", amount: 40000 });
-  const c2 = Calc.calcFamily(m, people, cats);
+  const c2 = Calc.calcFamily(m, people, cats, planOpts);
   assert(c2.safeToSpendRaw < 0, "raw negative when overspent");
   assertEq(c2.safeToSpend, 0, "safeToSpend clamped to 0");
 }
@@ -903,16 +905,26 @@ console.log("\n14. Saldo safeToSpend, buffer, etterLonn, fallback without bruk")
   assertEq(c.planInn, 50000, "planInn");
   assertEq(c.plannedTotal, 12000, "planUt");
   assertEq(c.etterLonn, 53000, "etterLonn = bruk+planInn-planUt");
-  // No bruk → plan fallback
+  // No bruk + saldo intended → awaiting_saldo (do NOT show plan-clamped 0/plan as primary)
   const emptyBal = JSON.parse(JSON.stringify(m));
   emptyBal.balances = { p1: { bruk: null, spare: 100 }, p2: { bruk: null, spare: null } };
   const cEmpty = Calc.calcFamily(emptyBal, people, cats, { spendBuffer: 3000 });
-  assertEq(cEmpty.safeToSpendMode, "plan", "fallback plan without bruk");
+  assertEq(cEmpty.safeToSpendMode, "awaiting_saldo", "awaiting saldo without bruk");
+  assert(cEmpty.needsSaldoForSafeToSpend === true, "needsSaldo flag");
+  assert(cEmpty.safeToSpend == null, "primary safe null without bruk");
+  assert(cEmpty.safeToSpendRaw == null, "raw null without bruk");
   assert(cEmpty.etterLonn == null, "etterLonn null without bruk");
-  // plan: 50000 - (3000+6000 auto) - remFast0 = 41000
-  assertEq(cEmpty.safeToSpend, 41000, "plan safe without bruk");
-  assertEq(cEmpty.autoSpendExtra, 6000, "autoSpend in plan mode");
+  // plan mirror still available: 50000 - (3000+6000 auto) - remFast0 = 41000
+  assertEq(cEmpty.autoSpendExtra, 6000, "autoSpend still computed");
   assertEq(cEmpty.safeToSpendPlan, 41000, "plan mirror");
+  // Explicit plan toggle still uses plan primary
+  const cEmptyPlan = Calc.calcFamily(emptyBal, people, cats, {
+    spendBuffer: 3000,
+    useSaldoInSafeToSpend: false
+  });
+  assertEq(cEmptyPlan.safeToSpendMode, "plan", "plan when toggle off");
+  assertEq(cEmptyPlan.safeToSpend, 41000, "plan safe when toggle off");
+  assert(cEmptyPlan.needsSaldoForSafeToSpend !== true, "no needsSaldo when plan toggle");
   // migrate settings defaults
   const migrated = Calc.migrateState({ version: 2, people, categories: [], months: {}, settings: {} });
   assert(migrated.settings.useSaldoInSafeToSpend === true, "useSaldo default ON");
@@ -2306,6 +2318,100 @@ console.log("\n32. autoSpendExtraForPerson: cross-owner Fast log clears auto");
 
 
 
+
+
+// --- Awaiting saldo: October without bruk must not show scary 0 ---
+console.log("\n33. awaiting_saldo — Oct no bruk + plannedSpend; Sep saldo unchanged");
+{
+  const people = Calc.defaultPeople();
+  const cats = [
+    { id: "cBil", name: "Bil", type: "variabel", owner: "felles", archived: false },
+    { id: "cMat", name: "Mat", type: "variabel", owner: "felles", archived: false }
+  ];
+  const planned = [
+    {
+      id: "ps1",
+      name: "Ny bil",
+      amount: 160000,
+      monthKey: "2026-10",
+      categoryId: "cBil",
+      owner: "felles",
+      done: false
+    }
+  ];
+
+  // September WITH bruk (Mathias scenario): 231223 − 160000 = 71223
+  const sep = {
+    balances: {
+      p1: { bruk: 150000, spare: 0 },
+      p2: { bruk: 81223, spare: 0 }
+    },
+    budgets: { cMat: { felles: 5000 } },
+    plannedIncome: {
+      p1: { lønn: 25000, ekstra: null },
+      p2: { lønn: 15000, ekstra: null }
+    },
+    incomes: [],
+    savings: [],
+    expenses: []
+  };
+  const cSep = Calc.calcFamily(sep, people, cats, {
+    monthKey: "2026-09",
+    monthIndex: 8,
+    plannedSpends: planned,
+    spendBuffer: 0
+  });
+  assertEq(cSep.safeToSpendMode, "saldo", "sep saldo mode");
+  assertEq(cSep.totalBruk, 231223, "sep totalBruk");
+  assertEq(cSep.futureReserve, 160000, "sep reserves Ny bil");
+  assertEq(cSep.safeToSpend, 71223, "sep trygg = 231223-160000");
+  assert(cSep.needsSaldoForSafeToSpend !== true, "sep no needsSaldo");
+
+  // October WITHOUT bruk: awaiting — not plan-clamped 0
+  const oct = {
+    balances: {
+      p1: { bruk: null, spare: null },
+      p2: { bruk: null, spare: null }
+    },
+    budgets: { cMat: { felles: 5000 } },
+    plannedIncome: {
+      p1: { lønn: 25000, ekstra: null },
+      p2: { lønn: 15000, ekstra: null }
+    },
+    incomes: [],
+    savings: [],
+    expenses: []
+  };
+  const cOct = Calc.calcFamily(oct, people, cats, {
+    monthKey: "2026-10",
+    monthIndex: 9,
+    plannedSpends: planned,
+    spendBuffer: 0
+  });
+  assertEq(cOct.safeToSpendMode, "awaiting_saldo", "oct awaiting_saldo");
+  assert(cOct.needsSaldoForSafeToSpend === true, "oct needsSaldo");
+  assert(cOct.safeToSpend == null, "oct primary null (not 0)");
+  assert(cOct.safeToSpendRaw == null, "oct raw null");
+  assertEq(cOct.futureReserve, 160000, "oct still reserves Ny bil");
+  // plan would be negative → old UX showed Math.max(0)=0 — plan mirror may be 0
+  assert(cOct.safeToSpendPlanRaw < 0, "oct plan raw negative (old scary path)");
+  assertEq(cOct.safeToSpendPlan, 0, "oct plan clamped 0 (not used as primary)");
+
+  // Per-person also awaiting when no own bruk
+  const p1 = cOct.byPerson.p1;
+  assertEq(p1.safeToSpendMode, "awaiting_saldo", "p1 awaiting");
+  assert(p1.safeToSpend == null, "p1 safe null");
+  assert(p1.needsSaldoForSafeToSpend === true, "p1 needsSaldo");
+
+  // Estimate helper: prev bruk − planned
+  assert(typeof Calc.estimateSafeFromPrevBruk === "function", "estimate helper");
+  assertEq(
+    Calc.estimateSafeFromPrevBruk(231223, 160000),
+    71223,
+    "estimate from prev"
+  );
+  assert(Calc.estimateSafeFromPrevBruk(null, 160000) == null, "estimate null prev");
+}
 
 console.log("\n=== Results:", passed, "passed,", failed, "failed ===\n");
 if (failed) {
