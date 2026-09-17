@@ -1,5 +1,30 @@
 # Endringslogg – Familiebudsjett
 
+## 2026-09-17 – Fix: personlig Fremover/Oversikt (lønn minus *mine* utgifter)
+
+### Rotårsak
+`projectPotFollowBudget` brukte **husholdningens** planInn (~76k = Mathias+Andrea) og fulle Fast/variabelt, mens Oversikt Trygg / startPot var **personlig** (Mathias bank 231 223). Resultat: månedsdelta **+32 219** → Nov 2038 **4,75 M** — fantasi for ~40k egen lønn.
+
+### Fix
+1. **`personId` i `projectPotFollowBudget`:** p1/p2 → `planInn` = personens plannedIncome; `planUtFixed`/`planUtVariable` = egne budsjetter + felles %-andel (samme som personal Trygg); `plannedSpends` via `openPlannedSpendDeductionForPerson`.
+2. **Samlet** uendret (fulle husholdningstall).
+3. **Oversikt/Fremover:** person-fane sender `personId` og ankrer kun den personens bruk-saldo.
+4. UI-tekst: «din lønn − dine utgifter»; bekreftet På konto uendret.
+5. Nye helpers + **tester §41**.
+
+### Tall (live export, Mathias startPot 231 223)
+
+| | Household (samlet) | Mathias (p1) |
+| --- | ---: | ---: |
+| Oct 2026 delta | −132 423 (bil) | **−145 317,8** |
+| Nov 2026 delta | +32 219 | **+19 324,2** |
+| Nov 2038 pot | 4 750 647 | **2 868 006,2** |
+
+Steady Mathias ≈ 44 642 − 18 967,8 Fast − 6 350 var = **+19 324** (ikke +32k fra dobbel inntekt).
+
+### Deploy
+- `pack-mobil.mjs` + synk host/pages; Pages `main`.
+
 ## 2026-09-17 – Fix: Fremover/Oversikt trekker Fast i pot-projeksjon
 
 ### Rotårsak

@@ -4830,7 +4830,7 @@ button.cat-group-header {
           <summary>År for år</summary>
           <div class="forward-years-list" id="forwardYearsList" aria-label="Projeksjon per år"></div>
         </details>
-        <p class="hint compact" id="forwardFormulaHint">Formel: start fra effektiv pot/Trygg (etter planlagte utlegg som bil én gang); hver fremtidig måned <code>pot += planInn − planUtFixed − planUtVariable − openPlannedThatMonth</code> (lønn minus alle utgifter). Bekreftet På konto beholder bank-Trygg (Fast allerede i saldo). Tomme måneder gjenbruker siste kjente budsjett.</p>
+        <p class="hint compact" id="forwardFormulaHint">Formel: start fra effektiv pot/Trygg (etter planlagte utlegg som bil én gang); hver fremtidig måned <code>pot += planInn − planUtFixed − planUtVariable − openPlannedThatMonth</code> (lønn minus alle utgifter). Person-fane: kun den personens lønn og utgiftsandel (ikke begge inntekter). Bekreftet På konto beholder bank-Trygg (Fast allerede i saldo). Tomme måneder gjenbruker siste kjente budsjett.</p>
       </section>
 
       
@@ -6679,16 +6679,23 @@ window.FAMILIE_BUDGET_SUPABASE = {
    * Project pot forward if user follows budget.
    * Formula (documented in UI):
    *   pot_{m+1} = pot_m + planInn − planUtFixed − planUtVariable − plannedSpendsThatMonth
-   * Lønn minus alle planlagte utgifter (Fast + variabelt + planlagte utlegg) → neste Trygg.
+   * Lønn minus planlagte utgifter (Fast + variabelt + planlagte utlegg) → neste Trygg.
    * startPot should be current effective bruk/pot (seed or bank), not Trygg-after-future-reserve.
    * Confirmed bank months on Oversikt keep bank-based Trygg (caller must not override
    * those with this projection — Fast already sits in the bank saldo).
+   *
+   * Scope (opts.personId):
+   *   - person p1/p2: planInn = that person's plannedIncome only; planUtFixed/Variable =
+   *     that person's budgets + felles %-share (same as personal Trygg); plannedSpends =
+   *     openPlannedSpendDeductionForPerson (own full + felles equal split).
+   *   - household / unset: full household totals (both incomes, all budgets).
+   * Never mix household cashflow onto a personal pot.
    *
    * Missing future months reuse the last known expected budgets/income (virtual
    * carry — does not mutate months). Horizon up to 240 months (20 years).
    *
    * Returns {
-   *   startPot, months:[{monthKey, pot, planInn, planUtFixed, planUtVariable, plannedSpends, delta}],
+   *   startPot, personId, months:[{monthKey, pot, planInn, planUtFixed, planUtVariable, plannedSpends, delta}],
    *   potAtHorizon, potByKey, byYear:[{year, monthKey, pot}],
    *   milestones:{m12,m60,m144}, formula
    * }.
@@ -6701,6 +6708,17 @@ window.FAMILIE_BUDGET_SUPABASE = {
     var categories = opts.categories || [];
     var plannedSpends = opts.plannedSpends || [];
     var startPot = Number(opts.startPot);
+    var personId = opts.personId || null;
+    if (
+      personId === "samlet" ||
+      personId === "felles" ||
+      personId === "household" ||
+      !personId
+    ) {
+      personId = null;
+    } else if (!personById(people, personId)) {
+      personId = null;
+    }
     var horizon =
       opts.horizon == null
         ? 12
@@ -6708,6 +6726,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     if (!fromKey || !Number.isFinite(startPot)) {
       return {
         startPot: startPot,
+        personId: personId,
         months: [],
         potAtHorizon: null,
         potByKey: {},
@@ -6717,6 +6736,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
           "pot = pot + planInn − planUtFixed − planUtVariable − planlagteUtlegg"
       };
     }
+    ensureCategorySplits(categories, people);
     var pot = startPot;
     var rows = [];
     var potByKey = {};
@@ -6758,10 +6778,38 @@ window.FAMILIE_BUDGET_SUPABASE = {
         };
       }
       var mi = monthIndexFromKey(key);
-      var planInn = plannedIncomeTotal(m, people);
-      var planUtFixed = plannedFixedBudgetTotal(m, categories, mi);
-      var planUtVar = plannedVariableBudgetTotal(m, categories, mi);
-      var planned = openPlannedSpendTotalForMonth(plannedSpends, key);
+      var planInn;
+      var planUtFixed;
+      var planUtVar;
+      var planned;
+      if (personId) {
+        planInn = plannedIncomeForPerson(m, personId);
+        planUtFixed = plannedFixedBudgetForPerson(
+          m,
+          personId,
+          categories,
+          people,
+          mi
+        );
+        planUtVar = plannedVariableBudgetForPerson(
+          m,
+          personId,
+          categories,
+          people,
+          mi
+        );
+        planned = openPlannedSpendDeductionForPerson(
+          plannedSpends,
+          key,
+          personId,
+          people
+        );
+      } else {
+        planInn = plannedIncomeTotal(m, people);
+        planUtFixed = plannedFixedBudgetTotal(m, categories, mi);
+        planUtVar = plannedVariableBudgetTotal(m, categories, mi);
+        planned = openPlannedSpendTotalForMonth(plannedSpends, key);
+      }
       pot = pot + planInn - planUtFixed - planUtVar - planned;
       pot = Math.round(pot * 100) / 100;
       var delta = planInn - planUtFixed - planUtVar - planned;
@@ -6797,6 +6845,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     var m144 = atOffset(144);
     return {
       startPot: startPot,
+      personId: personId,
       months: rows,
       potAtHorizon: rows.length ? rows[rows.length - 1].pot : startPot,
       potByKey: potByKey,
@@ -7578,6 +7627,66 @@ window.FAMILIE_BUDGET_SUPABASE = {
       felles += fellesShare(cat, personId, people, fb);
     });
     return own + felles;
+  }
+
+  /**
+   * Person share of Fast / variabelt planned budgets (own owner key + felles %-share).
+   * Same attribution as plannedUtForPerson / personal Trygg.
+   */
+  function plannedBudgetForPersonByType(
+    m,
+    personId,
+    categories,
+    people,
+    monthIndex,
+    typeFilter
+  ) {
+    var sum = 0;
+    (categories || []).forEach(function (cat) {
+      if (!cat || cat.archived) return;
+      if (typeFilter === "fast" && cat.type !== "fast") return;
+      if (typeFilter === "variable" && cat.type === "fast") return;
+      sum += budgetForOwner(m, cat.id, personId, monthIndex) || 0;
+      var fb = budgetForOwner(m, cat.id, "felles", monthIndex) || 0;
+      if (fb) sum += fellesShare(cat, personId, people, fb);
+    });
+    return sum;
+  }
+
+  function plannedFixedBudgetForPerson(m, personId, categories, people, monthIndex) {
+    return plannedBudgetForPersonByType(
+      m,
+      personId,
+      categories,
+      people,
+      monthIndex,
+      "fast"
+    );
+  }
+
+  function plannedVariableBudgetForPerson(
+    m,
+    personId,
+    categories,
+    people,
+    monthIndex
+  ) {
+    return plannedBudgetForPersonByType(
+      m,
+      personId,
+      categories,
+      people,
+      monthIndex,
+      "variable"
+    );
+  }
+
+  /** Planned lønn+ekstra for one person (no sparing). */
+  function plannedIncomeForPerson(m, personId) {
+    return (
+      plannedIncomeFor(m, personId, "lønn") +
+      plannedIncomeFor(m, personId, "ekstra")
+    );
   }
 
   function plannedUtFelles(m, categories, monthIndex) {
@@ -9939,6 +10048,10 @@ window.FAMILIE_BUDGET_SUPABASE = {
     calcPerson: calcPerson,
     remainingBudgetForPerson: remainingBudgetForPerson,
     plannedUtForPerson: plannedUtForPerson,
+    plannedFixedBudgetForPerson: plannedFixedBudgetForPerson,
+    plannedVariableBudgetForPerson: plannedVariableBudgetForPerson,
+    plannedIncomeForPerson: plannedIncomeForPerson,
+    plannedIncomeTotal: plannedIncomeTotal,
     plannedUtFelles: plannedUtFelles,
     calcFamily: calcFamily,
     personHasData: personHasData,
@@ -13316,6 +13429,19 @@ window.FAMILIE_BUDGET_SUPABASE = {
     }
     forwardSetValue(harEl, harNa);
 
+    const harHint = $("#forwardHarNaHint");
+    if (harHint) {
+      harHint.textContent = isPerson
+        ? "Trygg å bruke for valgt person denne måneden (lønn minus dine utgifter)."
+        : "Trygg å bruke denne måneden (eller bank hvis du har rettet På konto).";
+    }
+    const formulaHint = $("#forwardFormulaHint");
+    if (formulaHint) {
+      formulaHint.innerHTML = isPerson
+        ? "Formel (person): start fra din pot/bruk; hver måned <code>pot += din planInn − din Fast − din variabelt − dine planlagte utlegg</code> (lønn minus <em>mine</em> utgifter + felles-andel). Samlet-visning bruker begge lønninger. Bekreftet På konto beholder bank-Trygg."
+        : "Formel: start fra effektiv pot/Trygg (etter planlagte utlegg som bil én gang); hver fremtidig måned <code>pot += planInn − planUtFixed − planUtVariable − openPlannedThatMonth</code> (lønn minus alle utgifter). Person-fane: kun den personens lønn og utgiftsandel. Bekreftet På konto beholder bank-Trygg (Fast allerede i saldo). Tomme måneder gjenbruker siste kjente budsjett.";
+    }
+
     // Projection start = effective bruk/pot (post-bank). Prefer totalBruk
     // (includes calc-time fallback / seed), not Trygg-after-future-reserve.
     let startPot = null;
@@ -13343,6 +13469,13 @@ window.FAMILIE_BUDGET_SUPABASE = {
       }
     }
 
+    const forwardSub = document.querySelector("#forwardPanelCard .forward-sub");
+    if (forwardSub) {
+      forwardSub.textContent = isPerson
+        ? "Hvis du følger budsjettet (din lønn − dine utgifter)"
+        : "Hvis du følger budsjettet";
+    }
+
     const HORIZON = 156; // 13y so Dec/Nov of year+12 always in range
     let projection = null;
     if (
@@ -13357,7 +13490,8 @@ window.FAMILIE_BUDGET_SUPABASE = {
         categories: state.categories,
         plannedSpends: state.plannedSpends || [],
         startPot: startPot,
-        horizon: HORIZON
+        horizon: HORIZON,
+        personId: isPerson ? view : null
       });
     }
     state._forwardProjection = projection;
@@ -13548,7 +13682,13 @@ window.FAMILIE_BUDGET_SUPABASE = {
   function projectedPotForViewKey(viewKey) {
     if (!viewKey || typeof Calc.projectPotFollowBudget !== "function") return null;
     if (typeof Calc.shiftMonthKey !== "function") return null;
+    const innUtView = (state.settings && state.settings.innUtView) || "samlet";
+    const scopePersonId =
+      innUtView && innUtView !== "samlet" && innUtView !== "felles"
+        ? innUtView
+        : null;
     // Anchor: prefer nearest CONFIRMED bank month; else nearest suggested/carry.
+    // Personal Oversikt/Trygg uses that person's bruk only — never household sum.
     let anchorKey = null;
     let startPot = null;
     let fallbackKey = null;
@@ -13562,6 +13702,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
       let total = 0;
       let any = false;
       activePeopleList().forEach(function (p) {
+        if (scopePersonId && p.id !== scopePersonId) return;
         const bal = mm.balances && mm.balances[p.id];
         if (
           bal &&
@@ -13613,12 +13754,19 @@ window.FAMILIE_BUDGET_SUPABASE = {
       categories: state.categories,
       plannedSpends: state.plannedSpends || [],
       startPot: startPot,
-      horizon: horizon
+      horizon: horizon,
+      personId: scopePersonId
     });
     if (!proj || !proj.potByKey) return null;
     const pot = proj.potByKey[viewKey];
     return Number.isFinite(pot)
-      ? { pot: pot, anchorKey: anchorKey, startPot: startPot, dist: dist }
+      ? {
+          pot: pot,
+          anchorKey: anchorKey,
+          startPot: startPot,
+          dist: dist,
+          personId: scopePersonId
+        }
       : null;
   }
 
@@ -13917,7 +14065,13 @@ window.FAMILIE_BUDGET_SUPABASE = {
         hintEl.textContent =
           "Projeksjon hvis budsjettet følges (fra " +
           projectionOverride.anchorKey +
-          "). Tomme fremtidige måneder: lønn − Fast − variabelt − planlagte utlegg. Bekreftet På konto beholder bank-Trygg. Se Fremover for detaljer.";
+          "). " +
+          (isPerson && whoName
+            ? "Personlig: " +
+              whoName +
+              "s lønn minus egne utgifter (+ felles-andel). "
+            : "Samlet husholdning: begge lønninger minus alle utgifter. ") +
+          "Bekreftet På konto beholder bank-Trygg. Se Fremover for detaljer.";
       } else if (needsSaldo) {
         hintEl.classList.remove("is-saldo-short");
         hintEl.textContent =

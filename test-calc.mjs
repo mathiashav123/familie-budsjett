@@ -3719,6 +3719,156 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
   }
 }
 
+
+// --- §41 Personal-scope projectPotFollowBudget (p1 ≠ household dual income) ---
+{
+  console.log("\n§41 personal scope: Mathias planInn only, not dual income");
+  const fs = require("fs");
+  const path = require("path");
+  const { fileURLToPath } = require("url");
+  const livePathQa = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "familie-budsjett-export-live-qa.json"
+  );
+  let live = null;
+  try {
+    live = JSON.parse(fs.readFileSync(livePathQa, "utf8"));
+  } catch (e) {
+    live = null;
+  }
+  // Synthetic fallback if QA export missing
+  const people = (live && live.people) || [
+    { id: "p1", name: "Mathias", archived: false },
+    { id: "p2", name: "Andrea", archived: false }
+  ];
+  const cats = (live && live.categories) || [
+    { id: "cFast", name: "Lån", type: "fast", owner: "felles", archived: false },
+    { id: "cMat", name: "Mat", type: "variabel", owner: "p1", archived: false }
+  ];
+  const planned = (live && live.plannedSpends) || [
+    {
+      id: "bil1",
+      amount: 160000,
+      owner: "p1",
+      monthKey: "2026-10",
+      note: "Ny bil",
+      done: false
+    }
+  ];
+  const months = live && live.months
+    ? JSON.parse(JSON.stringify(live.months))
+    : {
+        "2026-09": {
+          balances: {
+            p1: { bruk: 231223, spare: null, when: "after_salary", asOf: null },
+            p2: { bruk: null, spare: null, when: "after_salary", asOf: null }
+          },
+          balancesUpdatedAt: "2026-09-17T17:32:19.592Z",
+          budgets: { cFast: { felles: 20000 }, cMat: { p1: 5000 } },
+          budgetLines: {},
+          plannedIncome: {
+            p1: { lønn: 40000, ekstra: 0 },
+            p2: { lønn: 30000, ekstra: 0 }
+          },
+          incomes: [],
+          savings: [],
+          expenses: []
+        }
+      };
+
+  assert(
+    typeof Calc.plannedIncomeForPerson === "function",
+    "41 plannedIncomeForPerson exported"
+  );
+  assert(
+    typeof Calc.plannedFixedBudgetForPerson === "function",
+    "41 plannedFixedBudgetForPerson exported"
+  );
+  assert(
+    typeof Calc.plannedVariableBudgetForPerson === "function",
+    "41 plannedVariableBudgetForPerson exported"
+  );
+
+  const hh = Calc.projectPotFollowBudget({
+    months,
+    fromKey: "2026-09",
+    people,
+    categories: cats,
+    plannedSpends: planned,
+    startPot: 231223,
+    horizon: 156
+  });
+  const mathias = Calc.projectPotFollowBudget({
+    months,
+    fromKey: "2026-09",
+    people,
+    categories: cats,
+    plannedSpends: planned,
+    startPot: 231223,
+    horizon: 156,
+    personId: "p1"
+  });
+  assertEq(hh.personId, null, "41 household personId null");
+  assertEq(mathias.personId, "p1", "41 personal personId p1");
+
+  const octH = hh.months[0];
+  const novH = hh.months[1];
+  const octP = mathias.months[0];
+  const novP = mathias.months[1];
+  assertEq(octH.monthKey, "2026-10", "41 hh oct key");
+  assertEq(octP.monthKey, "2026-10", "41 p1 oct key");
+
+  // Household still dual-income (~76k) — personal must be Mathias only (~40–45k)
+  assert(octH.planInn > 60000, "41 hh oct planInn dual");
+  assert(octP.planInn < 50000, "41 p1 oct planInn ~40k only");
+  assert(novP.planInn < 50000, "41 p1 nov planInn personal");
+  assert(novP.planInn !== novH.planInn, "41 p1 planInn ≠ household");
+
+  // Expenses: personal share < household totals
+  assert(
+    octP.planUtFixed + octP.planUtVariable <
+      octH.planUtFixed + octH.planUtVariable,
+    "41 p1 utgifter < household"
+  );
+
+  // Bil is Mathias-owned → full amount on personal
+  assertEq(octP.plannedSpends, 160000, "41 p1 oct bil once");
+  assertEq(novP.plannedSpends, 0, "41 p1 nov no bil");
+
+  // Steady delta after bil: personal ≪ household +32k dual-income surplus
+  assert(
+    Math.abs(novP.delta) < Math.abs(novH.delta) || novP.delta < novH.delta,
+    "41 p1 nov delta smaller than household dual-income"
+  );
+  assert(novP.delta < 25000, "41 p1 nov delta not +32k dual");
+  assert(novH.delta > 30000, "41 hh nov still ~+32k (unchanged)");
+
+  const pot38H = hh.potByKey["2038-11"];
+  const pot38P = mathias.potByKey["2038-11"];
+  assert(Number.isFinite(pot38H) && Number.isFinite(pot38P), "41 2038 pots");
+  assert(pot38P < pot38H, "41 p1 2038 pot < household fantasy");
+  // Live QA export: Mathias ~+19.3k/mo → Nov 2038 ≈ 2.87M (not 4.75M)
+  if (live && live.months && live.months["2026-09"]) {
+    assertEq(octP.planInn, 40000, "41 live p1 oct planInn 40000");
+    assertEq(novP.planInn, 44642, "41 live p1 nov planInn 44642");
+    assertEq(novP.delta, 19324.2, "41 live p1 nov delta 19324.2");
+    assertEq(octP.delta, -145317.8, "41 live p1 oct delta with bil");
+    assertEq(pot38P, 2868006.2, "41 live p1 Nov 2038 pot");
+    assertEq(novH.delta, 32219, "41 live hh nov delta unchanged 32219");
+    assertEq(pot38H, 4750647, "41 live hh Nov 2038 unchanged");
+  }
+
+  // plannedUtForPerson == fixed+var person helpers
+  const mNov = months["2026-11"] || months["2026-09"];
+  const mi = Calc.monthIndexFromKey(
+    months["2026-11"] ? "2026-11" : "2026-09"
+  );
+  const ut = Calc.plannedUtForPerson(mNov, "p1", cats, people, mi);
+  const fx = Calc.plannedFixedBudgetForPerson(mNov, "p1", cats, people, mi);
+  const vr = Calc.plannedVariableBudgetForPerson(mNov, "p1", cats, people, mi);
+  assertEq(fx + vr, ut, "41 fixed+var == plannedUtForPerson");
+}
+
 console.log("\n=== Results:", passed, "passed,", failed, "failed ===\n");
 if (failed) {
   console.error("FAILURES:");
