@@ -1,5 +1,13 @@
 # Endringslogg – Familiebudsjett
 
+## 17. september 2026 (UTC+2) – Planlagte utlegg reserveres før kjøpemåned
+
+- `futureReserve` summerer åpne `plannedSpends` med `monthKey >=` vist måned (samme + senere), ikke bare mål-måneden.
+- Eksempel: plan for oktober trekker allerede fra Trygg å bruke i september. Etter at måneden er passert uten kjøp, faller planen ut av eldre visninger (`monthKey <` vist måned).
+- Dobbelttelling uendret (matchende loggført kjøp nuller det ene utlegget).
+- UI: hint «Reserveres også i måneder før kjøpet»; Oversikt viser kommende poster + total reserve inkl. senere måneder.
+- Lagring fortsatt additiv (`familie-budsjett-v1`). Tester for reserve-vindu.
+
 ## 17. september 2026 (UTC+2) – Fast auto-tell + planlagte utlegg
 
 ### 1. Faste utgifter telles automatisk som brukt

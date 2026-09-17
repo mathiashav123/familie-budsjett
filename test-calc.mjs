@@ -1427,21 +1427,31 @@ console.log("\n25. Fast auto-spend max-rule + opt-out + yearly once + plannedSpe
   assertEq(cMar2.autoSpendExtra, 7000 + 12000, "rent+ins auto");
   assertEq(cMar2.remainingFastBudgets, 0, "no remFast when both auto");
 
-  // Planned future spend
+  // Planned future spend — reserve window: monthKey >= viewed month
   const planned = Calc.normalizePlannedSpends([
     { amount: 8000, owner: "p1", monthKey: "2026-09", note: "Sofa", categoryId: "cFood" },
     { amount: 2000, owner: "felles", monthKey: "2026-10", note: "Gave" }
   ], people);
   assertEq(planned.length, 2, "2 planned spends");
+  const cAug = Calc.calcFamily(m, people, cats, {}, 7, planned, "2026-08");
+  assertEq(cAug.futureReserve, 10000, "aug reserves sep+oct (8000+2000)");
   const cSep = Calc.calcFamily(m, people, cats, {}, 8, planned, "2026-09");
-  assertEq(cSep.futureReserve, 8000, "sept reserve 8000");
-  // Matching expense covers it
+  assertEq(cSep.futureReserve, 10000, "sept reserves own + later (8000+2000)");
+  // Matching expense covers sep plan; oct still reserved in sept view
   m.expenses.push({ id: "eSofa", owner: "p1", categoryId: "cFood", amount: 8000 });
   const cSep2 = Calc.calcFamily(m, people, cats, {}, 8, planned, "2026-09");
-  assertEq(cSep2.futureReserve, 0, "covered by matching expense");
-  // Other month still reserved
+  assertEq(cSep2.futureReserve, 2000, "sep covered; oct still reserved from sept");
+  // Target month still reserved; earlier plans drop out (monthKey < viewed)
   const cOct = Calc.calcFamily(m, people, cats, {}, 9, planned, "2026-10");
-  assertEq(cOct.futureReserve, 2000, "oct still reserved");
+  assertEq(cOct.futureReserve, 2000, "oct still reserved (own only)");
+  const cNov = Calc.calcFamily(m, people, cats, {}, 10, planned, "2026-11");
+  assertEq(cNov.futureReserve, 0, "nov: past plans no longer reserve");
+  // Direct helper
+  assertEq(Calc.plannedSpendReserve(planned, "2026-09", []), 10000, "helper >= window");
+  assertEq(Calc.plannedSpendReserve(planned, "2026-10", []), 2000, "helper from oct");
+  assertEq(Calc.plannedSpendReserve(planned, "2026-11", []), 0, "helper after");
+  assertEq(Calc.plannedSpendsFromMonth(planned, "2026-09").length, 2, "fromMonth lists 2");
+  assertEq(Calc.plannedSpendsFromMonth(planned, "2026-10").length, 1, "fromMonth lists 1");
 
   // migrate keeps plannedSpends
   const mig = Calc.migrateState({

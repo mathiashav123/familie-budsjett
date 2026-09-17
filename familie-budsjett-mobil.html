@@ -4258,7 +4258,7 @@ button.cat-group-header {
           <h2 id="plannedSpendsTitle">Planlagte utlegg</h2>
           <button type="button" class="btn primary sm" id="btnPlanSpend">Planlegg utlegg</button>
         </div>
-        <p class="hint compact">Reserver penger til fremtidige kjøp. Teller i Trygg å bruke for valgt måned. Unngår dobbelttelling hvis du logger samme kategori.</p>
+        <p class="hint compact">Reserveres også i måneder før kjøpet. Summen trekkes fra Trygg å bruke for valgt måned og alle senere planlagte utlegg. Unngår dobbelttelling hvis du logger samme kategori.</p>
         <p class="meta-line" id="plannedSpendsSum">Ingen reserve</p>
         <div id="plannedSpendsList" class="planned-spends-list"></div>
       </section>
@@ -6161,8 +6161,10 @@ window.FAMILIE_BUDGET_SUPABASE = {
 
   /**
    * Feature 2 – Fremtidig / planlagt utlegg (state.plannedSpends[]).
-   * monthKey "YYYY-MM". Double-count: if a logged expense same month matches
-   * owner + categoryId (greedy 1:1), that item reserves 0 (expense already counts).
+   * monthKey "YYYY-MM". When viewing month M, reserve = sum of open items with
+   * monthKey >= M (same month + later). Past months after the event drop out.
+   * Double-count: if a logged expense in the viewed month matches owner +
+   * categoryId (greedy 1:1), that item reserves 0 (expense already counts).
    * No category → reserve full amount until done=true.
    */
   function normalizePlannedSpend(p, people) {
@@ -6202,12 +6204,22 @@ window.FAMILIE_BUDGET_SUPABASE = {
     });
   }
 
+  /** Open + scheduled items with monthKey >= viewed month (YYYY-MM string order). */
+  function plannedSpendsFromMonth(list, monthKey) {
+    var mk = String(monthKey || "");
+    if (!mk) return [];
+    return (list || []).filter(function (p) {
+      return p && p.monthKey && String(p.monthKey) >= mk;
+    });
+  }
+
   /**
-   * Reserved amount for planned future spends in a month (after matching expenses).
-   * Matching: !done items; prefer doneExpenseId; else greedy same owner + categoryId.
+   * Reserved amount for planned spends from viewed month onward (after matching expenses).
+   * Window: monthKey >= viewed M. Matching: !done; prefer doneExpenseId; else greedy
+   * same owner + categoryId against viewed-month expenses.
    */
   function plannedSpendReserve(plannedSpends, monthKey, expenses) {
-    var items = plannedSpendsForMonth(plannedSpends, monthKey).filter(function (p) {
+    var items = plannedSpendsFromMonth(plannedSpends, monthKey).filter(function (p) {
       return p && !p.done && p.amount > 0;
     });
     if (!items.length) return 0;
@@ -6254,7 +6266,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     personId,
     people
   ) {
-    var items = plannedSpendsForMonth(plannedSpends, monthKey).filter(function (p) {
+    var items = plannedSpendsFromMonth(plannedSpends, monthKey).filter(function (p) {
       return p && !p.done && p.amount > 0;
     });
     if (!items.length) return 0;
@@ -7765,6 +7777,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     normalizePlannedSpend: normalizePlannedSpend,
     normalizePlannedSpends: normalizePlannedSpends,
     plannedSpendsForMonth: plannedSpendsForMonth,
+    plannedSpendsFromMonth: plannedSpendsFromMonth,
     plannedSpendReserve: plannedSpendReserve,
     plannedSpendReserveForPerson: plannedSpendReserveForPerson,
     calcPerson: calcPerson,
@@ -7790,6 +7803,8 @@ window.FAMILIE_BUDGET_SUPABASE = {
     // feature aliases
     categoryAutoSpends: categoryAutoSpends,
     plannedSpendsForMonth: plannedSpendsForMonth,
+    plannedSpendsFromMonth: plannedSpendsFromMonth,
+    plannedSpendReserve: plannedSpendReserve,
     normalizePlannedSpends: normalizePlannedSpends
   };
 });
@@ -10544,6 +10559,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
 
     // Pick household or per-person Trygg å bruke (same tabs as Inn/Ut)
     let amount, raw, mode, remAll, remFast, buf, planHead, brukForHint, hasBrukForHint;
+    let futureR = 0;
     if (isPerson && pc) {
       amount = typeof pc.safeToSpend === "number" ? pc.safeToSpend : 0;
       raw = typeof pc.safeToSpendRaw === "number" ? pc.safeToSpendRaw : 0;
@@ -10558,6 +10574,8 @@ window.FAMILIE_BUDGET_SUPABASE = {
         typeof pc.spendBufferShare === "number" ? pc.spendBufferShare : 0;
       planHead =
         typeof pc.safeToSpendPlan === "number" ? pc.safeToSpendPlan : 0;
+      futureR =
+        typeof pc.futureReserve === "number" ? pc.futureReserve : 0;
       const bal = c.balanceByPerson && c.balanceByPerson[view];
       brukForHint =
         bal && bal.bruk != null && Number.isFinite(Number(bal.bruk))
@@ -10577,7 +10595,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
           ? c.remainingFastBudgets
           : 0;
       buf = c && typeof c.spendBuffer === "number" ? c.spendBuffer : 0;
-      var futureR =
+      futureR =
         c && typeof c.futureReserve === "number" ? c.futureReserve : 0;
       var autoX =
         c && typeof c.autoSpendExtra === "number" ? c.autoSpendExtra : 0;
@@ -10665,6 +10683,9 @@ window.FAMILIE_BUDGET_SUPABASE = {
                 formatNOK(buf) +
                 (isPerson ? " (andel)" : "")
               : "") +
+            (futureR > 0
+              ? " og " + formatNOK(futureR) + " planlagt (inkl. senere måneder)"
+              : "") +
             ". Spare er utenfor.";
         }
       } else {
@@ -10683,6 +10704,12 @@ window.FAMILIE_BUDGET_SUPABASE = {
             " uten å røre faste utgifter" +
             (remFast > 0 ? " (" + formatNOK(remFast) + " faste igjen)" : "") +
             ".";
+        }
+        if (futureR > 0) {
+          base +=
+            " " +
+            formatNOK(futureR) +
+            " er reservert til planlagte utlegg (også senere måneder).";
         }
         if (wantSaldo && !hasBrukForHint) {
           base += " Sett brukssaldo for mer treffsikkert tall.";
@@ -13014,40 +13041,81 @@ window.FAMILIE_BUDGET_SUPABASE = {
     if (!host || !wrap) return;
     if (!Array.isArray(state.plannedSpends)) state.plannedSpends = [];
     const mk = monthKey(state.view.year, state.view.month);
-    const items = Calc.plannedSpendsForMonth(state.plannedSpends, mk);
+    const thisMonth = Calc.plannedSpendsForMonth(state.plannedSpends, mk);
+    const fromMonth =
+      typeof Calc.plannedSpendsFromMonth === "function"
+        ? Calc.plannedSpendsFromMonth(state.plannedSpends, mk)
+        : thisMonth;
+    const later = fromMonth.filter(function (p) {
+      return p && p.monthKey && p.monthKey > mk && !p.done;
+    });
     const reserve =
       c && typeof c.futureReserve === "number" ? c.futureReserve : 0;
+    const laterSum = later.reduce(function (s, p) {
+      return s + (p.amount || 0);
+    }, 0);
     const sumEl = $("#plannedSpendsSum");
     if (sumEl) {
-      sumEl.textContent =
-        reserve > 0 ? formatNOK(reserve) + " reservert" : "Ingen reserve";
+      if (reserve > 0) {
+        sumEl.textContent =
+          formatNOK(reserve) +
+          " reservert" +
+          (laterSum > 0
+            ? " (inkl. " + formatNOK(laterSum) + " i senere måneder)"
+            : "");
+      } else {
+        sumEl.textContent = "Ingen reserve";
+      }
     }
-    if (!items.length) {
+    function rowHtml(p, showMonth) {
+      const cat = p.categoryId ? catById(p.categoryId) : null;
+      const who = p.owner === "felles" ? "Felles" : nameOf(p.owner);
+      const done = p.done ? " · markert kjøpt" : "";
+      const mkLabel = showMonth && p.monthKey ? " · " + p.monthKey : "";
+      return (
+        '<button type="button" class="planned-spend-row" data-edit-planned="' +
+        escapeAttr(p.id) +
+        '">' +
+        '<span class="ps-amount">' +
+        formatNOK(p.amount) +
+        "</span>" +
+        '<span class="ps-meta">' +
+        escapeHtml(who) +
+        (cat ? " · " + escapeHtml(cat.name) : "") +
+        (p.note ? " · " + escapeHtml(p.note) : "") +
+        escapeHtml(mkLabel) +
+        escapeHtml(done) +
+        "</span></button>"
+      );
+    }
+    if (!thisMonth.length && !later.length) {
       host.innerHTML =
-        '<p class="hint compact">Ingen planlagte utlegg denne måneden. Trykk «Planlegg utlegg» for å reservere penger til fremtidige kjøp.</p>';
+        '<p class="hint compact">Ingen planlagte utlegg fra denne måneden og ut. Trykk «Planlegg utlegg» — beløpet reserveres også i måneder før kjøpet.</p>';
       return;
     }
-    host.innerHTML = items
-      .map(function (p) {
-        const cat = p.categoryId ? catById(p.categoryId) : null;
-        const who = p.owner === "felles" ? "Felles" : nameOf(p.owner);
-        const done = p.done ? " · markert kjøpt" : "";
-        return (
-          '<button type="button" class="planned-spend-row" data-edit-planned="' +
-          escapeAttr(p.id) +
-          '">' +
-          '<span class="ps-amount">' +
-          formatNOK(p.amount) +
-          "</span>" +
-          '<span class="ps-meta">' +
-          escapeHtml(who) +
-          (cat ? " · " + escapeHtml(cat.name) : "") +
-          (p.note ? " · " + escapeHtml(p.note) : "") +
-          escapeHtml(done) +
-          "</span></button>"
-        );
-      })
-      .join("");
+    let html = "";
+    if (thisMonth.length) {
+      html += thisMonth.map(function (p) {
+        return rowHtml(p, false);
+      }).join("");
+    } else {
+      html +=
+        '<p class="hint compact">Ingen utlegg planlagt i denne måneden.</p>';
+    }
+    if (later.length) {
+      html +=
+        '<p class="hint compact" style="margin-top:0.5rem">Kommende (reserveres nå):</p>';
+      html += later
+        .slice()
+        .sort(function (a, b) {
+          return String(a.monthKey).localeCompare(String(b.monthKey));
+        })
+        .map(function (p) {
+          return rowHtml(p, true);
+        })
+        .join("");
+    }
+    host.innerHTML = html;
   }
 
   function openExpense(edit) {
