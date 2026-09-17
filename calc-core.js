@@ -359,8 +359,8 @@
         var cur = m.balances[pid];
         var pbal = prev.balances[pid];
         if (!cur || typeof cur !== "object" || !pbal) return;
-        // Keep suggested seeds (prev − planned); not accidental raw copies
-        if (cur.suggested) return;
+        // Keep suggested seeds (prev − planned, or rolling carry); not accidental raw copies
+        if (cur.suggested || cur.suggestedAfterPlans || m.balancesSuggested) return;
         if (balanceFieldEqual(cur.bruk, pbal.bruk)) {
           cur.bruk = null;
           cleared++;
@@ -451,7 +451,7 @@
     var m = months[key];
     if (!m) return false;
     if (monthHasPlanSeededBalances(m)) return false;
-    var prevKey = shiftMonthKey(key, -1);
+    var prevKey = findNearestPreviousWithConfirmedBalances(months, key);
     var prev = prevKey && months[prevKey];
     if (!brukReflectsSameMonthPlans(m, prev, key, plannedSpends || [], people)) {
       return false;
@@ -495,10 +495,11 @@
 
   /**
    * Seed suggested starting bruk for a new month that has no confirmed saldo.
-   * Formula: prev.balancesUpdatedAt bruk − open plannedSpends (monthKey === new).
-   * Never copies raw before_salary as-is: only runs when there is at least one
-   * open same-month plannedSpend, marks suggested:true + when=after_salary.
-   * Does not write balancesUpdatedAt (user must Bekreft).
+   * Formula: nearest prev with balancesUpdatedAt:
+   *   suggestedBruk = prev.confirmedBruk − openPlannedSpends(newMonth)
+   * Runs even when open planned = 0 (rolling carry of leftover / deficit).
+   * Marks suggested:true + when=after_salary. Does not write balancesUpdatedAt
+   * (user must Bekreft). Never re-seeds over confirmed or existing non-suggested bruk.
    */
   function ensureSuggestedBalances(months, key, people, plannedSpends) {
     if (!months || !key) return { seeded: false, reason: "no-month" };
@@ -553,12 +554,8 @@
       m.balancesSuggested = true;
       return { seeded: false, reason: "already-suggested" };
     }
-    var openSame = plannedSpendsForMonth(plannedSpends || [], key).filter(function (p) {
-      return p && !p.done && p.amount > 0;
-    });
-    if (!openSame.length) return { seeded: false, reason: "no-planned" };
 
-    var prevKey = shiftMonthKey(key, -1);
+    var prevKey = findNearestPreviousWithConfirmedBalances(months, key);
     var prev = prevKey && months[prevKey];
     if (!prev || !prev.balancesUpdatedAt) {
       return { seeded: false, reason: "no-prev-confirmed" };
@@ -654,6 +651,19 @@
       if (!key) return null;
       var m = months && months[key];
       if (m && monthHasBalances(m)) return key;
+    }
+    return null;
+  }
+
+  /** Nearest earlier month with user-confirmed På konto (balancesUpdatedAt). */
+  function findNearestPreviousWithConfirmedBalances(months, monthKey, maxLookback) {
+    var look = maxLookback == null ? 36 : maxLookback;
+    var key = monthKey;
+    for (var i = 0; i < look; i++) {
+      key = shiftMonthKey(key, -1);
+      if (!key) return null;
+      var m = months && months[key];
+      if (m && m.balancesUpdatedAt && monthHasBalances(m)) return key;
     }
     return null;
   }
@@ -1778,7 +1788,10 @@
     if (!excludeSameMonthPlanned && mk) {
       var prevForSeed = opts.prevMonth || null;
       if (!prevForSeed && opts.months) {
-        var prevKeyForSeed = shiftMonthKey(mk, -1);
+        var prevKeyForSeed = findNearestPreviousWithConfirmedBalances(
+          opts.months,
+          mk
+        );
         prevForSeed =
           prevKeyForSeed && opts.months[prevKeyForSeed]
             ? opts.months[prevKeyForSeed]
@@ -3299,9 +3312,14 @@
     };
   }
 
-  /** Short nb label when balance is a suggested seed. */
+  /** Short nb label when balance is a suggested seed (rolling carry). */
   function balanceSuggestedLabel() {
-    return "Foreslått etter planlagte utlegg";
+    return "Bygger på forrige bekreftede saldo";
+  }
+
+  /** Hint under På konto when balances are suggested (unconfirmed). */
+  function balanceSuggestedHint() {
+    return "Bygger på forrige bekreftede saldo (± planlagte utlegg). Bekreft eller endre.";
   }
 
   /** Short nb label for mode/date badge. */
@@ -3565,7 +3583,9 @@
     brukReflectsSameMonthPlans: brukReflectsSameMonthPlans,
     healBrukReflectedSameMonthPlans: healBrukReflectedSameMonthPlans,
     balanceSuggestedLabel: balanceSuggestedLabel,
+    balanceSuggestedHint: balanceSuggestedHint,
     findNearestPreviousWithBalances: findNearestPreviousWithBalances,
+    findNearestPreviousWithConfirmedBalances: findNearestPreviousWithConfirmedBalances,
     migrateState: migrateState,
     plannedIncomeFor: plannedIncomeFor,
     plannedSparingFor: plannedSparingFor,
