@@ -1660,6 +1660,17 @@
               ? " is-tight"
               : "");
     }
+    const reserveEl = $("#safeSpendReserve");
+    if (reserveEl) {
+      if (show && futureR > 0) {
+        reserveEl.hidden = false;
+        reserveEl.textContent =
+          "Reservert til planlagte utlegg: " + formatNOK(futureR);
+      } else {
+        reserveEl.hidden = true;
+        reserveEl.textContent = "Reservert til planlagte utlegg: —";
+      }
+    }
     if (hintEl) {
       const wantSaldo = !c || c.useSaldoInSafeToSpend !== false;
       if (!show) {

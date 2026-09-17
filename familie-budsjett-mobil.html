@@ -4242,6 +4242,7 @@ button.cat-group-header {
           <span class="pill blue" id="healthPill" hidden></span>
         </div>
         <p class="safe-spend-value" id="safeSpendValue">—</p>
+        <p class="meta-line" id="safeSpendReserve" hidden>Reservert til planlagte utlegg: —</p>
         <p class="safe-spend-hint" id="safeSpendHint">Sett brukssaldo for mer treffsikkert tall. Ellers: forventet inn minus brukt minus faste igjen.</p>
         <div class="health-meter" id="healthMeter" hidden>
           <div class="health-meter-track">
@@ -4856,7 +4857,7 @@ button.cat-group-header {
           <span>Notat <em class="opt">(valgfritt)</em></span>
           <input id="psNote" class="input" type="text" maxlength="120" placeholder="F.eks. ny sofa" autocomplete="off" />
         </label>
-        <p class="hint compact">Når måneden kommer, reserveres beløpet i Trygg å bruke. Logger du et kjøp i samme kategori/hvem, telles ikke dobbelt.</p>
+        <p class="hint compact">Beløpet reserveres allerede i måneder før kjøpet, så du ikke overforbruker før da. Logger du et kjøp i samme kategori/hvem i mål-måneden, telles ikke dobbelt.</p>
       </div>
       <footer class="modal-foot">
         <button type="button" class="btn danger ghost" id="psDelete" hidden>Slett</button>
@@ -6215,10 +6216,13 @@ window.FAMILIE_BUDGET_SUPABASE = {
 
   /**
    * Reserved amount for planned spends from viewed month onward (after matching expenses).
-   * Window: monthKey >= viewed M. Matching: !done; prefer doneExpenseId; else greedy
-   * same owner + categoryId against viewed-month expenses.
+   * Window: monthKey >= viewed M. Matching only for same-month plans (item.monthKey ===
+   * viewed): !done; prefer doneExpenseId; else greedy same owner + categoryId against
+   * viewed-month expenses. Later months (item.monthKey > viewed) always full-reserve
+   * unless done / doneExpenseId explicitly covers them.
    */
   function plannedSpendReserve(plannedSpends, monthKey, expenses) {
+    var viewedMk = String(monthKey || "");
     var items = plannedSpendsFromMonth(plannedSpends, monthKey).filter(function (p) {
       return p && !p.done && p.amount > 0;
     });
@@ -6233,26 +6237,26 @@ window.FAMILIE_BUDGET_SUPABASE = {
         });
         if (linked) return; // covered
       }
-      if (!item.categoryId) {
-        reserve += item.amount;
-        return;
-      }
-      var matchIdx = -1;
-      for (var i = 0; i < exps.length; i++) {
-        if (used[i]) continue;
-        var e = exps[i];
-        if (!e) continue;
-        var eOwner = e.owner || "felles";
-        var eCat = e.categoryId || null;
-        if (eOwner === item.owner && eCat === item.categoryId) {
-          matchIdx = i;
-          break;
+      // Only match category against viewed-month expenses for same-month plans
+      var sameMonth = viewedMk && String(item.monthKey || "") === viewedMk;
+      if (sameMonth && item.categoryId) {
+        var matchIdx = -1;
+        for (var i = 0; i < exps.length; i++) {
+          if (used[i]) continue;
+          var e = exps[i];
+          if (!e) continue;
+          var eOwner = e.owner || "felles";
+          var eCat = e.categoryId || null;
+          if (eOwner === item.owner && eCat === item.categoryId) {
+            matchIdx = i;
+            break;
+          }
         }
-      }
-      if (matchIdx >= 0) {
-        used[matchIdx] = true;
-        // Covered by logged purchase — do not reserve (avoid double count)
-        return;
+        if (matchIdx >= 0) {
+          used[matchIdx] = true;
+          // Covered by logged purchase — do not reserve (avoid double count)
+          return;
+        }
       }
       reserve += item.amount;
     });
@@ -6266,6 +6270,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     personId,
     people
   ) {
+    var viewedMk = String(monthKey || "");
     var items = plannedSpendsFromMonth(plannedSpends, monthKey).filter(function (p) {
       return p && !p.done && p.amount > 0;
     });
@@ -6282,7 +6287,8 @@ window.FAMILIE_BUDGET_SUPABASE = {
           return e && e.id === item.doneExpenseId;
         });
       }
-      if (!covered && item.categoryId) {
+      var sameMonth = viewedMk && String(item.monthKey || "") === viewedMk;
+      if (!covered && sameMonth && item.categoryId) {
         for (var i = 0; i < exps.length; i++) {
           if (used[i]) continue;
           var e = exps[i];
@@ -10637,6 +10643,17 @@ window.FAMILIE_BUDGET_SUPABASE = {
             : amount < 2000
               ? " is-tight"
               : "");
+    }
+    const reserveEl = $("#safeSpendReserve");
+    if (reserveEl) {
+      if (show && futureR > 0) {
+        reserveEl.hidden = false;
+        reserveEl.textContent =
+          "Reservert til planlagte utlegg: " + formatNOK(futureR);
+      } else {
+        reserveEl.hidden = true;
+        reserveEl.textContent = "Reservert til planlagte utlegg: —";
+      }
     }
     if (hintEl) {
       const wantSaldo = !c || c.useSaldoInSafeToSpend !== false;

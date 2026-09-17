@@ -175,6 +175,7 @@
           <span class="pill blue" id="healthPill" hidden></span>
         </div>
         <p class="safe-spend-value" id="safeSpendValue">—</p>
+        <p class="meta-line" id="safeSpendReserve" hidden>Reservert til planlagte utlegg: —</p>
         <p class="safe-spend-hint" id="safeSpendHint">Sett brukssaldo for mer treffsikkert tall. Ellers: forventet inn minus brukt minus faste igjen.</p>
         <div class="health-meter" id="healthMeter" hidden>
           <div class="health-meter-track">
@@ -789,7 +790,7 @@
           <span>Notat <em class="opt">(valgfritt)</em></span>
           <input id="psNote" class="input" type="text" maxlength="120" placeholder="F.eks. ny sofa" autocomplete="off" />
         </label>
-        <p class="hint compact">Når måneden kommer, reserveres beløpet i Trygg å bruke. Logger du et kjøp i samme kategori/hvem, telles ikke dobbelt.</p>
+        <p class="hint compact">Beløpet reserveres allerede i måneder før kjøpet, så du ikke overforbruker før da. Logger du et kjøp i samme kategori/hvem i mål-måneden, telles ikke dobbelt.</p>
       </div>
       <footer class="modal-foot">
         <button type="button" class="btn danger ghost" id="psDelete" hidden>Slett</button>
