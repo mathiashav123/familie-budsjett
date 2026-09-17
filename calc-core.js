@@ -274,7 +274,8 @@
       bruk: null,
       spare: null,
       when: BALANCE_WHEN_AFTER,
-      asOf: null
+      asOf: null,
+      suggested: false
     };
   }
 
@@ -289,6 +290,8 @@
         if (!("spare" in m.balances[p.id])) m.balances[p.id].spare = null;
         m.balances[p.id].when = normalizeBalanceWhen(m.balances[p.id].when);
         m.balances[p.id].asOf = normalizeBalanceAsOf(m.balances[p.id].asOf);
+        if (m.balances[p.id].suggested) m.balances[p.id].suggested = true;
+        else m.balances[p.id].suggested = false;
       }
     });
   }
@@ -350,6 +353,8 @@
         var cur = m.balances[pid];
         var pbal = prev.balances[pid];
         if (!cur || typeof cur !== "object" || !pbal) return;
+        // Keep suggested seeds (prev − planned); not accidental raw copies
+        if (cur.suggested) return;
         if (balanceFieldEqual(cur.bruk, pbal.bruk)) {
           cur.bruk = null;
           cleared++;
@@ -361,6 +366,152 @@
       });
     }
     return cleared;
+  }
+
+
+  /** True if any person balance is a suggested (unconfirmed) seed. */
+  function monthHasSuggestedBalances(m) {
+    if (!m || !m.balances || typeof m.balances !== "object") return false;
+    if (m.balancesSuggested) return true;
+    var keys = Object.keys(m.balances);
+    for (var i = 0; i < keys.length; i++) {
+      var b = m.balances[keys[i]];
+      if (b && b.suggested) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Open plannedSpends with monthKey === target attributed to one person:
+   * own amount full; felles split equally across active people.
+   */
+  function openPlannedSpendDeductionForPerson(plannedSpends, monthKey, personId, people) {
+    var mk = String(monthKey || "");
+    if (!mk || !personId) return 0;
+    var active = activePeople(people);
+    var n = Math.max(1, active.length);
+    var sum = 0;
+    plannedSpendsForMonth(plannedSpends, mk).forEach(function (item) {
+      if (!item || item.done || !(item.amount > 0)) return;
+      if (item.owner === personId) sum += Number(item.amount) || 0;
+      else if (item.owner === "felles") sum += (Number(item.amount) || 0) / n;
+    });
+    return sum;
+  }
+
+  /**
+   * prev confirmed bruk − open same-month planned (person share).
+   * Does not invent salary. Returns null if prevBruk missing.
+   */
+  function computeSuggestedBrukFromPrev(prevBruk, plannedDeduction) {
+    if (prevBruk == null || prevBruk === "") return null;
+    var b = Number(prevBruk);
+    if (!Number.isFinite(b)) return null;
+    var d =
+      plannedDeduction == null || plannedDeduction === ""
+        ? 0
+        : Number(plannedDeduction);
+    if (!Number.isFinite(d)) d = 0;
+    return b - d;
+  }
+
+  /**
+   * Seed suggested starting bruk for a new month that has no confirmed saldo.
+   * Formula: prev.balancesUpdatedAt bruk − open plannedSpends (monthKey === new).
+   * Never copies raw before_salary as-is: only runs when there is at least one
+   * open same-month plannedSpend, marks suggested:true + when=after_salary.
+   * Does not write balancesUpdatedAt (user must Bekreft).
+   */
+  function ensureSuggestedBalances(months, key, people, plannedSpends) {
+    if (!months || !key) return { seeded: false, reason: "no-month" };
+    if (!months[key]) {
+      months[key] = {
+        balances: {},
+        budgets: {},
+        budgetLines: {},
+        plannedIncome: {},
+        incomes: [],
+        savings: [],
+        expenses: []
+      };
+    }
+    var m = months[key];
+    if (m.balancesUpdatedAt) return { seeded: false, reason: "confirmed" };
+    ensureBalancesShape(m, people);
+    var active = activePeople(people);
+    var i;
+    for (i = 0; i < active.length; i++) {
+      var bal0 = m.balances[active[i].id];
+      if (
+        bal0 &&
+        bal0.bruk != null &&
+        bal0.bruk !== "" &&
+        Number.isFinite(Number(bal0.bruk)) &&
+        !bal0.suggested
+      ) {
+        return { seeded: false, reason: "has-bruk" };
+      }
+    }
+    // Already suggested — leave in place (idempotent)
+    if (monthHasSuggestedBalances(m)) {
+      return { seeded: false, reason: "already-suggested" };
+    }
+    var openSame = plannedSpendsForMonth(plannedSpends || [], key).filter(function (p) {
+      return p && !p.done && p.amount > 0;
+    });
+    if (!openSame.length) return { seeded: false, reason: "no-planned" };
+
+    var prevKey = shiftMonthKey(key, -1);
+    var prev = prevKey && months[prevKey];
+    if (!prev || !prev.balancesUpdatedAt) {
+      return { seeded: false, reason: "no-prev-confirmed" };
+    }
+    ensureBalancesShape(prev, people);
+
+    var seededAny = false;
+    active.forEach(function (p) {
+      var prevBal = prev.balances[p.id] || {};
+      var prevBruk = parseBalanceAmount(prevBal.bruk);
+      if (prevBruk == null) return;
+      var deduct = openPlannedSpendDeductionForPerson(
+        plannedSpends || [],
+        key,
+        p.id,
+        people
+      );
+      var suggestedAmt = computeSuggestedBrukFromPrev(prevBruk, deduct);
+      if (suggestedAmt == null) return;
+      if (!m.balances[p.id] || typeof m.balances[p.id] !== "object") {
+        m.balances[p.id] = emptyBalance();
+      }
+      m.balances[p.id].bruk = suggestedAmt;
+      // Do not copy spare; seed is payment-after from last known bank figure
+      m.balances[p.id].spare = null;
+      m.balances[p.id].when = BALANCE_WHEN_AFTER;
+      m.balances[p.id].asOf = null;
+      m.balances[p.id].suggested = true;
+      seededAny = true;
+    });
+    if (seededAny) {
+      m.balancesSuggested = true;
+      return { seeded: true, reason: "ok" };
+    }
+    return { seeded: false, reason: "no-prev-bruk" };
+  }
+
+  /** Clear suggested flags after user confirms/edits saldo. */
+  function clearSuggestedBalanceFlag(m, personId) {
+    if (!m || !m.balances) return;
+    if (personId && m.balances[personId]) {
+      m.balances[personId].suggested = false;
+    }
+    var any = false;
+    Object.keys(m.balances).forEach(function (pid) {
+      if (m.balances[pid] && m.balances[pid].suggested) any = true;
+    });
+    if (!any) {
+      delete m.balancesSuggested;
+    }
   }
 
   function findNearestPreviousWithBalances(months, monthKey, maxLookback) {
@@ -1206,10 +1357,16 @@
    * viewed-month expenses. Later months (item.monthKey > viewed) always full-reserve
    * unless done / doneExpenseId explicitly covers them.
    */
-  function plannedSpendReserve(plannedSpends, monthKey, expenses) {
+  function plannedSpendReserve(plannedSpends, monthKey, expenses, opts) {
+    opts = opts || {};
     var viewedMk = String(monthKey || "");
     var items = plannedSpendsFromMonth(plannedSpends, monthKey).filter(function (p) {
-      return p && !p.done && p.amount > 0;
+      if (!p || p.done || !(p.amount > 0)) return false;
+      // Suggested saldo already subtracted same-month planned — skip those
+      if (opts.excludeSameMonth && viewedMk && String(p.monthKey || "") === viewedMk) {
+        return false;
+      }
+      return true;
     });
     if (!items.length) return 0;
     var exps = (expenses || []).slice();
@@ -1253,11 +1410,17 @@
     monthKey,
     expenses,
     personId,
-    people
+    people,
+    opts
   ) {
+    opts = opts || {};
     var viewedMk = String(monthKey || "");
     var items = plannedSpendsFromMonth(plannedSpends, monthKey).filter(function (p) {
-      return p && !p.done && p.amount > 0;
+      if (!p || p.done || !(p.amount > 0)) return false;
+      if (opts.excludeSameMonth && viewedMk && String(p.monthKey || "") === viewedMk) {
+        return false;
+      }
+      return true;
     });
     if (!items.length) return 0;
     var exps = (expenses || []).slice();
@@ -1446,10 +1609,12 @@
 
     // Future planned spends reserve (Feature 2)
     var mk = monthKey || opts.monthKey || null;
+    var excludeSameMonthPlanned = monthHasSuggestedBalances(m);
     var futureReserve = plannedSpendReserve(
       plannedSpends || opts.plannedSpends || [],
       mk,
-      m.expenses
+      m.expenses,
+      { excludeSameMonth: excludeSameMonthPlanned }
     );
 
     // Plan: planInn − effectiveExpenses − remainingFast − futureReserve
@@ -1538,7 +1703,8 @@
         mk,
         m.expenses,
         p.id,
-        people
+        people,
+        { excludeSameMonth: excludeSameMonthPlanned }
       );
 
       var planRawP =
@@ -1636,6 +1802,7 @@
       futureReserve: futureReserve,
       spendBuffer: spendBuffer,
       hasBrukBalances: hasBruk,
+      hasSuggestedBalances: excludeSameMonthPlanned,
       useSaldoInSafeToSpend: useSaldo,
       needsSaldoForSafeToSpend: needsSaldoForSafeToSpend,
       safeToSpendMode: safeToSpendMode,
@@ -1827,8 +1994,19 @@
     var m = months[key];
     ensureMonthShape(m, people);
     if (monthHasExpected(m)) {
-      // Balances are never auto-copied into existing months.
-      return { copied: false, sourceKey: null, mode: null };
+      // Budgets already present — still may seed suggested bruk from prev − planned.
+      var sugEarly = ensureSuggestedBalances(
+        months,
+        key,
+        people,
+        opts.plannedSpends || []
+      );
+      return {
+        copied: false,
+        sourceKey: null,
+        mode: null,
+        suggestedBalances: !!(sugEarly && sugEarly.seeded)
+      };
     }
     var srcKey = findNearestPreviousWithExpected(
       months,
@@ -1836,12 +2014,34 @@
       opts.maxLookback
     );
     if (!srcKey) {
-      return { copied: false, sourceKey: null, mode: null };
+      var sugNoSrc = ensureSuggestedBalances(
+        months,
+        key,
+        people,
+        opts.plannedSpends || []
+      );
+      return {
+        copied: false,
+        sourceKey: null,
+        mode: null,
+        suggestedBalances: !!(sugNoSrc && sugNoSrc.seeded)
+      };
     }
     var src = months[srcKey];
     if (copyAll) {
       copyExpectedFrom(src, m, people, monthIndexFromKey(key));
-      return { copied: true, sourceKey: srcKey, mode: "all" };
+      var sugAll = ensureSuggestedBalances(
+        months,
+        key,
+        people,
+        opts.plannedSpends || []
+      );
+      return {
+        copied: true,
+        sourceKey: srcKey,
+        mode: "all",
+        suggestedBalances: !!(sugAll && sugAll.seeded)
+      };
     }
     // Legacy / setting OFF: only autoFill categories + planned income
     var any = false;
@@ -1888,10 +2088,17 @@
         }
       });
     });
+    var sugAf = ensureSuggestedBalances(
+      months,
+      key,
+      people,
+      opts.plannedSpends || []
+    );
     return {
       copied: any,
       sourceKey: any ? srcKey : null,
-      mode: any ? "autofill" : null
+      mode: any ? "autofill" : null,
+      suggestedBalances: !!(sugAf && sugAf.seeded)
     };
   }
 
@@ -2911,8 +3118,14 @@
     };
   }
 
+  /** Short nb label when balance is a suggested seed. */
+  function balanceSuggestedLabel() {
+    return "Foreslått etter planlagte utlegg";
+  }
+
   /** Short nb label for mode/date badge. */
-  function balanceWhenLabel(when, asOf) {
+  function balanceWhenLabel(when, asOf, suggested) {
+    if (suggested) return balanceSuggestedLabel();
     var mode = normalizeBalanceWhen(when);
     if (mode === BALANCE_WHEN_BEFORE) return "Oppgitt før lønn";
     if (mode === BALANCE_WHEN_DATED) {
@@ -3159,8 +3372,14 @@
     ensureMonthShape: ensureMonthShape,
     ensureBalancesShape: ensureBalancesShape,
     monthHasBalances: monthHasBalances,
+    monthHasSuggestedBalances: monthHasSuggestedBalances,
     copyBalancesFrom: copyBalancesFrom,
     clearAccidentalBalanceCarry: clearAccidentalBalanceCarry,
+    ensureSuggestedBalances: ensureSuggestedBalances,
+    openPlannedSpendDeductionForPerson: openPlannedSpendDeductionForPerson,
+    computeSuggestedBrukFromPrev: computeSuggestedBrukFromPrev,
+    clearSuggestedBalanceFlag: clearSuggestedBalanceFlag,
+    balanceSuggestedLabel: balanceSuggestedLabel,
     findNearestPreviousWithBalances: findNearestPreviousWithBalances,
     migrateState: migrateState,
     plannedIncomeFor: plannedIncomeFor,
