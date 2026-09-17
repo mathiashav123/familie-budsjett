@@ -4403,3 +4403,66 @@ button.cat-group-header {
 .planned-spend-row .ps-amount { font-weight: 700; }
 .planned-spend-row .ps-meta { font-size: 0.85rem; color: var(--muted, #667); }
 .field-row.two { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+
+
+
+
+/* Forward projection panel (Oversikt) */
+.forward-panel-card .forward-har-na,
+.forward-panel-card .forward-year-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0.35rem 0 0.15rem;
+}
+.forward-panel-card .forward-label {
+  font-size: 0.95rem;
+  color: var(--muted, #5a6b66);
+}
+.forward-panel-card .forward-value {
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+}
+.forward-panel-card .forward-value.is-neg {
+  color: var(--danger, #b42318);
+}
+.forward-panel-card .forward-sub {
+  margin: 0.85rem 0 0.4rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.forward-months {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.4rem;
+}
+@media (min-width: 520px) {
+  .forward-months {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.forward-month-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+  background: var(--bg-soft, #e4ece9);
+  border: 1px solid rgba(0,0,0,0.04);
+}
+.forward-month-card .fm-label {
+  font-size: 0.9rem;
+  color: var(--muted, #5a6b66);
+}
+.forward-month-card .fm-pot {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.forward-month-card .fm-pot.is-neg {
+  color: var(--danger, #b42318);
+}
+.forward-panel-card #forwardFormulaHint code {
+  font-size: 0.78em;
+}
