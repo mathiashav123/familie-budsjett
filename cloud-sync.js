@@ -217,8 +217,13 @@
    * - structured split when archives or large
    * - gzip-b64 envelope when still large and CompressionStream exists
    */
-  async function encodeCloudPayload(state) {
-    var packed = Sync.packCloudPayload(state, { updatedAt: Sync.isoNow() });
+  async function encodeCloudPayload(state, opts) {
+    opts = opts || {};
+    // Default: lazy archives (refs/rollups only). Full months only for restore/export.
+    var packed = Sync.packCloudPayload(state, {
+      updatedAt: Sync.isoNow(),
+      includeArchiveMonths: opts.includeArchiveMonths === true
+    });
     var json = JSON.stringify(packed);
     var threshold = 120 * 1024;
     if (json.length >= threshold) {
