@@ -311,10 +311,13 @@ console.log("\n7. Carry-forward planned income/budgets to empty next month");
     copyExpectedToNewMonths: true,
     categories: cats
   });
-  assert(r2.copied === false, "customized Oct not overwritten");
+  assert(r2.copied === false, "customized Oct not full-copied");
+  assert(r2.healed === true, "customized Oct gets additive heal for missing cats");
   assertEq(Calc.budgetFor(months["2026-10"], "cMat"), 999, "Oct Mat stays 999");
-  assertEq(months["2026-10"].plannedIncome.p1.lønn, 11111, "Oct p1 lønn stays");
-  assert(months["2026-10"].budgets.cLan == null, "Oct Lån not injected");
+  assertEq(months["2026-10"].plannedIncome.p1.lønn, 11111, "Oct p1 lønn stays (customized)");
+  assertEq(Calc.budgetFor(months["2026-10"], "cLan"), 12000, "Oct Lån filled additively from Sep");
+  // null ekstra filled from Sep; customized lønn kept
+  assertEq(months["2026-10"].plannedIncome.p1.ekstra, 1000, "Oct null ekstra filled from Sep");
 
   // Nearest previous with expected (skip empty)
   months["2026-11"] = {
@@ -3559,14 +3562,14 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
   );
   // Fast must be in the monthly delta (not the old +63542 fantasy without Fast)
   assertEq(proj.months[2].planUtFixed, 31323, "39 Dec includes Fast");
-  assertEq(proj.months[2].delta, 32219, "39 steady delta = inn−Fast−var");
+  assertEq(proj.months[2].delta, 30119, "39 steady delta = inn−Fast−var (Sep plan+Div/Helse/Bil)");
   assert(
     proj.potByKey["2038-11"] < 5000000,
     "39 Nov 2038 not ~9.8M fantasy (Fast subtracted)"
   );
-  assertEq(proj.potByKey["2026-10"], 98800, "39 Oct pot after bil+Fast");
-  assertEq(proj.potByKey["2026-11"], 131019, "39 Nov 2026 pot");
-  assertEq(proj.potByKey["2038-11"], 4750647, "39 Nov 2038 pot");
+  assertEq(proj.potByKey["2026-10"], 101342, "39 Oct pot after bil+Fast");
+  assertEq(proj.potByKey["2026-11"], 131461, "39 Nov 2026 pot");
+  assertEq(proj.potByKey["2038-11"], 4448689, "39 Nov 2038 pot");
   // Flat monthly delta after bil month should be explained (same delta, rising pot)
   const d1 = proj.months[2].delta;
   const d2 = proj.months[3].delta;
@@ -3682,9 +3685,9 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
       });
     });
     // Seed rolls with follow-budget (not frozen ~71223)
-    assertEq(months["2026-10"].balances.p1.bruk, 85905.2, "40 oct seed rolling");
-    assertEq(months["2026-11"].balances.p1.bruk, 105229.4, "40 nov seed rolling");
-    assertEq(months["2026-12"].balances.p1.bruk, 124553.6, "40 dec seed rolling");
+    assertEq(months["2026-10"].balances.p1.bruk, 88447.2, "40 oct seed rolling");
+    assertEq(months["2026-11"].balances.p1.bruk, 105671.4, "40 nov seed rolling");
+    assertEq(months["2026-12"].balances.p1.bruk, 122895.6, "40 dec seed rolling");
 
     const proj = Calc.projectPotFollowBudget({
       months,
@@ -3699,10 +3702,10 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
     const nov = proj.potByKey["2026-11"];
     const dec = proj.potByKey["2026-12"];
     const jan = proj.potByKey["2027-01"];
-    assertEq(oct, 98800, "40 oct projected pot after bil+Fast+flows");
-    assertEq(nov, 131019, "40 nov projected pot");
-    assertEq(dec, 163238, "40 dec projected pot");
-    assertEq(jan, 195457, "40 jan 2027 projected pot");
+    assertEq(oct, 101342, "40 oct projected pot after bil+Fast+flows");
+    assertEq(nov, 131461, "40 nov projected pot");
+    assertEq(dec, 161580, "40 dec projected pot");
+    assertEq(jan, 191699, "40 jan 2027 projected pot");
     assert(oct !== nov, "40 Oct ≠ Nov");
     assert(nov !== dec, "40 Nov ≠ Dec");
     assert(dec !== jan, "40 Dec ≠ Jan");
@@ -3790,6 +3793,15 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
     "41 plannedVariableBudgetForPerson exported"
   );
 
+  // Heal incomplete future months from Sep plan before projecting
+  ["2026-09", "2026-10", "2026-11", "2026-12", "2027-01"].forEach((key) => {
+    if (!months[key]) return;
+    Calc.ensureMonthExpected(months, key, people, {
+      copyExpectedToNewMonths: true,
+      categories: cats,
+      plannedSpends: planned
+    });
+  });
   const hh = Calc.projectPotFollowBudget({
     months,
     fromKey: "2026-09",
@@ -3850,13 +3862,13 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
   assert(pot38P < pot38H, "41 p1 2038 pot < household fantasy");
   // Live QA export: Mathias ~+19.3k/mo → Nov 2038 ≈ 2.87M (not 4.75M)
   if (live && live.months && live.months["2026-09"]) {
-    assertEq(octP.planInn, 40000, "41 live p1 oct planInn 40000");
+    assertEq(octP.planInn, 44642, "41 live p1 oct planInn 44642 (healed from Sep)");
     assertEq(novP.planInn, 44642, "41 live p1 nov planInn 44642");
-    assertEq(novP.delta, 19324.2, "41 live p1 nov delta 19324.2");
-    assertEq(octP.delta, -145317.8, "41 live p1 oct delta with bil");
-    assertEq(pot38P, 2868006.2, "41 live p1 Nov 2038 pot");
-    assertEq(novH.delta, 32219, "41 live hh nov delta unchanged 32219");
-    assertEq(pot38H, 4750647, "41 live hh Nov 2038 unchanged");
+    assertEq(novP.delta, 17224.2, "41 live p1 nov delta 17224.2");
+    assertEq(octP.delta, -142775.8, "41 live p1 oct delta with bil");
+    assertEq(pot38P, 2566048.2, "41 live p1 Nov 2038 pot");
+    assertEq(novH.delta, 30119, "41 live hh nov delta 30119");
+    assertEq(pot38H, 4448689, "41 live hh Nov 2038");
   }
 
   // plannedUtForPerson == fixed+var person helpers
@@ -3868,6 +3880,131 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
   const fx = Calc.plannedFixedBudgetForPerson(mNov, "p1", cats, people, mi);
   const vr = Calc.plannedVariableBudgetForPerson(mNov, "p1", cats, people, mi);
   assertEq(fx + vr, ut, "41 fixed+var == plannedUtForPerson");
+}
+
+
+// --- Heal incomplete future months from Sep plan (Mathias live case) ---
+{
+  const people = [
+    { id: "p1", name: "Mathias", archived: false },
+    { id: "p2", name: "Andrea", archived: false }
+  ];
+  const cats = [
+    { id: "cMat", name: "Mat", type: "variabel", owner: "p1", autoFill: false },
+    { id: "cDiv", name: "Div", type: "variabel", owner: "p1", autoFill: false },
+    { id: "cHelse", name: "Helse", type: "variabel", owner: "p1", autoFill: false },
+    { id: "cBil", name: "Bil", type: "variabel", owner: "p1", autoFill: false },
+    { id: "cLan", name: "Lån", type: "fast", owner: "felles", autoFill: true }
+  ];
+  const sepBudgets = {
+    cMat: { p1: 2500 },
+    cDiv: { p1: 1000 },
+    cHelse: { p1: 300 },
+    cBil: { p1: 800 },
+    cLan: { felles: 23441 }
+  };
+  const months = {
+    "2026-09": {
+      budgets: JSON.parse(JSON.stringify(sepBudgets)),
+      budgetLines: {},
+      plannedIncome: {
+        p1: { lønn: 40910, ekstra: 3732, sparing: null },
+        p2: { lønn: 31500, ekstra: null, sparing: null }
+      },
+      incomes: [],
+      savings: [],
+      expenses: [
+        { id: "e1", owner: "p1", categoryId: "cBil", amount: 5143, note: "actual" }
+      ]
+    },
+    "2026-10": {
+      // Incomplete seed: missing Div/Helse/Bil; stale lønn 40000
+      budgets: {
+        cMat: { p1: 2500 },
+        cLan: { felles: 23441 }
+      },
+      budgetLines: {},
+      plannedIncome: {
+        p1: { lønn: 40000, ekstra: null, sparing: null },
+        p2: { lønn: 31500, ekstra: null, sparing: null }
+      },
+      incomes: [],
+      savings: [],
+      expenses: []
+    },
+    "2026-11": {
+      budgets: {
+        cMat: { p1: 2500 },
+        cLan: { felles: 23441 }
+      },
+      budgetLines: {},
+      plannedIncome: {
+        p1: { lønn: 40910, ekstra: 3732, sparing: null },
+        p2: { lønn: 31500, ekstra: null, sparing: null }
+      },
+      incomes: [],
+      savings: [],
+      expenses: []
+    }
+  };
+  const rOct = Calc.ensureMonthExpected(months, "2026-10", people, {
+    copyExpectedToNewMonths: true,
+    categories: cats
+  });
+  assert(rOct.healed === true, "Oct incomplete plan healed");
+  assertEq(Calc.budgetForOwner(months["2026-10"], "cDiv", "p1"), 1000, "Oct Div from Sep");
+  assertEq(Calc.budgetForOwner(months["2026-10"], "cHelse", "p1"), 300, "Oct Helse from Sep");
+  assertEq(Calc.budgetForOwner(months["2026-10"], "cBil", "p1"), 800, "Oct Bil PLAN 800 not actual 5143");
+  assertEq(months["2026-10"].plannedIncome.p1.lønn, 40910, "Oct lønn realigned to Sep");
+  assertEq(months["2026-10"].plannedIncome.p1.ekstra, 3732, "Oct ekstra from Sep");
+  assertEq(months["2026-10"].expenses.length, 0, "Oct expenses stay empty");
+  assertEq(months["2026-09"].expenses.length, 1, "Sep actual purchase kept");
+  assertEq(months["2026-09"].expenses[0].amount, 5143, "Sep Bil actual untouched");
+
+  const rNov = Calc.ensureMonthExpected(months, "2026-11", people, {
+    copyExpectedToNewMonths: true,
+    categories: cats
+  });
+  assert(rNov.healed === true, "Nov incomplete plan healed");
+  assertEq(Calc.budgetForOwner(months["2026-11"], "cDiv", "p1"), 1000, "Nov Div from Sep/Oct");
+  assertEq(Calc.budgetForOwner(months["2026-11"], "cBil", "p1"), 800, "Nov Bil plan 800");
+
+  // migrateState heals all months
+  const migrated = Calc.migrateState({
+    version: 2,
+    people,
+    categories: cats,
+    months: {
+      "2026-09": months["2026-09"],
+      "2026-10": {
+        budgets: { cMat: { p1: 2500 }, cLan: { felles: 23441 } },
+        plannedIncome: {
+          p1: { lønn: 40000, ekstra: null, sparing: null },
+          p2: { lønn: 31500, ekstra: null, sparing: null }
+        },
+        expenses: []
+      }
+    },
+    settings: {},
+    savingsGoals: [],
+    archives: [],
+    plannedSpends: []
+  });
+  assertEq(
+    Calc.budgetForOwner(migrated.months["2026-10"], "cBil", "p1"),
+    800,
+    "migrateState heals Oct Bil plan"
+  );
+  assertEq(
+    migrated.months["2026-10"].plannedIncome.p1.lønn,
+    40910,
+    "migrateState realigns Oct lønn"
+  );
+  assertEq(
+    migrated.months["2026-09"].expenses[0].amount,
+    5143,
+    "migrate keeps Sep actuals"
+  );
 }
 
 console.log("\n=== Results:", passed, "passed,", failed, "failed ===\n");

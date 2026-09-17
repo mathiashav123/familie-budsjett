@@ -1,5 +1,29 @@
 # Endringslogg – Familiebudsjett
 
+## 2026-09-18 — Heal: fremtidige måneder arver Sep-plan (ikke kjøp)
+
+### Problem
+Oct–Jan 2027 var delvis frødd fra en eldre Sep: manglet Div (1000), Helse (300), Bil-plan (800). Oct hadde også stale planlønn 40000 i stedet for Sep 40910+3732. `ensureMonthExpected` hoppet over måneder som allerede hadde *noe* budsjett, så hull ble værende. Fremover kunne dessuten «forgiftes» av en tynn Dec som template.
+
+### Fix (additiv, ingen sletting av Sep-kjøp)
+1. `fillMissingExpectedFrom` / `healMonthExpectedFromPrevious` — fyller manglende budsjett-kategorier + null planinntekt fra nærmeste forrige plan.
+2. Stale incomplete carry (alle eksisterende beløp matcher forrige, men mangler poster / PI avviker, ingen expenses) → realign `plannedIncome` til forrige.
+3. `migrateState` + `ensureMonthExpected` + `projectPotFollowBudget` healer automatisk.
+4. Expenses kopieres aldri. Sep faktiske kjøp urørt.
+
+### Mathias p1 (live export) — plan fast/var
+| Måned | Før fast/var/tot | Etter fast/var/tot | Planinntekt |
+| --- | ---: | ---: | --- |
+| 2026-09 | 6245 / 7700 / 13945 | uendret | 40910+3732 |
+| 2026-10 | 6245 / 5600 / 11845 | **6245 / 7700 / 13945** | 40000 → **40910+3732** |
+| 2026-11…2027-01 | 6245 / 5600 / 11845 | **6245 / 7700 / 13945** | allerede OK / uendret |
+
+Sep expenses: 23 linjer / 21978 kr — beholdt.
+
+### Tester / deploy
+- `node test-calc.mjs` → 824 passed
+- Pages `main` + mobil bundle
+
 ## 2026-09-17 — Fix: På konto lekker ikke / ingen 71k-frys
 
 ### Rotårsak
