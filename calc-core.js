@@ -393,6 +393,73 @@
   }
 
   /**
+   * True when current bruk already embeds open same-month plannedSpends —
+   * flagged seed, or live data matching seed after partial migrate (no flags).
+   * prev must be confirmed (balancesUpdatedAt). Household totals compared.
+   */
+  function brukReflectsSameMonthPlans(m, prev, monthKey, plannedSpends, people) {
+    if (monthHasPlanSeededBalances(m)) return true;
+    if (!m || !prev || !monthKey) return false;
+    if (!prev.balancesUpdatedAt) return false;
+    var openSame = plannedSpendsForMonth(plannedSpends || [], monthKey).filter(
+      function (p) {
+        return p && !p.done && p.amount > 0;
+      }
+    );
+    if (!openSame.length) return false;
+    ensureBalancesShape(m, people);
+    ensureBalancesShape(prev, people);
+    var active = activePeople(people);
+    var currentTotal = 0;
+    var suggestedTotal = 0;
+    var anyCurrent = false;
+    var anyPrev = false;
+    var i;
+    for (i = 0; i < active.length; i++) {
+      var p = active[i];
+      var cur = parseBalanceAmount((m.balances[p.id] || {}).bruk);
+      var prevBruk = parseBalanceAmount((prev.balances[p.id] || {}).bruk);
+      if (cur != null) {
+        currentTotal += cur;
+        anyCurrent = true;
+      }
+      if (prevBruk != null) {
+        anyPrev = true;
+        var deduct = openPlannedSpendDeductionForPerson(
+          plannedSpends || [],
+          monthKey,
+          p.id,
+          people
+        );
+        var sug = computeSuggestedBrukFromPrev(prevBruk, deduct);
+        if (sug != null) suggestedTotal += sug;
+      }
+    }
+    if (!anyCurrent || !anyPrev) return false;
+    // Within 1 kr of seed, or stronger: bruk already ≤ seed (plans baked in)
+    if (Math.abs(currentTotal - suggestedTotal) <= 1) return true;
+    if (currentTotal <= suggestedTotal + 1) return true;
+    return false;
+  }
+
+  /**
+   * Persist: if bruk matches seed without flags, mark same-month plans reflected.
+   * Returns true if any plans were marked.
+   */
+  function healBrukReflectedSameMonthPlans(months, key, people, plannedSpends) {
+    if (!months || !key) return false;
+    var m = months[key];
+    if (!m) return false;
+    if (monthHasPlanSeededBalances(m)) return false;
+    var prevKey = shiftMonthKey(key, -1);
+    var prev = prevKey && months[prevKey];
+    if (!brukReflectsSameMonthPlans(m, prev, key, plannedSpends || [], people)) {
+      return false;
+    }
+    return markPlannedSpendsReflectedInBalance(plannedSpends || [], key) > 0;
+  }
+
+  /**
    * Open plannedSpends with monthKey === target attributed to one person:
    * own amount full; felles split equally across active people.
    */
@@ -447,10 +514,20 @@
       };
     }
     var m = months[key];
-    if (m.balancesUpdatedAt) return { seeded: false, reason: "confirmed" };
+    if (m.balancesUpdatedAt) {
+      // Confirmed but flags/reflected may be missing after partial migrate
+      if (healBrukReflectedSameMonthPlans(months, key, people, plannedSpends)) {
+        return { seeded: false, reason: "healed-reflected" };
+      }
+      return { seeded: false, reason: "confirmed" };
+    }
     ensureBalancesShape(m, people);
     var active = activePeople(people);
     var i;
+    // Heal partial-migrate: bruk matches seed but flags missing → mark reflected
+    if (healBrukReflectedSameMonthPlans(months, key, people, plannedSpends)) {
+      return { seeded: false, reason: "healed-reflected" };
+    }
     for (i = 0; i < active.length; i++) {
       var bal0 = m.balances[active[i].id];
       if (
@@ -463,8 +540,17 @@
         return { seeded: false, reason: "has-bruk" };
       }
     }
-    // Already suggested — leave in place (idempotent)
+    // Already suggested — ensure reflected-ready flags (idempotent)
     if (monthHasSuggestedBalances(m)) {
+      active.forEach(function (p) {
+        var bal = m.balances[p.id];
+        if (!bal || typeof bal !== "object") return;
+        if (bal.suggested || bal.suggestedAfterPlans || m.balancesSuggested) {
+          bal.suggested = true;
+          bal.suggestedAfterPlans = true;
+        }
+      });
+      m.balancesSuggested = true;
       return { seeded: false, reason: "already-suggested" };
     }
     var openSame = plannedSpendsForMonth(plannedSpends || [], key).filter(function (p) {
@@ -1686,10 +1772,26 @@
 
     // Future planned spends reserve (Feature 2)
     var mk = monthKey || opts.monthKey || null;
-    // Same-month plans already in seeded bruk (or suggestedAfterPlans) → skip
+    var plannedList = plannedSpends || opts.plannedSpends || [];
+    // Same-month plans already in seeded bruk (flags / reflected / seed-match) → skip
     var excludeSameMonthPlanned = monthHasPlanSeededBalances(m);
+    if (!excludeSameMonthPlanned && mk) {
+      var prevForSeed = opts.prevMonth || null;
+      if (!prevForSeed && opts.months) {
+        var prevKeyForSeed = shiftMonthKey(mk, -1);
+        prevForSeed =
+          prevKeyForSeed && opts.months[prevKeyForSeed]
+            ? opts.months[prevKeyForSeed]
+            : null;
+      }
+      if (
+        brukReflectsSameMonthPlans(m, prevForSeed, mk, plannedList, people)
+      ) {
+        excludeSameMonthPlanned = true;
+      }
+    }
     var futureReserve = plannedSpendReserve(
-      plannedSpends || opts.plannedSpends || [],
+      plannedList,
       mk,
       m.expenses,
       { excludeSameMonth: excludeSameMonthPlanned }
@@ -1697,9 +1799,10 @@
 
     // Plan: planInn − effectiveExpenses − remainingFast − futureReserve
     // (autoSpend Fast remain=0; commitment lives in effectiveUtgifter)
+    // Allow negative = need to save (no Math.max 0 clamp on primary Trygg)
     var safeToSpendPlanRaw =
       planInn - effectiveUtgifter - remainingFastBudgets - futureReserve;
-    var safeToSpendPlan = Math.max(0, safeToSpendPlanRaw);
+    var safeToSpendPlan = safeToSpendPlanRaw;
 
     // Variable remaining (Fast rem≈0 when auto on; not subtracted from "nå")
     var remainingVariableBudgets = Math.max(
@@ -1719,10 +1822,10 @@
     var safeToSpendSaldo = null;
     if (hasBruk) {
       safeToSpendNowRaw = totalBruk - futureReserve - spendBuffer;
-      safeToSpendNow = Math.max(0, safeToSpendNowRaw);
+      safeToSpendNow = safeToSpendNowRaw;
       safeToSpendSaldoRaw =
         totalBruk - remainingBudgetAll - futureReserve - spendBuffer;
-      safeToSpendSaldo = Math.max(0, safeToSpendSaldoRaw);
+      safeToSpendSaldo = safeToSpendSaldoRaw;
     }
 
     // When saldo-mode is intended but bruk is missing, do NOT fall back to a
@@ -1787,7 +1890,7 @@
 
       var planRawP =
         (cp.planInn || 0) - (cp.utgifter || 0) - autoExtraP - remFastP - futureP;
-      var planSafeP = Math.max(0, planRawP);
+      var planSafeP = planRawP;
 
       var remVarP = Math.max(0, remAllP - remFastP);
       var nowRawP = null;
@@ -1797,9 +1900,9 @@
       if (hasPersonBruk) {
         // Saldo: never re-subtract autoExtra (Fast already in bank balance)
         nowRawP = brukN - futureP - bufferShareEach;
-        nowSafeP = Math.max(0, nowRawP);
+        nowSafeP = nowRawP;
         saldoRawP = brukN - remAllP - futureP - bufferShareEach;
-        saldoSafeP = Math.max(0, saldoRawP);
+        saldoSafeP = saldoRawP;
       }
 
       var modeP = "plan";
@@ -3297,15 +3400,15 @@
       futureReserve: future,
       spendBuffer: buffer,
       raw: nowRaw,
-      safeToSpend: Math.max(0, nowRaw),
+      safeToSpend: nowRaw,
       safeToSpendNowRaw: nowRaw,
-      safeToSpendNow: Math.max(0, nowRaw),
+      safeToSpendNow: nowRaw,
       safeToSpendIfBudgetUsedRaw: ifUsedRaw,
-      safeToSpendIfBudgetUsed: Math.max(0, ifUsedRaw),
+      safeToSpendIfBudgetUsed: ifUsedRaw,
       // Legacy aliases for conservative line
       conservativeRaw: ifUsedRaw,
       safeToSpendSaldoRaw: ifUsedRaw,
-      safeToSpendSaldo: Math.max(0, ifUsedRaw)
+      safeToSpendSaldo: ifUsedRaw
     };
   }
 
@@ -3459,6 +3562,8 @@
     clearSuggestedBalanceFlag: clearSuggestedBalanceFlag,
     markPlannedSpendsReflectedInBalance: markPlannedSpendsReflectedInBalance,
     monthHasPlanSeededBalances: monthHasPlanSeededBalances,
+    brukReflectsSameMonthPlans: brukReflectsSameMonthPlans,
+    healBrukReflectedSameMonthPlans: healBrukReflectedSameMonthPlans,
     balanceSuggestedLabel: balanceSuggestedLabel,
     findNearestPreviousWithBalances: findNearestPreviousWithBalances,
     migrateState: migrateState,

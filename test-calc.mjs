@@ -395,11 +395,12 @@ console.log("\n8. safeToSpend = planInn − actualExpenses − remainingFast");
   assertEq(c.safeToSpend, 35000, "safeToSpend 35000");
   assertEq(c.safeToSpendRaw, 35000, "safeToSpendRaw 35000");
 
-  // Overspending so raw negative → clamped to 0
+  // Overspending so raw negative → shown as need-to-save (no Math.max 0)
   m.expenses.push({ id: "e4", owner: "felles", categoryId: "cMat", amount: 40000 });
   const c2 = Calc.calcFamily(m, people, cats, planOpts);
   assert(c2.safeToSpendRaw < 0, "raw negative when overspent");
-  assertEq(c2.safeToSpend, 0, "safeToSpend clamped to 0");
+  assertEq(c2.safeToSpend, c2.safeToSpendRaw, "safeToSpend allows negative (no clamp)");
+  assert(c2.safeToSpend < 0, "primary Trygg negative when overspent");
 }
 
 
@@ -2229,9 +2230,9 @@ console.log("\n29. safeToSpendSaldoBreakdown dual (nå vs if-used)");
     spendBuffer: 2000
   });
   assertEq(bd2.safeToSpendNowRaw, 3000, "nå raw ignores rem var");
-  assertEq(bd2.safeToSpendNow, 3000, "nå clamped positive");
+  assertEq(bd2.safeToSpendNow, 3000, "nå positive unclamped");
   assertEq(bd2.safeToSpendIfBudgetUsedRaw, -5000, "if-used raw negative");
-  assertEq(bd2.safeToSpendIfBudgetUsed, 0, "if-used clamped to 0");
+  assertEq(bd2.safeToSpendIfBudgetUsed, -5000, "if-used allows negative (no clamp)");
 
   // Mirrors calcFamily saldo mode (correct arg order: settings then monthIndex)
   const people = Calc.defaultPeople();
@@ -2519,7 +2520,11 @@ console.log("\n33. awaiting_saldo — Oct no bruk + plannedSpend; Sep saldo unch
   assert(cOctEmpty.needsSaldoForSafeToSpend === true, "oct empty needsSaldo");
   assert(cOctEmpty.safeToSpend == null, "oct empty primary null (not 0)");
   assert(cOctEmpty.safeToSpendPlanRaw < 0, "oct plan raw negative (old scary path)");
-  assertEq(cOctEmpty.safeToSpendPlan, 0, "oct plan clamped 0 (not used as primary)");
+  assertEq(
+    cOctEmpty.safeToSpendPlan,
+    cOctEmpty.safeToSpendPlanRaw,
+    "oct plan allows negative (primary unused while awaiting)"
+  );
 
   // Suggested seed from confirmed Sep: Trygg = 71223 (planned already in seed)
   const monthsSeed = {
@@ -2617,6 +2622,162 @@ console.log("\n33. awaiting_saldo — Oct no bruk + plannedSpend; Sep saldo unch
     "estimate from prev"
   );
   assert(Calc.estimateSafeFromPrevBruk(null, 160000) == null, "estimate null prev");
+}
+
+
+// --- No-flag seed match: Oct bruk=71223 without suggested → future 0 ---
+console.log("\n34. Same-month planned: no-flag seed match + negative Trygg");
+{
+  const people = Calc.defaultPeople();
+  const cats = [
+    { id: "cBil", name: "Bil", type: "variabel", owner: "felles", archived: false }
+  ];
+  const planned = [
+    {
+      id: "ps1",
+      amount: 160000,
+      monthKey: "2026-10",
+      categoryId: "cBil",
+      owner: "felles",
+      done: false
+    }
+  ];
+  const months = {
+    "2026-09": {
+      balances: {
+        p1: { bruk: 150000, spare: 0 },
+        p2: { bruk: 81223, spare: 0 }
+      },
+      balancesUpdatedAt: "2026-09-17T12:00:00.000Z",
+      budgets: {},
+      plannedIncome: { p1: { lønn: 25000 }, p2: { lønn: 15000 } },
+      incomes: [],
+      savings: [],
+      expenses: []
+    },
+    "2026-10": {
+      // Live data after partial migrate: seed amount WITHOUT flags
+      balances: {
+        p1: { bruk: 70000, spare: null, suggested: false, suggestedAfterPlans: false },
+        p2: { bruk: 1223, spare: null, suggested: false, suggestedAfterPlans: false }
+      },
+      budgets: {},
+      plannedIncome: { p1: { lønn: 25000 }, p2: { lønn: 15000 } },
+      incomes: [],
+      savings: [],
+      expenses: []
+    }
+  };
+
+  assertEq(
+    Calc.computeSuggestedBrukFromPrev(231223, 160000),
+    71223,
+    "Sep 231223 − bil 160000 = 71223"
+  );
+
+  const cSep = Calc.calcFamily(months["2026-09"], people, cats, {
+    monthKey: "2026-09",
+    monthIndex: 8,
+    plannedSpends: planned,
+    spendBuffer: 0,
+    months: months
+  });
+  assertEq(cSep.safeToSpend, 71223, "Sep Trygg 71223 (hold-back)");
+  assertEq(cSep.futureReserve, 160000, "Sep futureReserve bil");
+
+  // Without months map (old bug path): would reserve 160k → 0
+  const cOctNoMap = Calc.calcFamily(months["2026-10"], people, cats, {
+    monthKey: "2026-10",
+    monthIndex: 9,
+    plannedSpends: planned,
+    spendBuffer: 0
+  });
+  // No prev → cannot heuristic; still reserves (manual-looking)
+  assertEq(cOctNoMap.futureReserve, 160000, "without months: still reserves (no prev)");
+
+  const cOct = Calc.calcFamily(months["2026-10"], people, cats, {
+    monthKey: "2026-10",
+    monthIndex: 9,
+    plannedSpends: planned,
+    spendBuffer: 0,
+    months: months
+  });
+  assertEq(cOct.totalBruk, 71223, "Oct bruk 71223 without flags");
+  assertEq(cOct.futureReserve, 0, "Oct future 0 — seed match prevents double hit");
+  assertEq(cOct.safeToSpend, 71223, "Oct Trygg 71223 (no Math.max 0)");
+  assert(
+    Calc.brukReflectsSameMonthPlans(
+      months["2026-10"],
+      months["2026-09"],
+      "2026-10",
+      planned,
+      people
+    ) === true,
+    "heuristic: bruk reflects plans"
+  );
+
+  // Heal path marks reflected
+  const planned2 = [
+    {
+      id: "ps1",
+      amount: 160000,
+      monthKey: "2026-10",
+      categoryId: "cBil",
+      owner: "felles",
+      done: false
+    }
+  ];
+  const heal = Calc.ensureSuggestedBalances(months, "2026-10", people, planned2);
+  assertEq(heal.reason, "healed-reflected", "ensure heals reflected");
+  assert(planned2[0].reflectedInBalance === true, "plan marked reflected by heal");
+
+  // Negative Trygg: bruk < strictly-later plans (no same-month bake-in)
+  const plannedLater = [
+    {
+      id: "ps2",
+      amount: 100000,
+      monthKey: "2026-11",
+      categoryId: "cBil",
+      owner: "felles",
+      done: false
+    }
+  ];
+  const octLow = {
+    balances: {
+      p1: { bruk: 20000, spare: 0 },
+      p2: { bruk: 10000, spare: 0 }
+    },
+    budgets: {},
+    plannedIncome: { p1: { lønn: 25000 }, p2: { lønn: 15000 } },
+    incomes: [],
+    savings: [],
+    expenses: []
+  };
+  const cNeg = Calc.calcFamily(octLow, people, cats, {
+    monthKey: "2026-10",
+    monthIndex: 9,
+    plannedSpends: plannedLater,
+    spendBuffer: 0
+  });
+  assertEq(cNeg.futureReserve, 100000, "later-month reserve");
+  assertEq(cNeg.totalBruk, 30000, "low bruk");
+  assertEq(cNeg.safeToSpendNowRaw, -70000, "nå raw negative");
+  assertEq(cNeg.safeToSpendNow, -70000, "nå allows negative (no Math.max 0)");
+  assertEq(cNeg.safeToSpend, -70000, "primary Trygg negative");
+  assert(cNeg.safeToSpendIfBudgetUsed <= cNeg.safeToSpend, "if-used ≤ nå");
+  assert(cNeg.safeToSpendIfBudgetUsed < 0, "secondary also negative");
+
+  // Plan mode primary also unclamped
+  const cPlanNeg = Calc.calcFamily(octLow, people, cats, {
+    useSaldoInSafeToSpend: false,
+    monthKey: "2026-10",
+    monthIndex: 9,
+    plannedSpends: plannedLater,
+    spendBuffer: 0
+  });
+  assertEq(cPlanNeg.safeToSpendMode, "plan", "plan mode");
+  assert(cPlanNeg.safeToSpendRaw < 0, "plan raw negative");
+  assertEq(cPlanNeg.safeToSpend, cPlanNeg.safeToSpendRaw, "plan primary no clamp");
 }
 
 console.log("\n=== Results:", passed, "passed,", failed, "failed ===\n");

@@ -2552,6 +2552,7 @@ button.cat-group-header {
 }
 .safe-spend-value.is-tight { color: var(--orange); }
 .safe-spend-value.is-over { color: var(--red); }
+.safe-spend-value.is-neg { color: var(--red); }
 .safe-spend-hint {
   margin: 0 0 .55rem;
   font-size: .78rem;
@@ -3613,6 +3614,10 @@ button.cat-group-header {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+.safe-spend-secondary.is-neg { color: var(--red); }
+.safe-spend-breakdown-row.is-neg strong { color: var(--red); }
+.plan-safe-mini strong.is-neg { color: var(--red); }
+
 .safe-spend-breakdown-row.is-secondary {
   margin-top: .2rem;
   padding-top: .25rem;
