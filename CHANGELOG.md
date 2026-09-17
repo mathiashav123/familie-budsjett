@@ -1,5 +1,13 @@
 # Endringslogg – Familiebudsjett
 
+
+## 2026-09-18 — Sep plan budsjett hevet + rebase fremover
+
+- **Plan (Sep 2026):** Mat p1/p2 2500→4000, Helse 300→700, Hygiene 200→400, Div 1000→1500, Strøm 1500→2000. Bil/Forsikring/Klær/Fond/Abonnement urørt. Ingen nye kat. (billån/bilforsikring/klær/ferie/sparing). Kjøp urørt.
+- **Calc:** `rebaseExpectedFrom`, `rebaseForwardMonthsFrom`, `propagateBudgetSlotForward`, `propagatePlannedIncomeForward`. `healAllMonthsExpected({ rebaseBudgets: true })` overskriver plan. One-shot `settings.rebasePlanFromKey`.
+- **App:** Plan-endring med «kopier forventet» propagerer beløp til senere måneder (ikke bare missing keys).
+- **Fremover:** Okt–Jan (m.m.) speiler Sep-plan for budsjett/planInn uten å kopiere expenses.
+
 ## 2026-09-18 — Heal: fremtidige måneder arver Sep-plan (ikke kjøp)
 
 ### Problem

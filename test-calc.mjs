@@ -3562,14 +3562,14 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
   );
   // Fast must be in the monthly delta (not the old +63542 fantasy without Fast)
   assertEq(proj.months[2].planUtFixed, 31323, "39 Dec includes Fast");
-  assertEq(proj.months[2].delta, 30119, "39 steady delta = inn−Fast−var (Sep plan+Div/Helse/Bil)");
+  assertEq(proj.months[2].delta, 25519, "39 steady delta = inn−Fast−var (Sep plan raised Mat/Helse/Hygiene/Div/Strøm)");
   assert(
     proj.potByKey["2038-11"] < 5000000,
     "39 Nov 2038 not ~9.8M fantasy (Fast subtracted)"
   );
-  assertEq(proj.potByKey["2026-10"], 101342, "39 Oct pot after bil+Fast");
-  assertEq(proj.potByKey["2026-11"], 131461, "39 Nov 2026 pot");
-  assertEq(proj.potByKey["2038-11"], 4448689, "39 Nov 2038 pot");
+  assertEq(proj.potByKey["2026-10"], 96742, "39 Oct pot after bil+Fast");
+  assertEq(proj.potByKey["2026-11"], 122261, "39 Nov 2026 pot");
+  assertEq(proj.potByKey["2038-11"], 3777089, "39 Nov 2038 pot");
   // Flat monthly delta after bil month should be explained (same delta, rising pot)
   const d1 = proj.months[2].delta;
   const d2 = proj.months[3].delta;
@@ -3685,9 +3685,9 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
       });
     });
     // Seed rolls with follow-budget (not frozen ~71223)
-    assertEq(months["2026-10"].balances.p1.bruk, 88447.2, "40 oct seed rolling");
-    assertEq(months["2026-11"].balances.p1.bruk, 105671.4, "40 nov seed rolling");
-    assertEq(months["2026-12"].balances.p1.bruk, 122895.6, "40 dec seed rolling");
+    assertEq(months["2026-10"].balances.p1.bruk, 85597.2, "40 oct seed rolling");
+    assertEq(months["2026-11"].balances.p1.bruk, 99971.4, "40 nov seed rolling");
+    assertEq(months["2026-12"].balances.p1.bruk, 114345.6, "40 dec seed rolling");
 
     const proj = Calc.projectPotFollowBudget({
       months,
@@ -3702,10 +3702,10 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
     const nov = proj.potByKey["2026-11"];
     const dec = proj.potByKey["2026-12"];
     const jan = proj.potByKey["2027-01"];
-    assertEq(oct, 101342, "40 oct projected pot after bil+Fast+flows");
-    assertEq(nov, 131461, "40 nov projected pot");
-    assertEq(dec, 161580, "40 dec projected pot");
-    assertEq(jan, 191699, "40 jan 2027 projected pot");
+    assertEq(oct, 96742, "40 oct projected pot after bil+Fast+flows");
+    assertEq(nov, 122261, "40 nov projected pot");
+    assertEq(dec, 147780, "40 dec projected pot");
+    assertEq(jan, 173299, "40 jan 2027 projected pot");
     assert(oct !== nov, "40 Oct ≠ Nov");
     assert(nov !== dec, "40 Nov ≠ Dec");
     assert(dec !== jan, "40 Dec ≠ Jan");
@@ -3854,7 +3854,7 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
     "41 p1 nov delta smaller than household dual-income"
   );
   assert(novP.delta < 25000, "41 p1 nov delta not +32k dual");
-  assert(novH.delta > 30000, "41 hh nov still ~+32k (unchanged)");
+  assert(novH.delta > 24000, "41 hh nov still ~+25.5k after Sep plan raise");
 
   const pot38H = hh.potByKey["2038-11"];
   const pot38P = mathias.potByKey["2038-11"];
@@ -3864,11 +3864,11 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
   if (live && live.months && live.months["2026-09"]) {
     assertEq(octP.planInn, 44642, "41 live p1 oct planInn 44642 (healed from Sep)");
     assertEq(novP.planInn, 44642, "41 live p1 nov planInn 44642");
-    assertEq(novP.delta, 17224.2, "41 live p1 nov delta 17224.2");
-    assertEq(octP.delta, -142775.8, "41 live p1 oct delta with bil");
-    assertEq(pot38P, 2566048.2, "41 live p1 Nov 2038 pot");
-    assertEq(novH.delta, 30119, "41 live hh nov delta 30119");
-    assertEq(pot38H, 4448689, "41 live hh Nov 2038");
+    assertEq(novP.delta, 14374.2, "41 live p1 nov delta 14374.2");
+    assertEq(octP.delta, -145625.8, "41 live p1 oct delta with bil");
+    assertEq(pot38P, 2149948.2, "41 live p1 Nov 2038 pot");
+    assertEq(novH.delta, 25519, "41 live hh nov delta 25519");
+    assertEq(pot38H, 3777089, "41 live hh Nov 2038");
   }
 
   // plannedUtForPerson == fixed+var person helpers
@@ -4005,6 +4005,100 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
     5143,
     "migrate keeps Sep actuals"
   );
+}
+
+
+// --- rebaseForwardMonthsFrom overwrites existing plan amounts ---
+{
+  const people = [
+    { id: "p1", name: "A", archived: false },
+    { id: "p2", name: "B", archived: false }
+  ];
+  const months = {
+    "2026-09": {
+      budgets: { mat: { p1: 4000 }, helse: { p1: 700 } },
+      budgetLines: {},
+      plannedIncome: {
+        p1: { lønn: 40910, ekstra: 3732, sparing: null },
+        p2: { lønn: 31500, ekstra: null, sparing: null }
+      },
+      incomes: [],
+      savings: [],
+      expenses: [{ id: "e1", owner: "p1", amount: 10, categoryId: "mat" }],
+      balances: {}
+    },
+    "2026-10": {
+      budgets: { mat: { p1: 2500 } },
+      budgetLines: {},
+      plannedIncome: {
+        p1: { lønn: 40000, ekstra: null, sparing: null },
+        p2: { lønn: 31500, ekstra: null, sparing: null }
+      },
+      incomes: [],
+      savings: [],
+      expenses: [],
+      balances: {}
+    },
+    "2026-11": {
+      budgets: { mat: { p1: 2500 } },
+      budgetLines: {},
+      plannedIncome: {
+        p1: { lønn: 40910, ekstra: null, sparing: null },
+        p2: { lønn: 31500, ekstra: null, sparing: null }
+      },
+      incomes: [],
+      savings: [],
+      expenses: [],
+      balances: {}
+    }
+  };
+  Calc.healAllMonthsExpected(months, people, {});
+  assertEq(months["2026-10"].budgets.mat.p1, 2500, "heal additive keeps old mat");
+  const r = Calc.rebaseForwardMonthsFrom(months, "2026-09", people, {});
+  assert(r.rebasedKeys.includes("2026-10"), "oct rebased");
+  assertEq(months["2026-10"].budgets.mat.p1, 4000, "oct mat 4000 after rebase");
+  assertEq(months["2026-10"].budgets.helse.p1, 700, "oct helse from Sep rebase");
+  assertEq(months["2026-10"].plannedIncome.p1.lønn, 40910, "oct lønn rebased");
+  assertEq(months["2026-09"].expenses.length, 1, "sep expenses untouched by rebase");
+  assertEq(months["2026-10"].expenses.length, 0, "oct expenses untouched by rebase");
+  months["2026-09"].budgets.mat.p1 = 4200;
+  const u = Calc.propagateBudgetSlotForward(months, "2026-09", "mat", "p1", 4200);
+  assert(u.includes("2026-10"), "propagate updates oct");
+  assertEq(months["2026-11"].budgets.mat.p1, 4200, "propagate updates nov");
+}
+
+// --- migrateState one-shot rebasePlanFromKey ---
+{
+  const raw = {
+    version: 2,
+    people: [{ id: "p1", name: "A", archived: false }],
+    view: { year: 2026, month: 8 },
+    categories: [
+      { id: "mat", name: "Mat", type: "variabel", owner: "p1", archived: false, order: 0 }
+    ],
+    months: {
+      "2026-09": {
+        budgets: { mat: { p1: 4000 } },
+        plannedIncome: { p1: { lønn: 100, ekstra: null, sparing: null } },
+        expenses: [],
+        incomes: [],
+        savings: [],
+        balances: {}
+      },
+      "2026-10": {
+        budgets: { mat: { p1: 2500 } },
+        plannedIncome: { p1: { lønn: 100, ekstra: null, sparing: null } },
+        expenses: [],
+        incomes: [],
+        savings: [],
+        balances: {}
+      }
+    },
+    settings: { rebasePlanFromKey: "2026-09", copyExpectedToNewMonths: true }
+  };
+  const st = Calc.migrateState(raw);
+  assertEq(st.months["2026-10"].budgets.mat.p1, 4000, "migrate rebase mat");
+  assert(!st.settings.rebasePlanFromKey, "one-shot rebasePlanFromKey cleared");
 }
 
 console.log("\n=== Results:", passed, "passed,", failed, "failed ===\n");
