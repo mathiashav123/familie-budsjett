@@ -1524,6 +1524,18 @@
     // or stale plannedIncome pick up from nearest previous expected. No expenses copied.
     healAllMonthsExpected(months, people, {});
 
+    // One-shot baseline refresh: overwrite forward months from template key
+    // (e.g. after raising Sep Mat 2500→4000 so Oct+ become 4000 too).
+    var rebaseFrom =
+      parsed.settings && parsed.settings.rebasePlanFromKey
+        ? String(parsed.settings.rebasePlanFromKey)
+        : "";
+    if (rebaseFrom && months[rebaseFrom]) {
+      rebaseForwardMonthsFrom(months, rebaseFrom, people, {
+        seedEmpty: true
+      });
+    }
+
     return {
       version: 2,
       people: people,
@@ -3204,6 +3216,11 @@
     }
     var src = months[srcKey];
     var mi = monthIndexFromKey(key);
+    // Explicit baseline refresh: overwrite budgets + plannedIncome from source
+    if (opts.rebaseBudgets) {
+      var reb = rebaseExpectedFrom(src, m, people, mi);
+      return { healed: reb, sourceKey: reb ? srcKey : null };
+    }
     // Snapshot before fill — after additive fill, subset may become complete
     var wasStale = isStaleIncompleteExpected(m, src);
     var changed = fillMissingExpectedFrom(src, m, people, mi);
@@ -3216,6 +3233,8 @@
   /**
    * Heal all persisted months in chronological order (load/migrate).
    * Empty-expense future months pick up Sep plan categories additively.
+   * opts.rebaseBudgets — overwrite existing plan budgets/PI from previous
+   *   (use after user refreshes baseline, e.g. raised Sep Mat 2500→4000).
    */
   function healAllMonthsExpected(months, people, opts) {
     opts = opts || {};
@@ -3227,6 +3246,119 @@
       if (r && r.healed) healedKeys.push(keys[i]);
     }
     return { healedKeys: healedKeys };
+  }
+
+  /**
+   * Overwrite budgets + budgetLines + plannedIncome from source → target.
+   * Like copyExpectedFrom, but returns true if anything changed.
+   * Never touches expenses / incomes / savings / balances.
+   */
+  function rebaseExpectedFrom(sourceMonth, targetMonth, people, monthIndex) {
+    if (!sourceMonth || !targetMonth) return false;
+    var before = JSON.stringify({
+      budgets: targetMonth.budgets || {},
+      budgetLines: targetMonth.budgetLines || {},
+      plannedIncome: targetMonth.plannedIncome || {}
+    });
+    copyExpectedFrom(sourceMonth, targetMonth, people, monthIndex);
+    var after = JSON.stringify({
+      budgets: targetMonth.budgets || {},
+      budgetLines: targetMonth.budgetLines || {},
+      plannedIncome: targetMonth.plannedIncome || {}
+    });
+    return before !== after;
+  }
+
+  /**
+   * Rebase all months AFTER templateKey from that month's expected plan
+   * (budgets + budgetLines + plannedIncome). Expenses never copied.
+   * Skips months with logged expenses/incomes unless opts.includeActiveMonths.
+   * Returns { rebasedKeys, templateKey }.
+   */
+  function rebaseForwardMonthsFrom(months, templateKey, people, opts) {
+    opts = opts || {};
+    var includeActive = !!opts.includeActiveMonths;
+    if (!months || !templateKey || !months[templateKey]) {
+      return { rebasedKeys: [], templateKey: templateKey || null };
+    }
+    var src = months[templateKey];
+    if (!monthHasExpected(src)) {
+      return { rebasedKeys: [], templateKey: templateKey };
+    }
+    var keys = Object.keys(months).sort();
+    var rebasedKeys = [];
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i];
+      if (key <= templateKey) continue;
+      var m = months[key];
+      if (!m) continue;
+      if (
+        !includeActive &&
+        ((Array.isArray(m.expenses) && m.expenses.length > 0) ||
+          (Array.isArray(m.incomes) && m.incomes.length > 0))
+      ) {
+        continue;
+      }
+      if (!monthHasExpected(m) && !opts.seedEmpty) continue;
+      var mi = monthIndexFromKey(key);
+      if (rebaseExpectedFrom(src, m, people, mi)) {
+        rebasedKeys.push(key);
+      } else if (!monthHasExpected(m) && opts.seedEmpty) {
+        copyExpectedFrom(src, m, people, mi);
+        rebasedKeys.push(key);
+      }
+    }
+    return { rebasedKeys: rebasedKeys, templateKey: templateKey };
+  }
+
+  /**
+   * Propagate one budget slot (catId+owner) to all later months.
+   * Overwrites existing amounts so forward months mirror the new baseline.
+   * Never touches expenses. Returns list of month keys updated.
+   */
+  function propagateBudgetSlotForward(months, fromKey, catId, ownerId, amount) {
+    if (!months || !fromKey || !catId || !ownerId) return [];
+    var keys = Object.keys(months).sort();
+    var updated = [];
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i];
+      if (key <= fromKey) continue;
+      var m = months[key];
+      if (!m) continue;
+      if (!monthHasExpected(m)) continue;
+      var prev = budgetForOwnerRaw(m, catId, ownerId);
+      setBudgetForOwnerRaw(m, catId, ownerId, amount);
+      var next = budgetForOwnerRaw(m, catId, ownerId);
+      if (Number(prev) !== Number(next) || !isBudgetValueSet(prev)) {
+        updated.push(key);
+      }
+    }
+    return updated;
+  }
+
+  /**
+   * Propagate one plannedIncome field to later months (overwrite).
+   */
+  function propagatePlannedIncomeForward(months, fromKey, personId, field, value, people) {
+    if (!months || !fromKey || !personId || !field) return [];
+    var keys = Object.keys(months).sort();
+    var updated = [];
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i];
+      if (key <= fromKey) continue;
+      var m = months[key];
+      if (!m) continue;
+      if (!monthHasExpected(m)) continue;
+      ensureMonthShape(m, people);
+      if (!m.plannedIncome[personId]) {
+        m.plannedIncome[personId] = emptyPlannedIncomeBlock();
+      }
+      if (m.plannedIncome[personId][field] !== value) {
+        m.plannedIncome[personId][field] = value;
+        updated.push(key);
+      }
+    }
+    return updated;
   }
 
   /**
@@ -4734,6 +4866,10 @@
     findNearestPreviousWithExpected: findNearestPreviousWithExpected,
     copyExpectedFrom: copyExpectedFrom,
     fillMissingExpectedFrom: fillMissingExpectedFrom,
+    rebaseExpectedFrom: rebaseExpectedFrom,
+    rebaseForwardMonthsFrom: rebaseForwardMonthsFrom,
+    propagateBudgetSlotForward: propagateBudgetSlotForward,
+    propagatePlannedIncomeForward: propagatePlannedIncomeForward,
     isStaleIncompleteExpected: isStaleIncompleteExpected,
     healMonthExpectedFromPrevious: healMonthExpectedFromPrevious,
     healAllMonthsExpected: healAllMonthsExpected,

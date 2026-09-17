@@ -7262,6 +7262,10 @@
       if (!m.plannedIncome[person]) m.plannedIncome[person] = Calc.emptyPlannedIncomeBlock ? Calc.emptyPlannedIncomeBlock() : { lønn: null, ekstra: null, sparing: null };
       const v = parseAmount(input.value);
       m.plannedIncome[person][type] = v;
+      if (state.settings.copyExpectedToNewMonths !== false && Calc.propagatePlannedIncomeForward) {
+        const fromKey = monthKey(state.view.year, state.view.month);
+        Calc.propagatePlannedIncomeForward(state.months, fromKey, person, type, v, state.people);
+      }
       save();
       render();
     }
@@ -7302,6 +7306,11 @@
       const m = getMonth();
       const v = parseAmount(input.value);
       setBudgetForOwner(m, id, owner, v);
+      // Keep forward months' plan in sync when carry is on (rebase slot).
+      if (state.settings.copyExpectedToNewMonths !== false && Calc.propagateBudgetSlotForward) {
+        const fromKey = monthKey(state.view.year, state.view.month);
+        Calc.propagateBudgetSlotForward(state.months, fromKey, id, owner, v);
+      }
       save();
       render();
     });
