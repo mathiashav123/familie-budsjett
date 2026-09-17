@@ -1502,7 +1502,7 @@
       if (hasSuggested) {
         newMonthHint.hidden = false;
         newMonthHint.textContent =
-          "Foreslått etter planlagte utlegg — bekreft eller endre";
+          "Foreslått etter planlagte utlegg (trukket én gang) — bekreft eller endre";
       } else if (emptyBal) {
         newMonthHint.hidden = false;
         newMonthHint.textContent =
@@ -4672,6 +4672,12 @@
       return s + (p.amount || 0);
     }, 0);
     const sumEl = $("#plannedSpendsSum");
+    const sameMonthOpen = thisMonth.filter(function (p) {
+      return p && !p.done && p.amount > 0;
+    });
+    const sameReflected = sameMonthOpen.filter(function (p) {
+      return !!p.reflectedInBalance;
+    });
     if (sumEl) {
       if (reserve > 0) {
         sumEl.textContent =
@@ -4680,6 +4686,9 @@
           (laterSum > 0
             ? " (inkl. " + formatNOK(laterSum) + " i senere måneder)"
             : "");
+      } else if (sameReflected.length) {
+        sumEl.textContent =
+          "Planlagte i denne måneden er allerede trukket i På konto nå";
       } else {
         sumEl.textContent = "Ingen reserve";
       }
@@ -4687,7 +4696,11 @@
     function rowHtml(p, showMonth) {
       const cat = p.categoryId ? catById(p.categoryId) : null;
       const who = p.owner === "felles" ? "Felles" : nameOf(p.owner);
-      const done = p.done ? " · markert kjøpt" : "";
+      const done = p.done
+        ? " · markert kjøpt"
+        : p.reflectedInBalance
+          ? " · i saldo"
+          : "";
       const mkLabel = showMonth && p.monthKey ? " · " + p.monthKey : "";
       return (
         '<button type="button" class="planned-spend-row" data-edit-planned="' +
@@ -4707,7 +4720,7 @@
     }
     if (!thisMonth.length && !later.length) {
       host.innerHTML =
-        '<p class="hint compact">Ingen planlagte utlegg fra denne måneden og ut. Trykk «Planlegg utlegg» — beløpet reserveres også i måneder før kjøpet.</p>';
+        '<p class="hint compact">Ingen planlagte utlegg fra denne måneden og ut. Trykk «Planlegg utlegg» — beløpet holdes tilbake i måneder før, og trekkes én gang i mål-måneden (via foreslått saldo eller reserve).</p>';
       return;
     }
     let html = "";
@@ -5775,6 +5788,14 @@
       return m.balances[personId];
     }
 
+    function markMonthPlansReflectedIfSeeded(wasSeeded) {
+      if (!wasSeeded) return;
+      if (typeof Calc.markPlannedSpendsReflectedInBalance !== "function") return;
+      const mk = monthKey(state.view.year, state.view.month);
+      if (!Array.isArray(state.plannedSpends)) state.plannedSpends = [];
+      Calc.markPlannedSpendsReflectedInBalance(state.plannedSpends, mk);
+    }
+
     function onBalanceField(el) {
       if (!el || !el.getAttribute) return;
       const key = el.getAttribute("data-bal");
@@ -5787,11 +5808,19 @@
       const m = getMonth();
       ensurePersonBalance(m, personId);
       m.balances[personId][field] = parseAmount(el.value);
+      let wasSeeded = false;
       if (typeof Calc.clearSuggestedBalanceFlag === "function") {
-        Calc.clearSuggestedBalanceFlag(m, personId);
+        wasSeeded = !!Calc.clearSuggestedBalanceFlag(m, personId);
       } else if (m.balances[personId]) {
+        wasSeeded = !!(
+          m.balances[personId].suggested ||
+          m.balances[personId].suggestedAfterPlans ||
+          m.balancesSuggested
+        );
         m.balances[personId].suggested = false;
+        m.balances[personId].suggestedAfterPlans = false;
       }
+      markMonthPlansReflectedIfSeeded(wasSeeded);
       m.balancesUpdatedAt = new Date().toISOString();
       save();
       render();
@@ -5810,11 +5839,19 @@
       );
       if (brukEl) m.balances[personId].bruk = parseAmount(brukEl.value);
       if (spareEl) m.balances[personId].spare = parseAmount(spareEl.value);
+      let wasSeeded = false;
       if (typeof Calc.clearSuggestedBalanceFlag === "function") {
-        Calc.clearSuggestedBalanceFlag(m, personId);
+        wasSeeded = !!Calc.clearSuggestedBalanceFlag(m, personId);
       } else if (m.balances[personId]) {
+        wasSeeded = !!(
+          m.balances[personId].suggested ||
+          m.balances[personId].suggestedAfterPlans ||
+          m.balancesSuggested
+        );
         m.balances[personId].suggested = false;
+        m.balances[personId].suggestedAfterPlans = false;
       }
+      markMonthPlansReflectedIfSeeded(wasSeeded);
       m.balancesUpdatedAt = new Date().toISOString();
       save();
       showToast("Saldo lagret");
