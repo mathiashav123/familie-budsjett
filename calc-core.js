@@ -2625,16 +2625,22 @@
   }
 
   /**
-   * Forventet bruk nå = forrige måneds bruk-saldo + til overs (faktisk)
-   * til overs = inn − sparing − ut (inkl. fellesandel).
+   * Forventet bruk nå = forrige måneds bruk + effektiv cashflow.
+   * Effektiv cashflow = tilOvers (logget inn − sparing − ut) − autoSpendExtra
+   * (Fast auto-tell som har forlatt konto men ikke er logget).
+   * Formel: prev.bruk + tilOvers − autoSpendExtra
    */
-  function expectedBrukFromPrev(prevBruk, tilOvers) {
+  function expectedBrukFromPrev(prevBruk, tilOvers, autoSpendExtra) {
     if (prevBruk == null) return null;
     var t =
       tilOvers == null || !Number.isFinite(Number(tilOvers))
         ? 0
         : Number(tilOvers);
-    return prevBruk + t;
+    var auto =
+      autoSpendExtra == null || !Number.isFinite(Number(autoSpendExtra))
+        ? 0
+        : Number(autoSpendExtra);
+    return prevBruk + t - auto;
   }
 
   /** Etter lønn (plan) = bruk + planInn − planUt. */
@@ -2662,7 +2668,8 @@
   /**
    * «På konto nå» reconciliation per person + samlet.
    * prevBalances: previous month balances map { [pid]: { bruk, spare } } or null.
-   * Forventet = prev.bruk + this month tilOvers (cashflow). Independent of oppgitt.
+   * Forventet = prev.bruk + tilOvers − autoSpendExtra (effektiv cashflow inkl. auto Fast).
+   * Independent of oppgitt.
    */
   function reconcilePaKonto(m, people, categories, monthIndex, prevBalances) {
     var active = activePeople(people);
@@ -2689,10 +2696,17 @@
       var planInn = cp.planInn || 0;
       var prevBal = prev && prev[p.id] ? prev[p.id] : null;
       var prevBruk = prevBal ? parseBalanceAmount(prevBal.bruk) : null;
-      var forventet = expectedBrukFromPrev(prevBruk, cp.tilOvers);
+      var autoExtra = autoSpendExtraForPerson(
+        m,
+        p.id,
+        people,
+        categories,
+        monthIndex
+      );
+      var forventet = expectedBrukFromPrev(prevBruk, cp.tilOvers, autoExtra);
       var etterLonn = etterLonnFromBruk(oppgitt, planInn, planUt);
       var differanse = balanceVariance(oppgitt, forventet);
-      var source = forventet != null ? "prev+cashflow" : null;
+      var source = forventet != null ? "prev+cashflow+autoFast" : null;
 
       byPerson[p.id] = {
         personId: p.id,
@@ -2706,6 +2720,8 @@
         planInn: planInn,
         planUt: planUt,
         tilOvers: cp.tilOvers,
+        autoSpendExtra: autoExtra,
+        effectiveTilOvers: (cp.tilOvers || 0) - (autoExtra || 0),
         prevBruk: prevBruk,
         source: source
       };

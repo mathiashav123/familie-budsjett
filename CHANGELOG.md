@@ -1,5 +1,14 @@
 # Endringslogg – Familiebudsjett
 
+## 17. september 2026 (UTC+2) – På konto: forventet inkl. auto Fast
+
+- **Forventet** cashflow: `prev.bruk + tilOvers − autoSpendExtra` (logget inn/ut/sparing **pluss** Fast auto-trekk som har forlatt konto).
+- Etter faste regninger matcher forventet bank når variable kjøp er logget; gap peker på glemt loggføring (ikke «falsk» Fast-diff).
+- Differanse-tekst (nb): bank lavere → «Ca. X kr lavere enn loggen tilsier — sjekk om du har glemt kjøp» (+ knapp **Kjøpt noe**); høyere → «Ca. X kr høyere — glemt inntekt, eller logget for mye?»; nær null → «Ser riktig ut».
+- Bruk-saldo kan fortsatt redigeres når som helst. Lagring additiv (`familie-budsjett-v1`).
+- Tester: reconcile med auto Fast + glemt variabelt kjøp.
+
+
 ## 17. september 2026 (UTC+2) – På konto nå (avstemming)
 
 - Oversikt: nytt fremhevet kort **«På konto nå»** rett under Trygg å bruke (per person + samlet).
