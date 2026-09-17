@@ -3591,6 +3591,29 @@ button.cat-group-header {
 }
 
 
+
+.safe-spend-secondary {
+  margin: .15rem 0 .25rem;
+  font-size: .88rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.safe-spend-breakdown-row.is-secondary {
+  margin-top: .2rem;
+  padding-top: .25rem;
+  border-top: 1px dashed var(--border, #d0d7de);
+  color: var(--muted);
+  font-size: .78rem;
+}
+.safe-spend-breakdown-row.is-secondary strong {
+  font-weight: 700;
+  color: var(--text);
+}
+.safe-spend-breakdown-row.is-secondary em.opt {
+  font-style: normal;
+  opacity: .85;
+}
+
 /* ——— Trygg å bruke: saldo breakdown ——— */
 .safe-spend-breakdown {
   margin: .35rem 0 .15rem;

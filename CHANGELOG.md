@@ -1,5 +1,13 @@
 # Endringslogg – Familiebudsjett
 
+## 17. september 2026 (UTC+2) – Dual Trygg å bruke (nå + hvis hele budsjettet)
+
+- **Primært tall «Trygg å bruke nå»** (saldo-modus, samlet + per person): `bruk − Fast autoSpendExtra − futureReserve − buffer`. Trekker **ikke** fra gjenstående variable kategori-budsjetter.
+- **Sekundær linje «Hvis hele budsjettet brukes»**: konservativ formel `bruk − remainingBudgetAll − autoSpendExtra − futureReserve − buffer` (Fast dobbelttelles ikke: remAll bruker effectiveActual).
+- Breakdown UI: På konto − Fast (auto) − planlagte − buffer = nå; derunder hvis-hele med variabelt igjen.
+- Norske hint: Fast holdes av automatisk; variabelt telles via **Kjøpt noe**.
+- Additiv (`familie-budsjett-v1`). Plan-modus uendret. Tester for dual-identitet + per person.
+
 ## 17. september 2026 (UTC+2) – På konto: ingen auto-kopiering til ny måned
 
 - **Bugfix:** `copyBalancesFrom` / `ensureMonthExpected` kopierer ikke lenger bruk/spare (eller when/asOf) inn i nye måneder. Point-in-time «På konto nå» må bekreftes på nytt hver måned — ellers følger f.eks. oktober «før lønn» 50k feilaktig inn i november.
