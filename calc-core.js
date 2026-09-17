@@ -803,6 +803,193 @@
     return { seeded: false, reason: "no-prev-bruk" };
   }
 
+
+  /**
+   * Calc-time display bruk when month M has no persisted bruk/seed.
+   * Same formula as ensureSuggestedBalances:
+   *   displayBruk = prevEnd − openPlanned(after prev … through M]
+   * Does NOT mutate months — pure fallback so Trygg never shows 0/blank
+   * just because localStorage/cloud seed persist failed.
+   * Returns { byPerson, total, prevKey, fromFallback:true } or null.
+   */
+  function resolveDisplayBrukFallback(months, key, people, plannedSpends, categories) {
+    if (!months || !key) return null;
+    var m = months[key];
+    if (!m) return null;
+    // Confirmed or already-seeded → no calc-time invent
+    if (m.balancesUpdatedAt) return null;
+    if (monthHasSuggestedBalances(m)) return null;
+    var active = activePeople(people);
+    var i;
+    for (i = 0; i < active.length; i++) {
+      var bal0 = m.balances && m.balances[active[i].id];
+      if (
+        bal0 &&
+        bal0.bruk != null &&
+        bal0.bruk !== "" &&
+        Number.isFinite(Number(bal0.bruk)) &&
+        !bal0.suggested
+      ) {
+        return null; // real non-suggested bruk present
+      }
+    }
+    var prevKey = findNearestPreviousWithCarrySource(months, key);
+    var prev = prevKey && months[prevKey];
+    if (!prev) return null;
+    ensureBalancesShape(prev, people);
+    var cats = categories || [];
+    var prevMonthIndex = monthIndexFromKey(prevKey);
+    var byPerson = {};
+    var total = 0;
+    var any = false;
+    active.forEach(function (p) {
+      var base = null;
+      if (prev.balancesUpdatedAt) {
+        base = parseBalanceAmount((prev.balances[p.id] || {}).bruk);
+      } else if (
+        prev.carryPot &&
+        prev.carryPot[p.id] != null &&
+        Number.isFinite(Number(prev.carryPot[p.id]))
+      ) {
+        base = Number(prev.carryPot[p.id]);
+      } else {
+        base = computeCarryEndBrukForPerson(prev, p.id, people, {
+          categories: cats,
+          monthIndex: prevMonthIndex,
+          monthKey: prevKey,
+          plannedSpends: plannedSpends || []
+        });
+      }
+      if (base == null) return;
+      var deduct = openPlannedSpendDeductionForPersonRange(
+        plannedSpends || [],
+        prevKey,
+        key,
+        p.id,
+        people
+      );
+      var suggestedAmt = computeSuggestedBrukFromPrev(base, deduct);
+      if (suggestedAmt == null) return;
+      byPerson[p.id] = suggestedAmt;
+      total += suggestedAmt;
+      any = true;
+    });
+    if (!any) return null;
+    return {
+      byPerson: byPerson,
+      total: Math.round(total * 100) / 100,
+      prevKey: prevKey,
+      fromFallback: true
+    };
+  }
+
+  /**
+   * Variable (non-fast) planned budget total for a month.
+   */
+  function plannedVariableBudgetTotal(m, categories, monthIndex) {
+    var sum = 0;
+    (categories || []).forEach(function (cat) {
+      if (!cat || cat.archived) return;
+      if (cat.type === "fast") return;
+      sum += budgetFor(m, cat.id, monthIndex) || 0;
+    });
+    return sum;
+  }
+
+  /**
+   * Planned income total (lønn+ekstra) for active people in a month.
+   */
+  function plannedIncomeTotal(m, people) {
+    var active = activePeople(people);
+    var sum = 0;
+    active.forEach(function (p) {
+      sum +=
+        plannedIncomeFor(m, p.id, "lønn") +
+        plannedIncomeFor(m, p.id, "ekstra");
+    });
+    return sum;
+  }
+
+  /**
+   * Open plannedSpends total for a single monthKey (all owners, full amounts).
+   */
+  function openPlannedSpendTotalForMonth(plannedSpends, monthKey, opts) {
+    opts = opts || {};
+    var mk = String(monthKey || "");
+    var sum = 0;
+    (plannedSpends || []).forEach(function (p) {
+      if (!p || p.done || !(p.amount > 0)) return;
+      if (String(p.monthKey || "") !== mk) return;
+      // Projection from raw pot must still count items marked reflectedInBalance
+      // (seed bake-in); only skip when opts.skipReflected is explicitly true.
+      if (opts.skipReflected && p.reflectedInBalance) return;
+      sum += Number(p.amount) || 0;
+    });
+    return sum;
+  }
+
+  /**
+   * Project pot forward if user follows budget.
+   * Formula (documented in UI):
+   *   pot_{m+1} = pot_m + planInn − planUtVariable − plannedSpendsThatMonth
+   * Fast is NOT re-subtracted (pot is post-bank / trygg-envelope).
+   * startPot should be current effective bruk/pot (seed or bank), not Trygg-after-future-reserve.
+   * Returns { startPot, months:[{monthKey, pot, planInn, planUtVariable, plannedSpends}], potAtHorizon }.
+   */
+  function projectPotFollowBudget(opts) {
+    opts = opts || {};
+    var months = opts.months || {};
+    var fromKey = opts.fromKey;
+    var people = opts.people || [];
+    var categories = opts.categories || [];
+    var plannedSpends = opts.plannedSpends || [];
+    var startPot = Number(opts.startPot);
+    var horizon = opts.horizon == null ? 12 : Math.max(1, Math.min(24, Number(opts.horizon) || 12));
+    if (!fromKey || !Number.isFinite(startPot)) {
+      return { startPot: startPot, months: [], potAtHorizon: null };
+    }
+    var pot = startPot;
+    var rows = [];
+    var key = fromKey;
+    for (var i = 0; i < horizon; i++) {
+      key = shiftMonthKey(key, 1);
+      if (!key) break;
+      var m = months[key];
+      if (!m) {
+        // Empty shell for projection — budgets may be missing
+        m = {
+          balances: {},
+          budgets: {},
+          budgetLines: {},
+          plannedIncome: {},
+          incomes: [],
+          savings: [],
+          expenses: []
+        };
+      }
+      var mi = monthIndexFromKey(key);
+      var planInn = plannedIncomeTotal(m, people);
+      var planUtVar = plannedVariableBudgetTotal(m, categories, mi);
+      var planned = openPlannedSpendTotalForMonth(plannedSpends, key);
+      pot = pot + planInn - planUtVar - planned;
+      pot = Math.round(pot * 100) / 100;
+      rows.push({
+        monthKey: key,
+        pot: pot,
+        planInn: planInn,
+        planUtVariable: planUtVar,
+        plannedSpends: planned
+      });
+    }
+    return {
+      startPot: startPot,
+      months: rows,
+      potAtHorizon: rows.length ? rows[rows.length - 1].pot : startPot,
+      formula:
+        "pot = pot + planInn − planUtVariable − planlagteUtlegg (Fast ikke trukket på nytt)"
+    };
+  }
+
   /** Clear suggested flags after user confirms/edits saldo.
    * Returns true if that person (or month) had a plan-seeded balance — caller
    * should mark same-month plannedSpends reflectedInBalance so Trygg does not
@@ -1913,6 +2100,9 @@
         sum: brukN + spareN
       };
     });
+    // Calc-time fallback placeholders (applied after opts is bound)
+    var displayBrukFallback = null;
+    var brukFromDisplayFallback = false;
     // Legacy fallback: single saldoBefore if balances never set
     var saldo = hasBruk
       ? totalBruk
@@ -1989,11 +2179,57 @@
       if (Number.isFinite(bufN) && bufN > 0) spendBuffer = bufN;
     }
 
+    // Apply calc-time display bruk fallback once opts.months is available
+    if (
+      !hasBruk &&
+      opts &&
+      opts.months &&
+      (monthKey || opts.monthKey)
+    ) {
+      var fbKey = monthKey || opts.monthKey;
+      displayBrukFallback = resolveDisplayBrukFallback(
+        opts.months,
+        fbKey,
+        people,
+        plannedSpends || opts.plannedSpends || [],
+        categories
+      );
+      if (displayBrukFallback && displayBrukFallback.byPerson) {
+        brukFromDisplayFallback = true;
+        hasBruk = true;
+        totalBruk = 0;
+        active.forEach(function (p) {
+          var fbAmt = displayBrukFallback.byPerson[p.id];
+          if (fbAmt == null || !Number.isFinite(Number(fbAmt))) return;
+          var spareKeep = balanceByPerson[p.id]
+            ? balanceByPerson[p.id].spare
+            : null;
+          var spareN2 =
+            spareKeep == null || Number.isNaN(Number(spareKeep))
+              ? 0
+              : Number(spareKeep);
+          balanceByPerson[p.id] = {
+            bruk: Number(fbAmt),
+            spare: spareKeep,
+            sum: Number(fbAmt) + spareN2,
+            fromDisplayFallback: true
+          };
+          totalBruk += Number(fbAmt);
+        });
+        // Recompute aggregates that were derived before fallback
+        saldo = totalBruk;
+        totalAlt = totalBruk + totalSpare;
+        forventet =
+          typeof samletTilOvers === "number" ? saldo + samletTilOvers : saldo;
+      }
+    }
+
     // Future planned spends reserve (Feature 2)
     var mk = monthKey || opts.monthKey || null;
     var plannedList = plannedSpends || opts.plannedSpends || [];
     // Same-month plans already in seeded bruk (flags / reflected / seed-match) → skip
-    var excludeSameMonthPlanned = monthHasPlanSeededBalances(m);
+    var excludeSameMonthPlanned =
+      monthHasPlanSeededBalances(m) || brukFromDisplayFallback;
     if (!excludeSameMonthPlanned && mk) {
       var prevForSeed = opts.prevMonth || null;
       if (!prevForSeed && opts.months) {
@@ -2208,7 +2444,9 @@
       futureReserve: futureReserve,
       spendBuffer: spendBuffer,
       hasBrukBalances: hasBruk,
-      hasSuggestedBalances: excludeSameMonthPlanned,
+      hasSuggestedBalances: excludeSameMonthPlanned || brukFromDisplayFallback,
+      brukFromDisplayFallback: brukFromDisplayFallback,
+      displayBrukFallback: displayBrukFallback,
       useSaldoInSafeToSpend: useSaldo,
       needsSaldoForSafeToSpend: needsSaldoForSafeToSpend,
       safeToSpendMode: safeToSpendMode,
@@ -3767,6 +4005,9 @@
     copyBalancesFrom: copyBalancesFrom,
     clearAccidentalBalanceCarry: clearAccidentalBalanceCarry,
     ensureSuggestedBalances: ensureSuggestedBalances,
+    resolveDisplayBrukFallback: resolveDisplayBrukFallback,
+    projectPotFollowBudget: projectPotFollowBudget,
+    plannedVariableBudgetTotal: plannedVariableBudgetTotal,
     computeCarryEndBrukForPerson: computeCarryEndBrukForPerson,
     computeMonthCarryPot: computeMonthCarryPot,
     refreshMonthCarryPot: refreshMonthCarryPot,

@@ -188,6 +188,24 @@
         <div class="health" id="healthSummary" hidden></div>
       </section>
 
+      <section class="card compact-card forward-panel-card" id="forwardPanelCard" aria-labelledby="forwardPanelTitle">
+        <div class="card-head">
+          <h2 id="forwardPanelTitle">Fremover</h2>
+        </div>
+        <div class="forward-har-na" id="forwardHarNa">
+          <span class="forward-label">Har nå</span>
+          <strong class="forward-value" id="forwardHarNaValue">—</strong>
+        </div>
+        <p class="hint compact" id="forwardHarNaHint">Trygg å bruke denne måneden (eller bank hvis du har rettet På konto).</p>
+        <h3 class="forward-sub">Hvis du følger budsjettet</h3>
+        <div class="forward-months" id="forwardMonths" aria-label="Projeksjon neste måneder"></div>
+        <div class="forward-year-summary" id="forwardYearSummary">
+          <span class="forward-label">Om 12 måneder</span>
+          <strong class="forward-value" id="forwardYearValue">—</strong>
+        </div>
+        <p class="hint compact" id="forwardFormulaHint">Formel: start fra effektiv pot/bruk; hver måned <code>pot + planInn − variabelt budsjett − planlagte utlegg</code>. Fast trekkes ikke på nytt (allerede i bank/pot).</p>
+      </section>
+
       
       <section class="card compact-card pa-konto-card" id="paKontoCard" aria-labelledby="kontoerTitle">
         <div class="card-head">

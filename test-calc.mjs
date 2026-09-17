@@ -3224,6 +3224,144 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
 }
 
 
+
+// --- §37 Calc-time display bruk fallback (persist-fail safe) + 12m projection ---
+{
+  console.log("\n§37 display-fallback + projectPotFollowBudget");
+  const people = [
+    { id: "p1", name: "Mathias", archived: false },
+    { id: "p2", name: "Andrea", archived: false }
+  ];
+  const cats = [
+    { id: "cFast", name: "Lån", type: "fast", owner: "felles", archived: false },
+    { id: "cMat", name: "Mat", type: "variabel", owner: "p1", archived: false }
+  ];
+  const bil = [
+    {
+      id: "bil1",
+      amount: 160000,
+      owner: "p1",
+      monthKey: "2026-10",
+      note: "Ny bil",
+      done: false
+    }
+  ];
+  function emptyM() {
+    return {
+      balances: {
+        p1: { bruk: null, spare: null, when: "after_salary", asOf: null },
+        p2: { bruk: null, spare: null, when: "after_salary", asOf: null }
+      },
+      budgets: { cFast: { felles: 30000 }, cMat: { p1: 10000 } },
+      budgetLines: {},
+      plannedIncome: {
+        p1: { lønn: 40000, ekstra: 0 },
+        p2: { lønn: 30000, ekstra: 0 }
+      },
+      incomes: [],
+      savings: [],
+      expenses: []
+    };
+  }
+  const sep = emptyM();
+  sep.balances.p1.bruk = 231223;
+  sep.balancesUpdatedAt = "2026-09-17T17:32:19.592Z";
+
+  // Unseeded Oct/Nov (persist failed) — calc-time fallback must still show 71223
+  const months = {
+    "2026-09": JSON.parse(JSON.stringify(sep)),
+    "2026-10": emptyM(),
+    "2026-11": emptyM()
+  };
+  // Copy budgets into oct/nov
+  months["2026-10"].budgets = JSON.parse(JSON.stringify(sep.budgets));
+  months["2026-10"].plannedIncome = JSON.parse(JSON.stringify(sep.plannedIncome));
+  months["2026-11"].budgets = JSON.parse(JSON.stringify(sep.budgets));
+  months["2026-11"].plannedIncome = JSON.parse(JSON.stringify(sep.plannedIncome));
+
+  assert(
+    months["2026-10"].balances.p1.bruk == null,
+    "37 oct bruk still null (unpersisted)"
+  );
+
+  const fbOct = Calc.resolveDisplayBrukFallback(
+    months,
+    "2026-10",
+    people,
+    bil,
+    cats
+  );
+  assert(fbOct && fbOct.fromFallback, "37 oct fallback object");
+  assertEq(fbOct.byPerson.p1, 71223, "37 oct fallback 71223");
+
+  const cOct = Calc.calcFamily(
+    months["2026-10"],
+    people,
+    cats,
+    { useSaldoInSafeToSpend: true, spendBuffer: 0, months: months },
+    9,
+    bil,
+    "2026-10"
+  );
+  assertEq(cOct.totalBruk, 71223, "37 oct totalBruk via fallback");
+  assertEq(cOct.safeToSpend, 71223, "37 oct Trygg 71223 not 0");
+  assert(cOct.brukFromDisplayFallback === true, "37 oct flag fallback");
+  assertEq(cOct.futureReserve, 0, "37 oct bil not double-counted");
+  assert(cOct.safeToSpendMode === "saldo", "37 oct saldo mode");
+
+  const cNov = Calc.calcFamily(
+    months["2026-11"],
+    people,
+    cats,
+    { useSaldoInSafeToSpend: true, spendBuffer: 0, months: months },
+    10,
+    bil,
+    "2026-11"
+  );
+  assertEq(cNov.totalBruk, 71223, "37 nov totalBruk via fallback (jump)");
+  assertEq(cNov.safeToSpend, 71223, "37 nov Trygg 71223 not blank");
+  assert(cNov.brukFromDisplayFallback === true, "37 nov flag fallback");
+
+  const cSep = Calc.calcFamily(
+    months["2026-09"],
+    people,
+    cats,
+    { useSaldoInSafeToSpend: true, spendBuffer: 0, months: months },
+    8,
+    bil,
+    "2026-09"
+  );
+  assertEq(cSep.safeToSpend, 71223, "37 sep Trygg 71223 (reserve bil)");
+  assert(cSep.brukFromDisplayFallback !== true, "37 sep not fallback");
+
+  // 12-month projection unit test
+  assert(typeof Calc.projectPotFollowBudget === "function", "37 project fn");
+  // Ensure a few future months exist with budgets
+  for (const k of ["2026-10", "2026-11", "2026-12", "2027-01"]) {
+    if (!months[k]) months[k] = emptyM();
+    months[k].budgets = JSON.parse(JSON.stringify(sep.budgets));
+    months[k].plannedIncome = JSON.parse(JSON.stringify(sep.plannedIncome));
+  }
+  const proj = Calc.projectPotFollowBudget({
+    months: months,
+    fromKey: "2026-09",
+    people: people,
+    categories: cats,
+    plannedSpends: bil,
+    startPot: 231223,
+    horizon: 12
+  });
+  assertEq(proj.months.length, 12, "37 proj 12 rows");
+  // Oct: 231223 + 70000 - 10000 - 160000 = 131223
+  assertEq(proj.months[0].monthKey, "2026-10", "37 proj first oct");
+  assertEq(proj.months[0].plannedSpends, 160000, "37 proj oct bil once");
+  assertEq(proj.months[0].pot, 131223, "37 proj oct pot");
+  assert(typeof proj.potAtHorizon === "number", "37 potAtHorizon number");
+  assert(Number.isFinite(proj.potAtHorizon), "37 potAtHorizon finite");
+  // Bil not applied again in Nov
+  assertEq(proj.months[1].plannedSpends, 0, "37 proj nov no bil");
+}
+
 console.log("\n=== Results:", passed, "passed,", failed, "failed ===\n");
 if (failed) {
   console.error("FAILURES:");

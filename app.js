@@ -348,12 +348,22 @@
       categories: state.categories,
       plannedSpends: state.plannedSpends || []
     });
+    // Always seed explicitly (even if ensureMonthExpected path skipped)
+    let seededNow = !!(result && (result.suggestedBalances || result.seeded));
+    if (typeof Calc.ensureSuggestedBalances === "function") {
+      const sug = Calc.ensureSuggestedBalances(
+        state.months,
+        key,
+        state.people,
+        {
+          plannedSpends: state.plannedSpends || [],
+          categories: state.categories
+        }
+      );
+      if (sug && sug.seeded) seededNow = true;
+    }
     // Always persist when suggested balances were seeded (carry / jump)
-    if (
-      created ||
-      (result &&
-        (result.copied || result.suggestedBalances || result.seeded))
-    ) {
+    if (created || (result && result.copied) || seededNow) {
       save();
     }
     return m;
@@ -1197,6 +1207,22 @@
   let savedScrollY = 0;
   function render() {
     savedScrollY = window.scrollY || 0;
+    // Seed before anything else so month navigation cannot skip persist
+    const viewKey = monthKey(state.view.year, state.view.month);
+    if (typeof Calc.ensureSuggestedBalances === "function") {
+      if (!state.months[viewKey]) state.months[viewKey] = emptyMonth();
+      ensureMonthShape(state.months[viewKey]);
+      const sugRender = Calc.ensureSuggestedBalances(
+        state.months,
+        viewKey,
+        state.people,
+        {
+          plannedSpends: state.plannedSpends || [],
+          categories: state.categories
+        }
+      );
+      if (sugRender && sugRender.seeded) save();
+    }
     const m = getMonth();
     const c = calcFamily(m);
 
@@ -1284,6 +1310,7 @@
     renderPlannedIncome(m, c);
     renderMissingIncomeBanner(m);
     renderSafeSpend(c);
+    renderForwardPanel(c);
     renderPlannedSpends(c);
     renderHealth(c);
     renderVsPrev(c);
@@ -2046,6 +2073,119 @@
           ? 100
           : 0;
     return { status: status, label: label, ratio: ratio, pct: pct };
+  }
+
+
+  function renderForwardPanel(c) {
+    const harEl = $("#forwardHarNaValue");
+    const monthsEl = $("#forwardMonths");
+    const yearEl = $("#forwardYearValue");
+    const card = $("#forwardPanelCard");
+    if (!harEl || !monthsEl || !yearEl) return;
+
+    const view = (state.settings && state.settings.innUtView) || "samlet";
+    const isPerson = view !== "samlet";
+    const pc = isPerson && c && c.byPerson ? c.byPerson[view] : null;
+
+    // Har nå = current Trygg (or bank-corrected saldo path)
+    let harNa = null;
+    if (isPerson && pc && typeof pc.safeToSpend === "number") {
+      harNa = pc.safeToSpend;
+    } else if (c && typeof c.safeToSpend === "number") {
+      harNa = c.safeToSpend;
+    }
+    if (harNa == null || !Number.isFinite(harNa)) {
+      harEl.textContent = "—";
+      harEl.classList.remove("is-neg");
+    } else {
+      harEl.textContent = formatNOK(harNa);
+      harEl.classList.toggle("is-neg", harNa < 0);
+    }
+
+    // Projection start = effective bruk/pot (post-bank). Prefer totalBruk
+    // (includes calc-time fallback / seed), not Trygg-after-future-reserve.
+    let startPot = null;
+    if (isPerson && c && c.balanceByPerson && c.balanceByPerson[view]) {
+      const b = c.balanceByPerson[view].bruk;
+      if (b != null && Number.isFinite(Number(b))) startPot = Number(b);
+    } else if (c && typeof c.totalBruk === "number" && c.hasBrukBalances) {
+      startPot = c.totalBruk;
+    }
+    if (startPot == null && harNa != null) startPot = harNa;
+
+    const key = monthKey(state.view.year, state.view.month);
+    // Ensure next 12 months have expected budgets copied for projection
+    if (typeof Calc.shiftMonthKey === "function") {
+      let k = key;
+      for (let i = 0; i < 12; i++) {
+        k = Calc.shiftMonthKey(k, 1);
+        if (!k) break;
+        Calc.ensureMonthExpected(state.months, k, state.people, {
+          copyExpectedToNewMonths: state.settings.copyExpectedToNewMonths !== false,
+          categories: state.categories,
+          plannedSpends: state.plannedSpends || []
+        });
+      }
+    }
+
+    let projection = null;
+    if (
+      typeof Calc.projectPotFollowBudget === "function" &&
+      startPot != null &&
+      Number.isFinite(startPot)
+    ) {
+      projection = Calc.projectPotFollowBudget({
+        months: state.months,
+        fromKey: key,
+        people: state.people,
+        categories: state.categories,
+        plannedSpends: state.plannedSpends || [],
+        startPot: startPot,
+        horizon: 12
+      });
+    }
+
+    const showN = 6; // cards: next 6 months; summary still 12
+    if (!projection || !projection.months || !projection.months.length) {
+      monthsEl.innerHTML =
+        '<p class="hint compact">Mangler pot/bruk å projisere fra.</p>';
+      yearEl.textContent = "—";
+      yearEl.classList.remove("is-neg");
+      return;
+    }
+
+    monthsEl.innerHTML = projection.months
+      .slice(0, showN)
+      .map(function (row) {
+        const parts = String(row.monthKey || "").split("-");
+        const mi = parseInt(parts[1], 10) - 1;
+        const label =
+          (MONTHS[mi] || row.monthKey) +
+          (parts[0] ? " " + parts[0] : "");
+        const neg = row.pot < 0 ? " is-neg" : "";
+        return (
+          '<div class="forward-month-card">' +
+          '<span class="fm-label">' +
+          escapeHtml(label) +
+          "</span>" +
+          '<span class="fm-pot' +
+          neg +
+          '">' +
+          formatNOK(row.pot) +
+          "</span></div>"
+        );
+      })
+      .join("");
+
+    const at12 = projection.potAtHorizon;
+    if (at12 == null || !Number.isFinite(at12)) {
+      yearEl.textContent = "—";
+      yearEl.classList.remove("is-neg");
+    } else {
+      yearEl.textContent = formatNOK(at12);
+      yearEl.classList.toggle("is-neg", at12 < 0);
+    }
+    if (card) card.hidden = false;
   }
 
   function renderSafeSpend(c) {

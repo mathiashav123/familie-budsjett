@@ -1,5 +1,26 @@
 # Endringslogg – Familiebudsjett
 
+## 2026-09-17 – Calc-time bruk-fallback + Fremover-panel (persist-fail safe)
+
+### Problem
+På Pages fantes seed-kode, men Oct/Nov viste Trygg **0** / plan-modus fordi `bruk`/`carryPot` ikke ble persistert i nettleseren (`carryPot`/`balancesSuggested` undefined).
+
+### Fix
+- **A) Calc-time fallback:** `resolveDisplayBrukFallback` — når måned mangler bruk, regnes display-bruk = nærmeste forrige bekreftet/carry − åpne planlagte i (prev, M]. `calcFamily` bruker dette automatisk (Oct/Nov → **71223**, ikke 0/blank). Bil telles ikke dobbelt.
+- **B) Alltid seed i getMonth/render:** eksplisitt `ensureSuggestedBalances` + `save()` ved seed; også i starten av `render()` så navigasjon ikke hopper over persist.
+- **C) Fremover-panel (Oversikt):** «Har nå» (Trygg), neste 6 mnd-kort, «Om 12 måneder». Formel i UI: `pot + planInn − variabelt budsjett − planlagte utlegg` (Fast ikke på nytt).
+- **D) QA-script:** `scripts/qa-live-fallback.mjs` mot live export.
+
+### Forventet (Mathias live)
+| Måned | Trygg | Merknad |
+|-------|------:|---------|
+| Sep 2026 | **71223** | bank 231223 − bil-reserve 160000 |
+| Okt 2026 | **71223** | fallback/seed (ikke 0) |
+| Nov 2026 | **71223** | fallback ved hopp (ikke blank) |
+
+### Tester
+§37 display-fallback + 12-mnd `projectPotFollowBudget` (702 passed).
+
 ## 17. september 2026 (UTC+2) – Fix: månedshopp-seed + Trygg alltid tall + carry uten lønns-stack
 
 - **Bug 1 (Sep→Nov):** Seed trakk bare `plannedSpends` med `monthKey ===` ny måned. Hopp over Oct lot bil 160k stå → Nov tom/feil. **Fix:** `openPlannedSpendDeductionForPersonRange(prev … through new)` — Oct bil trekkes én gang ved Sep→Nov → seed **~71223**.
