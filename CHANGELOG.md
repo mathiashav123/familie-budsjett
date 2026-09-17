@@ -1,5 +1,13 @@
 # Endringslogg – Familiebudsjett
 
+## 17. september 2026 (UTC+2) – På konto: Bekreft saldo + forventet-breakdown
+
+- **Bekreft saldo**-knapp per person: parser bruk (+ spare hvis åpen), lagrer `balances`, stamp `balancesUpdatedAt`, toast «Saldo lagret», re-render. Blur/change beholder backup-lagring.
+- Under sammenligningen: **Slik er forventet regnet** — Forrige måneds bruk + Inn (lønn/ekstra per modus) − Utgifter (inkl. fellesandel) − Sparing − Fast auto = Forventet. Tall fra `reconcilePaKonto` / `personCashflowParts`.
+- Mangler forrige måneds bruk: tydelig CTA «Gå til [måned]» + hint — uten den er forventet ubrukelig.
+- Audit dobbelttelling Fast auto vs logget Fast: **ingen bug** (partial/full log gir samme forventet; auto = max(0, plan−logget)). Tester for breakdown-identitet.
+- Lagring additiv (`familie-budsjett-v1`). Norsk UI.
+
 ## 17. september 2026 (UTC+2) – På konto: når gjelder saldoen
 
 - Per person på Oversikt **På konto nå**: segment **Før lønn** | **Etter lønn** | **På dato** (+ datovelger ved På dato, standard i dag).

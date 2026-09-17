@@ -670,6 +670,78 @@ code {
   color: var(--text);
   max-width: 100%;
 }
+
+.pa-konto-confirm {
+  margin-top: .45rem;
+  width: 100%;
+  min-height: 2.55rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+.pa-konto-breakdown {
+  margin: .45rem 0 0;
+  padding-top: .35rem;
+  border-top: 1px dashed var(--border, #d0d7de);
+}
+.pa-konto-breakdown > summary {
+  cursor: pointer;
+  font-size: .78rem;
+  font-weight: 700;
+  color: #1d4ed8;
+  list-style: none;
+}
+.pa-konto-breakdown > summary::-webkit-details-marker { display: none; }
+.pa-konto-breakdown > summary::before {
+  content: "▸ ";
+  color: #3b82f6;
+}
+.pa-konto-breakdown[open] > summary::before { content: "▾ "; }
+.pa-konto-breakdown-rows {
+  display: flex;
+  flex-direction: column;
+  gap: .18rem;
+  margin-top: .35rem;
+}
+.pa-konto-breakdown-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: .75rem;
+  font-size: .8rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.pa-konto-breakdown-row strong {
+  color: var(--text);
+  font-weight: 700;
+}
+.pa-konto-breakdown-row.is-eq {
+  margin-top: .2rem;
+  padding-top: .25rem;
+  border-top: 1px solid var(--border, #d0d7de);
+  font-weight: 700;
+  color: var(--text);
+}
+.pa-konto-breakdown-row.is-eq strong {
+  font-size: .92rem;
+}
+.pa-konto-breakdown-hint {
+  margin: .3rem 0 0;
+}
+.pa-konto-missing-prev {
+  margin-top: .35rem;
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+  align-items: flex-start;
+}
+.pa-konto-missing-prev .pa-konto-diff {
+  margin: 0;
+}
+.pa-konto-missing-prev .btn {
+  margin-top: .1rem;
+}
+
 @media (max-width: 480px) {
   .pa-konto-when-seg label {
     font-size: .72rem;
@@ -4444,7 +4516,7 @@ button.cat-group-header {
         <div class="card-head">
           <h2 id="kontoerTitle">På konto nå</h2>
         </div>
-        <p class="hint compact pa-konto-lead">Skriv inn det du ser i banken, og når det gjelder (før/etter lønn eller på en dato). Oppdater når du sjekker — ingen bankinnlogging.</p>
+        <p class="hint compact pa-konto-lead">Skriv inn det du ser i banken, velg når det gjelder, og trykk <strong>Bekreft saldo</strong>. Oppdater når du sjekker — ingen bankinnlogging.</p>
         <div id="kontoerGrid" class="kontoer-grid pa-konto-grid"></div>
         <div class="pa-konto-samlet" id="paKontoSamlet" aria-label="Samlet husstand" hidden></div>
         <div class="kontoer-totals" id="kontoerTotals" aria-label="Totalt husstand">
@@ -4477,7 +4549,7 @@ button.cat-group-header {
           <span class="value" id="statForventet">—</span>
         </div>
         <p class="meta-line" id="paKontoUpdated" hidden></p>
-        <p class="hint compact" id="kontoerHint">Velg <strong>Før lønn</strong>, <strong>Etter lønn</strong> eller <strong>På dato</strong> for når saldoen gjelder. Forventet følger modusen (før lønn uten logget lønn/ekstra; på dato bruker cashflow til datoen når poster har dato). Differanse peker på glemt loggføring. Spare er utenfor «Trygg å bruke».</p>
+        <p class="hint compact" id="kontoerHint">Velg <strong>Før lønn</strong>, <strong>Etter lønn</strong> eller <strong>På dato</strong> for når saldoen gjelder. Trykk <strong>Bekreft saldo</strong> for å lagre. Under differansen ser du hvordan <strong>forventet</strong> er regnet (forrige bruk + inn − ut − sparing − Fast auto). Mangler forrige måneds bruk, følg knappen dit først. Spare er utenfor «Trygg å bruke».</p>
         <div id="paKontoCalcHost" class="plan-inc-calc-host">
           <div class="amount-calc" id="paKontoCalc" hidden>
             <div class="amount-calc-display" data-calc-display aria-live="polite">0</div>
@@ -8245,6 +8317,8 @@ window.FAMILIE_BUDGET_SUPABASE = {
       var differanse = balanceVariance(oppgitt, forventet);
       var source = forventet != null ? cf.source : null;
 
+      var parts = cf.parts || {};
+      var inn = (Number(parts.lønn) || 0) + (Number(parts.ekstra) || 0);
       byPerson[p.id] = {
         personId: p.id,
         name: p.name,
@@ -8265,7 +8339,15 @@ window.FAMILIE_BUDGET_SUPABASE = {
         effectiveTilOvers: (cf.tilOvers || 0) - (autoExtra || 0),
         prevBruk: prevBruk,
         source: source,
-        filteredByDate: cf.filteredByDate
+        filteredByDate: cf.filteredByDate,
+        // Breakdown for UI audit (mode-aware cashflow parts)
+        parts: parts,
+        inn: inn,
+        utgifter: Number(parts.utgifter) || 0,
+        sparing: Number(parts.sparing) || 0,
+        ownExp: Number(parts.ownExp) || 0,
+        fellesShare: Number(parts.fellesShare) || 0,
+        excludeSalaryIncome: !!parts.excludeSalaryIncome
       };
 
       if (oppgitt != null) {
@@ -10146,6 +10228,75 @@ window.FAMILIE_BUDGET_SUPABASE = {
     );
   }
 
+  /**
+   * Transparent forventet breakdown so Mathias can audit gaps vs bank.
+   * Uses mode-aware parts from reconcilePaKonto.
+   */
+  function formatForventetBreakdownHtml(row) {
+    if (!row || row.forventet == null) return "";
+    const innLabel = row.excludeSalaryIncome
+      ? "Inn (uten lønn/ekstra)"
+      : "Inn (lønn/ekstra)";
+    const auto = Number(row.autoSpendExtra) || 0;
+    return (
+      '<details class="pa-konto-breakdown" open>' +
+      "<summary>Slik er forventet regnet</summary>" +
+      '<div class="pa-konto-breakdown-rows">' +
+      '<div class="pa-konto-breakdown-row"><span>Forrige måneds bruk</span><strong>' +
+      formatNOK(row.prevBruk) +
+      "</strong></div>" +
+      '<div class="pa-konto-breakdown-row is-plus"><span>+ ' +
+      escapeHtml(innLabel) +
+      "</span><strong>" +
+      formatNOK(row.inn || 0) +
+      "</strong></div>" +
+      '<div class="pa-konto-breakdown-row is-minus"><span>− Utgifter <em class="opt">(inkl. fellesandel)</em></span><strong>' +
+      formatNOK(row.utgifter || 0) +
+      "</strong></div>" +
+      '<div class="pa-konto-breakdown-row is-minus"><span>− Sparing</span><strong>' +
+      formatNOK(row.sparing || 0) +
+      "</strong></div>" +
+      '<div class="pa-konto-breakdown-row is-minus"><span>− Fast auto</span><strong>' +
+      formatNOK(auto) +
+      "</strong></div>" +
+      '<div class="pa-konto-breakdown-row is-eq"><span>= Forventet</span><strong>' +
+      formatNOK(row.forventet) +
+      "</strong></div>" +
+      "</div>" +
+      (auto > 0.5
+        ? '<p class="hint compact pa-konto-breakdown-hint">Fast auto = planlagt Fast som ikke er logget (unngår dobbelttelling når du logger).</p>'
+        : "") +
+      "</details>"
+    );
+  }
+
+  /** CTA when previous month ending bruk is missing — forventet is useless without it. */
+  function formatMissingPrevBrukHtml() {
+    let py = state.view.year;
+    let pm = state.view.month - 1;
+    if (pm < 0) {
+      pm = 11;
+      py -= 1;
+    }
+    const title = monthTitleNb(py, pm);
+    return (
+      '<div class="pa-konto-missing-prev">' +
+      '<p class="pa-konto-diff is-muted">Mangler forrige måneds bruk for forventet</p>' +
+      '<p class="hint compact">Sett avslutningsbruk for <strong>' +
+      escapeHtml(title) +
+      "</strong> — ellers kan ikke forventet beregnes.</p>" +
+      '<button type="button" class="btn primary sm pa-konto-goto-prev" data-goto-year="' +
+      py +
+      '" data-goto-month="' +
+      pm +
+      '">Gå til ' +
+      escapeHtml(title) +
+      "</button>" +
+      "</div>"
+    );
+  }
+
+
   function formatUpdatedAt(iso) {
     if (!iso) return "";
     try {
@@ -10754,8 +10905,10 @@ window.FAMILIE_BUDGET_SUPABASE = {
         const varMeta = row.variance;
         let diffHtml = "";
         if (row.forventet == null && row.oppgitt == null) {
+          const prevMissing = row.prevBruk == null;
           diffHtml =
-            '<p class="pa-konto-diff is-muted">Oppgi brukssaldo for å sammenligne</p>';
+            '<p class="pa-konto-diff is-muted">Oppgi brukssaldo for å sammenligne</p>' +
+            (prevMissing ? formatMissingPrevBrukHtml() : "");
         } else if (row.forventet == null) {
           diffHtml =
             '<div class="pa-konto-compare">' +
@@ -10763,7 +10916,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
             '<div class="pa-konto-compare-row"><span>Oppgitt nå</span><strong>' +
             formatNOK(row.oppgitt) +
             "</strong></div>" +
-            '<p class="pa-konto-diff is-muted">Mangler forrige måneds bruk for forventet</p>' +
+            formatMissingPrevBrukHtml() +
             "</div>";
         } else {
           const diffClass =
@@ -10790,6 +10943,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
               : "Oppgi saldo for differanse") +
             "</p>" +
             actionHtml +
+            formatForventetBreakdownHtml(row) +
             "</div>";
         }
         const etterLine =
@@ -10852,6 +11006,9 @@ window.FAMILIE_BUDGET_SUPABASE = {
           '" placeholder="0" autocomplete="off" value="' +
           escapeAttr(formatPlanInput(bal.bruk)) +
           '" /><span>kr</span></div></label>' +
+          '<button type="button" class="btn primary sm pa-konto-confirm" data-bal-confirm="' +
+          escapeAttr(person.id) +
+          '">Bekreft saldo</button>' +
           whenSeg +
           dateRow +
           diffHtml +
@@ -15047,6 +15204,25 @@ window.FAMILIE_BUDGET_SUPABASE = {
       render();
     }
 
+    /** Primary commit: parse bruk (+ spare if present), save, toast, re-render. */
+    function confirmPersonBalance(personId) {
+      if (!personId) return;
+      const m = getMonth();
+      ensurePersonBalance(m, personId);
+      const brukEl = document.querySelector(
+        'input[data-bal="' + personId + '-bruk"]'
+      );
+      const spareEl = document.querySelector(
+        'input[data-bal="' + personId + '-spare"]'
+      );
+      if (brukEl) m.balances[personId].bruk = parseAmount(brukEl.value);
+      if (spareEl) m.balances[personId].spare = parseAmount(spareEl.value);
+      m.balancesUpdatedAt = new Date().toISOString();
+      save();
+      showToast("Saldo lagret");
+      render();
+    }
+
     function onBalanceWhen(el) {
       if (!el || !el.getAttribute) return;
       const personId = el.getAttribute("data-bal-when");
@@ -15097,6 +15273,27 @@ window.FAMILIE_BUDGET_SUPABASE = {
       if (!btn) return;
       e.preventDefault();
       openExpense(null);
+    });
+    document.body.addEventListener("click", function (e) {
+      const confirmBtn =
+        e.target && e.target.closest && e.target.closest("[data-bal-confirm]");
+      if (confirmBtn) {
+        e.preventDefault();
+        confirmPersonBalance(confirmBtn.getAttribute("data-bal-confirm"));
+        return;
+      }
+      const gotoBtn =
+        e.target && e.target.closest && e.target.closest(".pa-konto-goto-prev");
+      if (gotoBtn) {
+        e.preventDefault();
+        const y = parseInt(gotoBtn.getAttribute("data-goto-year"), 10);
+        const mo = parseInt(gotoBtn.getAttribute("data-goto-month"), 10);
+        if (!Number.isFinite(y) || !Number.isFinite(mo)) return;
+        state.view = { year: y, month: mo };
+        save();
+        render();
+        showToast("Sett avslutningsbruk for " + monthTitleNb(y, mo));
+      }
     });
     const btnPlanSpend = $("#btnPlanSpend");
     if (btnPlanSpend) {

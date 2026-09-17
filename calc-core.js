@@ -2932,6 +2932,8 @@
       var differanse = balanceVariance(oppgitt, forventet);
       var source = forventet != null ? cf.source : null;
 
+      var parts = cf.parts || {};
+      var inn = (Number(parts.lønn) || 0) + (Number(parts.ekstra) || 0);
       byPerson[p.id] = {
         personId: p.id,
         name: p.name,
@@ -2952,7 +2954,15 @@
         effectiveTilOvers: (cf.tilOvers || 0) - (autoExtra || 0),
         prevBruk: prevBruk,
         source: source,
-        filteredByDate: cf.filteredByDate
+        filteredByDate: cf.filteredByDate,
+        // Breakdown for UI audit (mode-aware cashflow parts)
+        parts: parts,
+        inn: inn,
+        utgifter: Number(parts.utgifter) || 0,
+        sparing: Number(parts.sparing) || 0,
+        ownExp: Number(parts.ownExp) || 0,
+        fellesShare: Number(parts.fellesShare) || 0,
+        excludeSalaryIncome: !!parts.excludeSalaryIncome
       };
 
       if (oppgitt != null) {

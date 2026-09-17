@@ -548,6 +548,75 @@
     );
   }
 
+  /**
+   * Transparent forventet breakdown so Mathias can audit gaps vs bank.
+   * Uses mode-aware parts from reconcilePaKonto.
+   */
+  function formatForventetBreakdownHtml(row) {
+    if (!row || row.forventet == null) return "";
+    const innLabel = row.excludeSalaryIncome
+      ? "Inn (uten lønn/ekstra)"
+      : "Inn (lønn/ekstra)";
+    const auto = Number(row.autoSpendExtra) || 0;
+    return (
+      '<details class="pa-konto-breakdown" open>' +
+      "<summary>Slik er forventet regnet</summary>" +
+      '<div class="pa-konto-breakdown-rows">' +
+      '<div class="pa-konto-breakdown-row"><span>Forrige måneds bruk</span><strong>' +
+      formatNOK(row.prevBruk) +
+      "</strong></div>" +
+      '<div class="pa-konto-breakdown-row is-plus"><span>+ ' +
+      escapeHtml(innLabel) +
+      "</span><strong>" +
+      formatNOK(row.inn || 0) +
+      "</strong></div>" +
+      '<div class="pa-konto-breakdown-row is-minus"><span>− Utgifter <em class="opt">(inkl. fellesandel)</em></span><strong>' +
+      formatNOK(row.utgifter || 0) +
+      "</strong></div>" +
+      '<div class="pa-konto-breakdown-row is-minus"><span>− Sparing</span><strong>' +
+      formatNOK(row.sparing || 0) +
+      "</strong></div>" +
+      '<div class="pa-konto-breakdown-row is-minus"><span>− Fast auto</span><strong>' +
+      formatNOK(auto) +
+      "</strong></div>" +
+      '<div class="pa-konto-breakdown-row is-eq"><span>= Forventet</span><strong>' +
+      formatNOK(row.forventet) +
+      "</strong></div>" +
+      "</div>" +
+      (auto > 0.5
+        ? '<p class="hint compact pa-konto-breakdown-hint">Fast auto = planlagt Fast som ikke er logget (unngår dobbelttelling når du logger).</p>'
+        : "") +
+      "</details>"
+    );
+  }
+
+  /** CTA when previous month ending bruk is missing — forventet is useless without it. */
+  function formatMissingPrevBrukHtml() {
+    let py = state.view.year;
+    let pm = state.view.month - 1;
+    if (pm < 0) {
+      pm = 11;
+      py -= 1;
+    }
+    const title = monthTitleNb(py, pm);
+    return (
+      '<div class="pa-konto-missing-prev">' +
+      '<p class="pa-konto-diff is-muted">Mangler forrige måneds bruk for forventet</p>' +
+      '<p class="hint compact">Sett avslutningsbruk for <strong>' +
+      escapeHtml(title) +
+      "</strong> — ellers kan ikke forventet beregnes.</p>" +
+      '<button type="button" class="btn primary sm pa-konto-goto-prev" data-goto-year="' +
+      py +
+      '" data-goto-month="' +
+      pm +
+      '">Gå til ' +
+      escapeHtml(title) +
+      "</button>" +
+      "</div>"
+    );
+  }
+
+
   function formatUpdatedAt(iso) {
     if (!iso) return "";
     try {
@@ -1156,8 +1225,10 @@
         const varMeta = row.variance;
         let diffHtml = "";
         if (row.forventet == null && row.oppgitt == null) {
+          const prevMissing = row.prevBruk == null;
           diffHtml =
-            '<p class="pa-konto-diff is-muted">Oppgi brukssaldo for å sammenligne</p>';
+            '<p class="pa-konto-diff is-muted">Oppgi brukssaldo for å sammenligne</p>' +
+            (prevMissing ? formatMissingPrevBrukHtml() : "");
         } else if (row.forventet == null) {
           diffHtml =
             '<div class="pa-konto-compare">' +
@@ -1165,7 +1236,7 @@
             '<div class="pa-konto-compare-row"><span>Oppgitt nå</span><strong>' +
             formatNOK(row.oppgitt) +
             "</strong></div>" +
-            '<p class="pa-konto-diff is-muted">Mangler forrige måneds bruk for forventet</p>' +
+            formatMissingPrevBrukHtml() +
             "</div>";
         } else {
           const diffClass =
@@ -1192,6 +1263,7 @@
               : "Oppgi saldo for differanse") +
             "</p>" +
             actionHtml +
+            formatForventetBreakdownHtml(row) +
             "</div>";
         }
         const etterLine =
@@ -1254,6 +1326,9 @@
           '" placeholder="0" autocomplete="off" value="' +
           escapeAttr(formatPlanInput(bal.bruk)) +
           '" /><span>kr</span></div></label>' +
+          '<button type="button" class="btn primary sm pa-konto-confirm" data-bal-confirm="' +
+          escapeAttr(person.id) +
+          '">Bekreft saldo</button>' +
           whenSeg +
           dateRow +
           diffHtml +
@@ -5449,6 +5524,25 @@
       render();
     }
 
+    /** Primary commit: parse bruk (+ spare if present), save, toast, re-render. */
+    function confirmPersonBalance(personId) {
+      if (!personId) return;
+      const m = getMonth();
+      ensurePersonBalance(m, personId);
+      const brukEl = document.querySelector(
+        'input[data-bal="' + personId + '-bruk"]'
+      );
+      const spareEl = document.querySelector(
+        'input[data-bal="' + personId + '-spare"]'
+      );
+      if (brukEl) m.balances[personId].bruk = parseAmount(brukEl.value);
+      if (spareEl) m.balances[personId].spare = parseAmount(spareEl.value);
+      m.balancesUpdatedAt = new Date().toISOString();
+      save();
+      showToast("Saldo lagret");
+      render();
+    }
+
     function onBalanceWhen(el) {
       if (!el || !el.getAttribute) return;
       const personId = el.getAttribute("data-bal-when");
@@ -5499,6 +5593,27 @@
       if (!btn) return;
       e.preventDefault();
       openExpense(null);
+    });
+    document.body.addEventListener("click", function (e) {
+      const confirmBtn =
+        e.target && e.target.closest && e.target.closest("[data-bal-confirm]");
+      if (confirmBtn) {
+        e.preventDefault();
+        confirmPersonBalance(confirmBtn.getAttribute("data-bal-confirm"));
+        return;
+      }
+      const gotoBtn =
+        e.target && e.target.closest && e.target.closest(".pa-konto-goto-prev");
+      if (gotoBtn) {
+        e.preventDefault();
+        const y = parseInt(gotoBtn.getAttribute("data-goto-year"), 10);
+        const mo = parseInt(gotoBtn.getAttribute("data-goto-month"), 10);
+        if (!Number.isFinite(y) || !Number.isFinite(mo)) return;
+        state.view = { year: y, month: mo };
+        save();
+        render();
+        showToast("Sett avslutningsbruk for " + monthTitleNb(y, mo));
+      }
     });
     const btnPlanSpend = $("#btnPlanSpend");
     if (btnPlanSpend) {
