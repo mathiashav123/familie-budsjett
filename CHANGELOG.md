@@ -1,5 +1,17 @@
 # Endringslogg – Familiebudsjett
 
+## 17. september 2026 (UTC+2) – På konto: når gjelder saldoen
+
+- Per person på Oversikt **På konto nå**: segment **Før lønn** | **Etter lønn** | **På dato** (+ datovelger ved På dato, standard i dag).
+- Lagres additivt på `balances[person]`: `{ bruk, spare, when: 'before_salary'|'after_salary'|'dated', asOf: 'YYYY-MM-DD'|null }` + eksisterende `balancesUpdatedAt`.
+- Badge på kortet: «Oppgitt før lønn», «Oppgitt etter lønn», «Oppgitt 12. sep».
+- **Forventet**-regler:
+  - **Etter lønn:** `prev.bruk + tilOvers − autoSpendExtra` (som før; logget lønn/ekstra teller).
+  - **Før lønn:** samme, men logget **lønn + ekstra** trekkes ut av cashflow (som om månedens inntekt ikke har landet). Sparing, utgifter og auto Fast telles.
+  - **På dato:** hvis måneden har datostemplede poster, cashflow med `date <= asOf` (uten dato beholdes); ellers full måned som etter lønn. `asOf` vises uansett. Auto Fast fortsatt hele måneden.
+- Differanse-tekst / «Kjøpt noe» uendret. Nøkkel `familie-budsjett-v1` additiv, ingen wipe.
+- Tester: before vs after vs dated (+ migrate when/asOf).
+
 ## 17. september 2026 (UTC+2) – På konto: forventet inkl. auto Fast
 
 - **Forventet** cashflow: `prev.bruk + tilOvers − autoSpendExtra` (logget inn/ut/sparing **pluss** Fast auto-trekk som har forlatt konto).

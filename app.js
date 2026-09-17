@@ -1126,9 +1126,14 @@
     const focused = document.activeElement;
     const focusKey =
       focused && focused.getAttribute && focused.getAttribute("data-bal");
+    const focusWhen =
+      focused && focused.getAttribute && focused.getAttribute("data-bal-when");
+    const focusAsOf =
+      focused && focused.getAttribute && focused.getAttribute("data-bal-asof");
 
     const people = activePeopleList();
     const rec = reconcileCurrent(m);
+    const today = todayISO();
 
     grid.innerHTML = people
       .map(function (person) {
@@ -1142,6 +1147,12 @@
           };
         const brukKey = person.id + "-bruk";
         const spareKey = person.id + "-spare";
+        const whenMode = Calc.normalizeBalanceWhen(bal.when || row.when);
+        const asOfVal =
+          Calc.normalizeBalanceAsOf(bal.asOf) ||
+          (whenMode === "dated" ? today : "");
+        const whenLabel =
+          row.whenLabel || Calc.balanceWhenLabel(whenMode, asOfVal || null);
         const varMeta = row.variance;
         let diffHtml = "";
         if (row.forventet == null && row.oppgitt == null) {
@@ -1189,12 +1200,48 @@
               formatNOK(row.etterLonn) +
               "</strong></p>"
             : "";
+        const whenSeg =
+          '<div class="seg pa-konto-when-seg" role="radiogroup" aria-label="Når gjelder saldoen">' +
+          '<label><input type="radio" name="balWhen-' +
+          escapeAttr(person.id) +
+          '" value="before_salary" data-bal-when="' +
+          escapeAttr(person.id) +
+          '"' +
+          (whenMode === "before_salary" ? " checked" : "") +
+          " /><span>Før lønn</span></label>" +
+          '<label><input type="radio" name="balWhen-' +
+          escapeAttr(person.id) +
+          '" value="after_salary" data-bal-when="' +
+          escapeAttr(person.id) +
+          '"' +
+          (whenMode === "after_salary" ? " checked" : "") +
+          " /><span>Etter lønn</span></label>" +
+          '<label><input type="radio" name="balWhen-' +
+          escapeAttr(person.id) +
+          '" value="dated" data-bal-when="' +
+          escapeAttr(person.id) +
+          '"' +
+          (whenMode === "dated" ? " checked" : "") +
+          " /><span>På dato</span></label>" +
+          "</div>";
+        const dateRow =
+          whenMode === "dated"
+            ? '<label class="field pa-konto-asof-field"><span>Dato</span>' +
+              '<input type="date" class="pa-konto-asof" data-bal-asof="' +
+              escapeAttr(person.id) +
+              '" value="' +
+              escapeAttr(asOfVal || today) +
+              '" /></label>'
+            : "";
+        const modeBadge =
+          '<p class="pa-konto-when-badge">' + escapeHtml(whenLabel) + "</p>";
         return (
           '<div class="kontoer-person pa-konto-person" data-bal-person="' +
           escapeAttr(person.id) +
           '"><h3>' +
           escapeHtml(person.name) +
           "</h3>" +
+          modeBadge +
           '<label class="field pa-konto-bruk-field"><div class="field-label-row"><span>Bruk <em class="opt">(på konto nå)</em></span>' +
           '<button type="button" class="btn ghost xs calc-toggle" data-calc-panel="paKontoCalc" data-calc-for="' +
           escapeAttr(brukKey) +
@@ -1207,6 +1254,8 @@
           '" placeholder="0" autocomplete="off" value="' +
           escapeAttr(formatPlanInput(bal.bruk)) +
           '" /><span>kr</span></div></label>' +
+          whenSeg +
+          dateRow +
           diffHtml +
           etterLine +
           '<details class="pa-konto-spare"><summary>Spare <em class="opt">(valgfritt)</em></summary>' +
@@ -1287,6 +1336,15 @@
 
     if (focusKey) {
       const inp = grid.querySelector('[data-bal="' + focusKey + '"]');
+      if (inp) {
+        try {
+          inp.focus({ preventScroll: true });
+        } catch (e) {
+          inp.focus();
+        }
+      }
+    } else if (focusAsOf) {
+      const inp = grid.querySelector('[data-bal-asof="' + focusAsOf + '"]');
       if (inp) {
         try {
           inp.focus({ preventScroll: true });
@@ -5355,6 +5413,25 @@
       setSpendBuf.addEventListener("blur", commitSpendBuffer);
     }
 
+    function ensurePersonBalance(m, personId) {
+      ensureMonthShape(m);
+      if (!m.balances[personId] || typeof m.balances[personId] !== "object") {
+        m.balances[personId] = Calc.emptyBalance
+          ? Calc.emptyBalance()
+          : { bruk: null, spare: null, when: "after_salary", asOf: null };
+      } else {
+        if (!("bruk" in m.balances[personId])) m.balances[personId].bruk = null;
+        if (!("spare" in m.balances[personId])) m.balances[personId].spare = null;
+        m.balances[personId].when = Calc.normalizeBalanceWhen(
+          m.balances[personId].when
+        );
+        m.balances[personId].asOf = Calc.normalizeBalanceAsOf(
+          m.balances[personId].asOf
+        );
+      }
+      return m.balances[personId];
+    }
+
     function onBalanceField(el) {
       if (!el || !el.getAttribute) return;
       const key = el.getAttribute("data-bal");
@@ -5365,20 +5442,54 @@
       const personId = parts.slice(0, -1).join("-");
       if (field !== "bruk" && field !== "spare") return;
       const m = getMonth();
-      ensureMonthShape(m);
-      if (!m.balances[personId]) m.balances[personId] = { bruk: null, spare: null };
+      ensurePersonBalance(m, personId);
       m.balances[personId][field] = parseAmount(el.value);
       m.balancesUpdatedAt = new Date().toISOString();
       save();
       render();
     }
+
+    function onBalanceWhen(el) {
+      if (!el || !el.getAttribute) return;
+      const personId = el.getAttribute("data-bal-when");
+      if (!personId) return;
+      const m = getMonth();
+      const bal = ensurePersonBalance(m, personId);
+      const mode = Calc.normalizeBalanceWhen(el.value);
+      bal.when = mode;
+      if (mode === "dated") {
+        if (!bal.asOf) bal.asOf = todayISO();
+      }
+      m.balancesUpdatedAt = new Date().toISOString();
+      save();
+      render();
+    }
+
+    function onBalanceAsOf(el) {
+      if (!el || !el.getAttribute) return;
+      const personId = el.getAttribute("data-bal-asof");
+      if (!personId) return;
+      const m = getMonth();
+      const bal = ensurePersonBalance(m, personId);
+      bal.when = "dated";
+      bal.asOf = Calc.normalizeBalanceAsOf(el.value) || todayISO();
+      m.balancesUpdatedAt = new Date().toISOString();
+      save();
+      render();
+    }
+
     document.addEventListener("change", function (e) {
       const t = e.target;
-      if (t && t.matches && t.matches("input[data-bal]")) onBalanceField(t);
+      if (!t || !t.matches) return;
+      if (t.matches("input[data-bal]")) onBalanceField(t);
+      else if (t.matches("input[data-bal-when]")) onBalanceWhen(t);
+      else if (t.matches("input[data-bal-asof]")) onBalanceAsOf(t);
     });
     document.addEventListener("blur", function (e) {
       const t = e.target;
-      if (t && t.matches && t.matches("input[data-bal]")) onBalanceField(t);
+      if (!t || !t.matches) return;
+      if (t.matches("input[data-bal]")) onBalanceField(t);
+      else if (t.matches("input[data-bal-asof]")) onBalanceAsOf(t);
     }, true);
 
     const fabBuy = $("#fabBuy");

@@ -251,15 +251,44 @@
     });
   }
 
+  var BALANCE_WHEN_BEFORE = "before_salary";
+  var BALANCE_WHEN_AFTER = "after_salary";
+  var BALANCE_WHEN_DATED = "dated";
+
+  /** Normalize balance timing mode (additive default: after_salary). */
+  function normalizeBalanceWhen(w) {
+    if (w === BALANCE_WHEN_BEFORE || w === BALANCE_WHEN_DATED) return w;
+    return BALANCE_WHEN_AFTER;
+  }
+
+  /** YYYY-MM-DD or null. */
+  function normalizeBalanceAsOf(v) {
+    if (v == null || v === "") return null;
+    var s = String(v).trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+    return s;
+  }
+
+  function emptyBalance() {
+    return {
+      bruk: null,
+      spare: null,
+      when: BALANCE_WHEN_AFTER,
+      asOf: null
+    };
+  }
+
   function ensureBalancesShape(m, people) {
     if (!m.balances || typeof m.balances !== "object") m.balances = {};
     (people || []).forEach(function (p) {
       if (!p || !p.id) return;
       if (!m.balances[p.id] || typeof m.balances[p.id] !== "object") {
-        m.balances[p.id] = { bruk: null, spare: null };
+        m.balances[p.id] = emptyBalance();
       } else {
         if (!("bruk" in m.balances[p.id])) m.balances[p.id].bruk = null;
         if (!("spare" in m.balances[p.id])) m.balances[p.id].spare = null;
+        m.balances[p.id].when = normalizeBalanceWhen(m.balances[p.id].when);
+        m.balances[p.id].asOf = normalizeBalanceAsOf(m.balances[p.id].asOf);
       }
     });
   }
@@ -288,7 +317,7 @@
     var src = sourceMonth.balances || {};
     Object.keys(src).forEach(function (pid) {
       if (!targetMonth.balances[pid]) {
-        targetMonth.balances[pid] = { bruk: null, spare: null };
+        targetMonth.balances[pid] = emptyBalance();
       }
       if (!src[pid]) return;
       if (src[pid].bruk != null && src[pid].bruk !== "") {
@@ -423,7 +452,9 @@
           var b = src.balances[pid] || {};
           m.balances[nb] = {
             bruk: b.bruk != null && b.bruk !== "" ? b.bruk : null,
-            spare: b.spare != null && b.spare !== "" ? b.spare : null
+            spare: b.spare != null && b.spare !== "" ? b.spare : null,
+            when: normalizeBalanceWhen(b.when),
+            asOf: normalizeBalanceAsOf(b.asOf)
           };
         });
       } else if (src.saldoBefore != null && src.saldoBefore !== "") {
@@ -431,7 +462,9 @@
         people.forEach(function (p) {
           m.balances[p.id] = {
             bruk: p.id === firstId ? Number(src.saldoBefore) : 0,
-            spare: null
+            spare: null,
+            when: BALANCE_WHEN_AFTER,
+            asOf: null
           };
         });
         migratedFromSaldo = true;
@@ -484,6 +517,9 @@
       });
 
       ensureMonthShape(m, people);
+      if (src.balancesUpdatedAt) {
+        m.balancesUpdatedAt = src.balancesUpdatedAt;
+      }
       months[key] = m;
     });
 
@@ -2666,9 +2702,187 @@
   }
 
   /**
+   * True if any income/expense/saving in the month has a date stamp.
+   */
+  function monthHasDatedCashflow(m) {
+    if (!m) return false;
+    var lists = [m.incomes, m.expenses, m.savings];
+    for (var i = 0; i < lists.length; i++) {
+      var arr = lists[i];
+      if (!arr || !arr.length) continue;
+      for (var j = 0; j < arr.length; j++) {
+        if (arr[j] && arr[j].date) return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Include entry in dated cashflow: undated always counts; dated only if <= asOf.
+   */
+  function cashflowEntryOnOrBefore(entry, asOf) {
+    if (!asOf) return true;
+    if (!entry || !entry.date) return true;
+    return String(entry.date) <= String(asOf);
+  }
+
+  /**
+   * Per-person cashflow parts with optional date filter and/or excluding lønn+ekstra.
+   * Same share rules as calcPerson.
+   *
+   * opts:
+   *   asOf: 'YYYY-MM-DD'|null — when filterDates, keep entries with date<=asOf (undated kept)
+   *   filterDates: bool
+   *   excludeSalaryIncome: bool — zero out logged lønn + ekstra (før lønn mode)
+   */
+  function personCashflowParts(m, personId, people, categories, opts) {
+    opts = opts || {};
+    var asOf = normalizeBalanceAsOf(opts.asOf);
+    var filterDates = !!opts.filterDates && !!asOf;
+    var excludeSalary = !!opts.excludeSalaryIncome;
+
+    function keep(entry) {
+      return !filterDates || cashflowEntryOnOrBefore(entry, asOf);
+    }
+
+    var lønn = sumAmounts(m.incomes, function (i) {
+      return i.person === personId && i.type === "lønn" && keep(i);
+    });
+    var ekstra = sumAmounts(m.incomes, function (i) {
+      return i.person === personId && i.type === "ekstra" && keep(i);
+    });
+    if (excludeSalary) {
+      lønn = 0;
+      ekstra = 0;
+    }
+    var sparing = sumAmounts(m.savings, function (s) {
+      return s.person === personId && keep(s);
+    });
+    var ownExp = sumAmounts(m.expenses, function (e) {
+      return e.owner === personId && keep(e);
+    });
+    // Felles share: filter expense list when dating
+    var fellesPart = 0;
+    if (filterDates) {
+      var active = activePeople(people);
+      var n = active.length || 1;
+      (m.expenses || []).forEach(function (e) {
+        if (!e || e.owner !== "felles" || !keep(e)) return;
+        var amt = Number(e.amount) || 0;
+        var cat = null;
+        if (e.categoryId && categories) {
+          for (var ci = 0; ci < categories.length; ci++) {
+            if (categories[ci].id === e.categoryId) {
+              cat = categories[ci];
+              break;
+            }
+          }
+        }
+        if (cat) {
+          fellesPart += fellesShare(cat, personId, people, amt);
+        } else {
+          fellesPart += amt / n;
+        }
+      });
+    } else {
+      fellesPart = fellesExpenseShareForPerson(m, personId, people, categories);
+    }
+    var utgifter = ownExp + fellesPart;
+    var tilOvers = lønn + ekstra - sparing - utgifter;
+    return {
+      lønn: lønn,
+      ekstra: ekstra,
+      sparing: sparing,
+      utgifter: utgifter,
+      ownExp: ownExp,
+      fellesShare: fellesPart,
+      tilOvers: tilOvers,
+      filterDates: filterDates,
+      excludeSalaryIncome: excludeSalary,
+      asOf: asOf
+    };
+  }
+
+  /**
+   * Resolve forventet cashflow for a balance timing mode.
+   *
+   * Rules (documented):
+   * - after_salary: prev.bruk + full tilOvers − autoSpendExtra
+   *   (current reconcile; logged lønn/ekstra count).
+   * - before_salary: same but logged lønn + ekstra are excluded from cashflow
+   *   (as if this month’s salary/extra has not landed). Planned income was never
+   *   in tilOvers. Sparing + utgifter + auto Fast still count.
+   * - dated: if the month has any dated cashflow, use entries with date<=asOf
+   *   (undated kept); else full-month cashflow like after_salary. asOf is always
+   *   kept for display. auto Fast still full month.
+   */
+  function expectedCashflowForBalanceWhen(m, personId, people, categories, when, asOf) {
+    var mode = normalizeBalanceWhen(when);
+    var asOfN = normalizeBalanceAsOf(asOf);
+    var opts = { asOf: null, filterDates: false, excludeSalaryIncome: false };
+    var source = "prev+cashflow+autoFast";
+
+    if (mode === BALANCE_WHEN_BEFORE) {
+      opts.excludeSalaryIncome = true;
+      source = "prev+cashflowBeforeSalary+autoFast";
+    } else if (mode === BALANCE_WHEN_DATED) {
+      if (asOfN && monthHasDatedCashflow(m)) {
+        opts.asOf = asOfN;
+        opts.filterDates = true;
+        source = "prev+cashflowToDate+autoFast";
+      } else {
+        source = "prev+cashflow+autoFast"; // no dates → etter lønn semantics
+      }
+    }
+
+    var parts = personCashflowParts(m, personId, people, categories, opts);
+    return {
+      when: mode,
+      asOf: mode === BALANCE_WHEN_DATED ? asOfN : null,
+      tilOvers: parts.tilOvers,
+      parts: parts,
+      source: source,
+      filteredByDate: !!opts.filterDates
+    };
+  }
+
+  /** Short nb label for mode/date badge. */
+  function balanceWhenLabel(when, asOf) {
+    var mode = normalizeBalanceWhen(when);
+    if (mode === BALANCE_WHEN_BEFORE) return "Oppgitt før lønn";
+    if (mode === BALANCE_WHEN_DATED) {
+      var d = normalizeBalanceAsOf(asOf);
+      if (!d) return "Oppgitt på dato";
+      var parts = d.split("-");
+      if (parts.length === 3) {
+        var months = [
+          "jan",
+          "feb",
+          "mar",
+          "apr",
+          "mai",
+          "jun",
+          "jul",
+          "aug",
+          "sep",
+          "okt",
+          "nov",
+          "des"
+        ];
+        var mi = Number(parts[1]) - 1;
+        var day = String(Number(parts[2]));
+        var mon = months[mi] || parts[1];
+        return "Oppgitt " + day + ". " + mon;
+      }
+      return "Oppgitt " + d;
+    }
+    return "Oppgitt etter lønn";
+  }
+
+  /**
    * «På konto nå» reconciliation per person + samlet.
    * prevBalances: previous month balances map { [pid]: { bruk, spare } } or null.
-   * Forventet = prev.bruk + tilOvers − autoSpendExtra (effektiv cashflow inkl. auto Fast).
+   * Forventet respects balances[pid].when / asOf (see expectedCashflowForBalanceWhen).
    * Independent of oppgitt.
    */
   function reconcilePaKonto(m, people, categories, monthIndex, prevBalances) {
@@ -2689,6 +2903,8 @@
 
     active.forEach(function (p) {
       var bal = (m.balances && m.balances[p.id]) || {};
+      var when = normalizeBalanceWhen(bal.when);
+      var asOf = normalizeBalanceAsOf(bal.asOf);
       var oppgitt = parseBalanceAmount(bal.bruk);
       var spare = parseBalanceAmount(bal.spare);
       var cp = calcPerson(m, p.id, people, categories);
@@ -2703,16 +2919,27 @@
         categories,
         monthIndex
       );
-      var forventet = expectedBrukFromPrev(prevBruk, cp.tilOvers, autoExtra);
+      var cf = expectedCashflowForBalanceWhen(
+        m,
+        p.id,
+        people,
+        categories,
+        when,
+        asOf
+      );
+      var forventet = expectedBrukFromPrev(prevBruk, cf.tilOvers, autoExtra);
       var etterLonn = etterLonnFromBruk(oppgitt, planInn, planUt);
       var differanse = balanceVariance(oppgitt, forventet);
-      var source = forventet != null ? "prev+cashflow+autoFast" : null;
+      var source = forventet != null ? cf.source : null;
 
       byPerson[p.id] = {
         personId: p.id,
         name: p.name,
         oppgitt: oppgitt,
         spare: spare,
+        when: when,
+        asOf: when === BALANCE_WHEN_DATED ? asOf : null,
+        whenLabel: balanceWhenLabel(when, asOf),
         forventet: forventet,
         differanse: differanse,
         variance: varianceMeta(differanse),
@@ -2720,10 +2947,12 @@
         planInn: planInn,
         planUt: planUt,
         tilOvers: cp.tilOvers,
+        tilOversForMode: cf.tilOvers,
         autoSpendExtra: autoExtra,
-        effectiveTilOvers: (cp.tilOvers || 0) - (autoExtra || 0),
+        effectiveTilOvers: (cf.tilOvers || 0) - (autoExtra || 0),
         prevBruk: prevBruk,
-        source: source
+        source: source,
+        filteredByDate: cf.filteredByDate
       };
 
       if (oppgitt != null) {
@@ -2873,6 +3102,16 @@
     expectedBrukFromPrev: expectedBrukFromPrev,
     etterLonnFromBruk: etterLonnFromBruk,
     varianceMeta: varianceMeta,
-    reconcilePaKonto: reconcilePaKonto
+    reconcilePaKonto: reconcilePaKonto,
+    BALANCE_WHEN_BEFORE: BALANCE_WHEN_BEFORE,
+    BALANCE_WHEN_AFTER: BALANCE_WHEN_AFTER,
+    BALANCE_WHEN_DATED: BALANCE_WHEN_DATED,
+    normalizeBalanceWhen: normalizeBalanceWhen,
+    normalizeBalanceAsOf: normalizeBalanceAsOf,
+    emptyBalance: emptyBalance,
+    monthHasDatedCashflow: monthHasDatedCashflow,
+    personCashflowParts: personCashflowParts,
+    expectedCashflowForBalanceWhen: expectedCashflowForBalanceWhen,
+    balanceWhenLabel: balanceWhenLabel
   };
 });

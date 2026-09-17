@@ -1659,6 +1659,166 @@ console.log("\n26. På konto nå: auto Fast + glemt variabelt kjøp");
 }
 
 
+
+// --- På konto: før vs etter lønn + på dato ---
+console.log("\n27. På konto nå: before_salary vs after_salary vs dated");
+{
+  const people = Calc.defaultPeople();
+  const cats = [
+    { id: "cMat", name: "Mat", type: "variabel", owner: "felles", archived: false }
+  ];
+  // prev p1 10000.
+  // Logged: lønn 30000, expense own 500, felles 1000 → p1 share 500
+  // tilOvers after = 30000 - 0 - 1000 = 29000 → forventet 39000
+  // tilOvers before (excl lønn) = 0 - 1000 = -1000 → forventet 9000
+  const base = {
+    balances: {
+      p1: { bruk: 9000, spare: null, when: "after_salary", asOf: null },
+      p2: { bruk: null, spare: null }
+    },
+    budgets: { cMat: 0 },
+    plannedIncome: {
+      p1: { lønn: 30000, ekstra: null },
+      p2: { lønn: 20000, ekstra: null }
+    },
+    incomes: [
+      { id: "i1", person: "p1", type: "lønn", amount: 30000, date: "2026-09-15" },
+      { id: "i2", person: "p1", type: "ekstra", amount: 1000, date: "2026-09-20" }
+    ],
+    savings: [],
+    expenses: [
+      { id: "e1", owner: "p1", categoryId: "cMat", amount: 500, date: "2026-09-05" },
+      { id: "e2", owner: "felles", categoryId: "cMat", amount: 1000, date: "2026-09-10" }
+    ]
+  };
+  const prevBalances = {
+    p1: { bruk: 10000, spare: null },
+    p2: { bruk: 8000, spare: null }
+  };
+
+  assertEq(Calc.normalizeBalanceWhen(undefined), "after_salary", "default when");
+  assertEq(Calc.normalizeBalanceWhen("before_salary"), "before_salary", "before when");
+  assertEq(Calc.balanceWhenLabel("before_salary", null), "Oppgitt før lønn", "label før");
+  assertEq(Calc.balanceWhenLabel("after_salary", null), "Oppgitt etter lønn", "label etter");
+  assertEq(Calc.balanceWhenLabel("dated", "2026-09-12"), "Oppgitt 12. sep", "label dato");
+
+  // after_salary
+  const mAfter = {
+    ...base,
+    balances: {
+      p1: { bruk: 39000, spare: null, when: "after_salary", asOf: null },
+      p2: { bruk: null, spare: null }
+    }
+  };
+  // tilOvers = 30000+1000 - 0 - (500+500) = 30000 → forventet 40000
+  const recA = Calc.reconcilePaKonto(mAfter, people, cats, 8, prevBalances);
+  assertEq(recA.byPerson.p1.when, "after_salary", "after when");
+  assertEq(recA.byPerson.p1.tilOversForMode, 30000, "after tilOvers incl salary");
+  assertEq(recA.byPerson.p1.forventet, 40000, "after forventet");
+  assertEq(recA.byPerson.p1.differanse, -1000, "after diff (oppgitt 39000)");
+  assertEq(recA.byPerson.p1.source, "prev+cashflow+autoFast", "after source");
+
+  // before_salary — exclude lønn+ekstra
+  const mBefore = {
+    ...base,
+    balances: {
+      p1: { bruk: 9000, spare: null, when: "before_salary", asOf: null },
+      p2: { bruk: null, spare: null }
+    }
+  };
+  // tilOvers = 0 - (500+500) = -1000 → forventet 9000
+  const recB = Calc.reconcilePaKonto(mBefore, people, cats, 8, prevBalances);
+  assertEq(recB.byPerson.p1.when, "before_salary", "before when");
+  assertEq(recB.byPerson.p1.tilOversForMode, -1000, "before tilOvers excl salary");
+  assertEq(recB.byPerson.p1.forventet, 9000, "before forventet");
+  assertEq(recB.byPerson.p1.differanse, 0, "before matches bank");
+  assertEq(recB.byPerson.p1.source, "prev+cashflowBeforeSalary+autoFast", "before source");
+  assertEq(recB.byPerson.p1.whenLabel, "Oppgitt før lønn", "before label");
+
+  // Same month data: before forventet < after forventet by lønn+ekstra
+  assertEq(
+    recA.byPerson.p1.forventet - recB.byPerson.p1.forventet,
+    31000,
+    "after−before = lønn+ekstra"
+  );
+
+  // dated asOf 2026-09-12: incomes after 12 excluded; expenses on/before included
+  // lønn 15th out, ekstra 20th out; e1 5th + e2 10th in → tilOvers = 0 - 1000 = -1000
+  const mDated = {
+    ...base,
+    balances: {
+      p1: { bruk: 9000, spare: null, when: "dated", asOf: "2026-09-12" },
+      p2: { bruk: null, spare: null }
+    }
+  };
+  const recD = Calc.reconcilePaKonto(mDated, people, cats, 8, prevBalances);
+  assertEq(recD.byPerson.p1.when, "dated", "dated when");
+  assertEq(recD.byPerson.p1.asOf, "2026-09-12", "dated asOf");
+  assert(recD.byPerson.p1.filteredByDate === true, "dated filters");
+  assertEq(recD.byPerson.p1.tilOversForMode, -1000, "dated tilOvers to 12th");
+  assertEq(recD.byPerson.p1.forventet, 9000, "dated forventet");
+  assertEq(recD.byPerson.p1.whenLabel, "Oppgitt 12. sep", "dated label");
+  assertEq(recD.byPerson.p1.source, "prev+cashflowToDate+autoFast", "dated source");
+
+  // dated after salary date → includes lønn
+  const mDatedLate = {
+    ...base,
+    balances: {
+      p1: { bruk: 40000, spare: null, when: "dated", asOf: "2026-09-30" },
+      p2: { bruk: null, spare: null }
+    }
+  };
+  const recDL = Calc.reconcilePaKonto(mDatedLate, people, cats, 8, prevBalances);
+  assertEq(recDL.byPerson.p1.tilOversForMode, 30000, "dated end-of-month = full");
+  assertEq(recDL.byPerson.p1.forventet, 40000, "dated late = after");
+
+  // dated with NO dates on cashflow → treat like after_salary
+  const mNoDates = {
+    balances: {
+      p1: { bruk: 11000, spare: null, when: "dated", asOf: "2026-09-12" },
+      p2: { bruk: null, spare: null }
+    },
+    budgets: { cMat: 0 },
+    plannedIncome: { p1: { lønn: 30000 }, p2: { lønn: 20000 } },
+    incomes: [{ id: "i1", person: "p1", type: "lønn", amount: 2000 }],
+    savings: [],
+    expenses: [
+      { id: "e1", owner: "p1", categoryId: "cMat", amount: 500 },
+      { id: "e2", owner: "felles", categoryId: "cMat", amount: 1000 }
+    ]
+  };
+  // tilOvers = 2000 - 1000 = 1000 → 11000 (same as classic after)
+  const recND = Calc.reconcilePaKonto(mNoDates, people, cats, 8, prevBalances);
+  assert(recND.byPerson.p1.filteredByDate === false, "no dates → no filter");
+  assertEq(recND.byPerson.p1.forventet, 11000, "no dates dated = after semantics");
+  assertEq(recND.byPerson.p1.source, "prev+cashflow+autoFast", "no dates source");
+  assertEq(recND.byPerson.p1.asOf, "2026-09-12", "asOf kept for display");
+
+  // migrate preserves when/asOf
+  const migrated = Calc.migrateState({
+    people,
+    months: {
+      "2026-09": {
+        balances: {
+          p1: { bruk: 1, spare: 2, when: "before_salary", asOf: null }
+        },
+        balancesUpdatedAt: "2026-09-17T10:00:00.000Z"
+      }
+    }
+  });
+  assertEq(
+    migrated.months["2026-09"].balances.p1.when,
+    "before_salary",
+    "migrate when"
+  );
+  assertEq(
+    migrated.months["2026-09"].balancesUpdatedAt,
+    "2026-09-17T10:00:00.000Z",
+    "migrate balancesUpdatedAt"
+  );
+}
+
+
 console.log("\n=== Results:", passed, "passed,", failed, "failed ===\n");
 if (failed) {
   console.error("FAILURES:");
