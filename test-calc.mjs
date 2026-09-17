@@ -810,7 +810,7 @@ console.log("\n11d. Suggested bruk seed = prev confirmed − plannedSpends (not 
   );
   assertEq(
     Calc.balanceSuggestedHint(),
-    "Bygger på forrige bekreftede saldo (± planlagte utlegg). Bekreft eller endre.",
+    "Trygg ruller automatisk (virtuell pot). Rett saldo bare hvis noe er feil — ikke nødvendig hver måned.",
     "hint nb"
   );
 }
@@ -954,13 +954,20 @@ console.log("\n11e. Rolling carry: Oct confirm leftover/deficit → Nov seed");
     "2026-09",
     "nearest confirmed is Sep not Oct"
   );
+  assertEq(
+    Calc.findNearestPreviousWithCarrySource(monthsGap, "2026-11"),
+    "2026-10",
+    "carry source prefers virtual Oct over skipping to Sep"
+  );
   Calc.ensureMonthExpected(monthsGap, "2026-11", people, {
     copyExpectedToNewMonths: true,
     categories: cats,
     plannedSpends: []
   });
-  assertEq(monthsGap["2026-11"].balances.p1.bruk, 40000, "Nov from Sep p1");
-  assertEq(monthsGap["2026-11"].balances.p2.bruk, 41223, "Nov from Sep p2");
+  // Virtual roll: Oct suggested 1 + planInn (no expenses/auto) → Nov
+  assertEq(monthsGap["2026-11"].balances.p1.bruk, 25001, "Nov from virtual Oct p1 (1+25000)");
+  assertEq(monthsGap["2026-11"].balances.p2.bruk, 15001, "Nov from virtual Oct p2 (1+15000)");
+  assert(monthsGap["2026-11"].balances.p1.fromCarryPot === true, "Nov marked fromCarryPot");
 }
 
 
@@ -1207,11 +1214,11 @@ console.log("\n14. Saldo safeToSpend, buffer, etterLonn, fallback without bruk")
   const emptyBal = JSON.parse(JSON.stringify(m));
   emptyBal.balances = { p1: { bruk: null, spare: 100 }, p2: { bruk: null, spare: null } };
   const cEmpty = Calc.calcFamily(emptyBal, people, cats, { spendBuffer: 3000 });
-  assertEq(cEmpty.safeToSpendMode, "awaiting_saldo", "awaiting saldo without bruk");
-  assert(cEmpty.needsSaldoForSafeToSpend === true, "needsSaldo flag");
-  assert(cEmpty.safeToSpend == null, "primary safe null without bruk");
-  assert(cEmpty.safeToSpendRaw == null, "raw null without bruk");
-  assert(cEmpty.etterLonn == null, "etterLonn null without bruk");
+  // På konto optional: without bruk fall back to plan (not blocking awaiting_saldo)
+  assertEq(cEmpty.safeToSpendMode, "plan", "plan fallback without bruk (På konto optional)");
+  assert(cEmpty.needsSaldoForSafeToSpend !== true, "needsSaldo not blocking");
+  assert(cEmpty.safeToSpend != null, "primary safe from plan when no bruk");
+  assert(cEmpty.safeToSpendRaw != null, "raw from plan when no bruk");
   // plan mirror still available: 50000 - (3000+6000 auto) - remFast0 = 41000
   assertEq(cEmpty.autoSpendExtra, 6000, "autoSpend still computed");
   assertEq(cEmpty.safeToSpendPlan, 41000, "plan mirror");
@@ -2686,9 +2693,9 @@ console.log("\n33. awaiting_saldo — Oct no bruk + plannedSpend; Sep saldo unch
     plannedSpends: planned,
     spendBuffer: 0
   });
-  assertEq(cOctEmpty.safeToSpendMode, "awaiting_saldo", "oct empty awaiting_saldo");
-  assert(cOctEmpty.needsSaldoForSafeToSpend === true, "oct empty needsSaldo");
-  assert(cOctEmpty.safeToSpend == null, "oct empty primary null (not 0)");
+  assertEq(cOctEmpty.safeToSpendMode, "plan", "oct empty plan fallback (På konto optional)");
+  assert(cOctEmpty.needsSaldoForSafeToSpend !== true, "oct empty needsSaldo not blocking");
+  assert(cOctEmpty.safeToSpend != null, "oct empty primary from plan (not forced Sett på konto)");
   assert(cOctEmpty.safeToSpendPlanRaw < 0, "oct plan raw negative (old scary path)");
   assertEq(
     cOctEmpty.safeToSpendPlan,
@@ -2949,6 +2956,131 @@ console.log("\n34. Same-month planned: no-flag seed match + negative Trygg");
   assert(cPlanNeg.safeToSpendRaw < 0, "plan raw negative");
   assertEq(cPlanNeg.safeToSpend, cPlanNeg.safeToSpendRaw, "plan primary no clamp");
 }
+
+
+// --- Virtual carry pot: optional På konto, automatic roll ---
+console.log("\n35. Virtual carry pot — skip På konto, bil once, good/bad months");
+{
+  const people = Calc.defaultPeople();
+  const cats = [
+    { id: "cLan", name: "Lån", type: "fast", owner: "felles", archived: false, autoSpend: true },
+    { id: "cMat", name: "Mat", type: "variabel", owner: "felles", archived: false }
+  ];
+  const planned = [
+    {
+      id: "bil1",
+      amount: 160000,
+      owner: "p1",
+      monthKey: "2026-10",
+      note: "Ny bil",
+      done: false
+    }
+  ];
+  const months = {
+    "2026-09": {
+      balances: {
+        p1: { bruk: 231223, spare: null, when: "dated", asOf: "2026-09-17" },
+        p2: { bruk: null, spare: null, when: "after_salary", asOf: null }
+      },
+      balancesUpdatedAt: "2026-09-17T17:32:19.592Z",
+      budgets: { cLan: { felles: 20000 }, cMat: { felles: 5000 } },
+      plannedIncome: {
+        p1: { lønn: 40910, ekstra: 3732 },
+        p2: { lønn: 31500, ekstra: null }
+      },
+      incomes: [],
+      savings: [],
+      expenses: []
+    }
+  };
+
+  // Oct seed = 231223 − 160000 = 71223 (bil once), no bank confirm
+  const rOct = Calc.ensureSuggestedBalances(months, "2026-10", people, {
+    plannedSpends: planned,
+    categories: cats
+  });
+  assert(rOct.seeded === true, "oct seeded");
+  assertEq(months["2026-10"].balances.p1.bruk, 71223, "oct pot after bil");
+  assert(!months["2026-10"].balancesUpdatedAt, "oct not confirmed");
+  const cOct = Calc.calcFamily(months["2026-10"], people, cats, {
+    monthKey: "2026-10",
+    monthIndex: 9,
+    plannedSpends: planned,
+    spendBuffer: 0
+  });
+  assertEq(cOct.safeToSpendMode, "saldo", "oct saldo from pot");
+  assertEq(cOct.safeToSpend, 71223, "oct Trygg from pot (bil not double)");
+  assert(cOct.needsSaldoForSafeToSpend !== true, "oct no blocking needsSaldo");
+
+  // Good Oct: income − modest variable → higher Nov
+  months["2026-10"].plannedIncome = {
+    p1: { lønn: 40000, ekstra: null },
+    p2: { lønn: 31500, ekstra: null }
+  };
+  months["2026-10"].budgets = { cLan: { felles: 20000 }, cMat: { felles: 5000 } };
+  months["2026-10"].expenses = [
+    { id: "e1", owner: "p1", categoryId: "cMat", amount: 2000 }
+  ];
+  const endGood = Calc.computeCarryEndBrukForPerson(
+    months["2026-10"],
+    "p1",
+    people,
+    { categories: cats, monthIndex: 9, monthKey: "2026-10" }
+  );
+  assert(endGood > 71223, "good month end pot > start");
+  const rNov = Calc.ensureSuggestedBalances(months, "2026-11", people, {
+    plannedSpends: planned,
+    categories: cats
+  });
+  assert(rNov.seeded === true, "nov seeded from virtual");
+  assert(rNov.fromCarry === true, "nov fromCarry");
+  assert(
+    months["2026-11"].balances.p1.bruk > 71223,
+    "nov pot higher after good oct"
+  );
+
+  // Bad month path: overspend → lower / negative
+  const monthsBad = JSON.parse(JSON.stringify({
+    "2026-10": months["2026-10"]
+  }));
+  // reset oct to seed only
+  monthsBad["2026-10"].balances.p1.bruk = 71223;
+  monthsBad["2026-10"].balances.p1.suggested = true;
+  monthsBad["2026-10"].balancesSuggested = true;
+  delete monthsBad["2026-10"].balancesUpdatedAt;
+  monthsBad["2026-10"].expenses = [
+    { id: "eBig", owner: "p1", categoryId: "cMat", amount: 120000 }
+  ];
+  const endBad = Calc.computeCarryEndBrukForPerson(
+    monthsBad["2026-10"],
+    "p1",
+    people,
+    { categories: cats, monthIndex: 9 }
+  );
+  assert(endBad < 71223, "bad month lowers pot");
+  Calc.ensureSuggestedBalances(monthsBad, "2026-11", people, {
+    plannedSpends: [],
+    categories: cats
+  });
+  assert(
+    monthsBad["2026-11"].balances.p1.bruk < 71223,
+    "nov lower/negative after bad oct"
+  );
+
+  // Optional bank confirm resets pot
+  months["2026-11"].balances.p1.bruk = 95000;
+  months["2026-11"].balances.p1.suggested = false;
+  months["2026-11"].balances.p1.fromCarryPot = false;
+  months["2026-11"].balancesUpdatedAt = "2026-11-15T12:00:00.000Z";
+  delete months["2026-11"].balancesSuggested;
+  const rDec = Calc.ensureSuggestedBalances(months, "2026-12", people, {
+    plannedSpends: [],
+    categories: cats
+  });
+  assert(rDec.seeded === true, "dec from bank reset");
+  assertEq(months["2026-12"].balances.p1.bruk, 95000, "dec pot = confirmed bank");
+}
+
 
 console.log("\n=== Results:", passed, "passed,", failed, "failed ===\n");
 if (failed) {

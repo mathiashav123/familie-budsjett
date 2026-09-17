@@ -1,5 +1,17 @@
 # Endringslogg – Familiebudsjett
 
+## 17. september 2026 (UTC+2) – Valgfri På konto + virtuell carry-pot
+
+- **Produkt:** «På konto nå» er **rettingsverktøy** (når noe er feil) — ikke månedlig plikt. Trygg pluss/minus drives av **virtuell carry-pot**.
+- **Formel:** `pot_neste = pot + månedlig_netto − variabelt_forbruk − planlagt (én gang)`.
+  - Start fra sist kjente bank **eller** envelope etter planlagt (f.eks. 231223 − 160000 bil = **71223**).
+  - Uten bankbekreftelse ruller pot likevel (kan bli negativ).
+  - «Rett saldo» / bankbekreftelse **nullstiller** pot til oppgitt tall (override).
+- **UI:** «På konto nå *(valgfritt)*», knapp **Rett saldo**, hint om automatisk rull vs valgfri retting. Ingen blokkerende «Sett på konto» som Trygg-verdi — faller tilbake til plan/pot.
+- **Lagring:** `familie-budsjett-v1` uendret; additive felt `carryPot` / `fromCarryPot` OK.
+- **Sim:** `sim-10y-carry-user.mjs` + `SIM-10Y-CARRY-RAPPORT.md` (120 mnd, live export, bil én gang, mix confirm/skip).
+- Tester §35 + oppdaterte awaiting/hint-tester.
+
 ## 17. september 2026 (UTC+2) – Rullerende saldo: rest midler inn i neste måned
 
 - **Ønske:** Trygg å bruke skal gå pluss/minus etter hvordan måneden gikk. Bekreftet På konto (f.eks. Oct 81223 etter godt overskudd) skal foreslå samme tall i neste måned — ikke sitte fast på gammel Sep-seed (71223).

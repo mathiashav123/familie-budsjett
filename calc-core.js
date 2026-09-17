@@ -359,8 +359,8 @@
         var cur = m.balances[pid];
         var pbal = prev.balances[pid];
         if (!cur || typeof cur !== "object" || !pbal) return;
-        // Keep suggested seeds (prev − planned, or rolling carry); not accidental raw copies
-        if (cur.suggested || cur.suggestedAfterPlans || m.balancesSuggested) return;
+        // Keep suggested / virtual carry pot seeds; not accidental raw copies
+        if (cur.suggested || cur.suggestedAfterPlans || cur.fromCarryPot || m.balancesSuggested || m.carryPot) return;
         if (balanceFieldEqual(cur.bruk, pbal.bruk)) {
           cur.bruk = null;
           cleared++;
@@ -501,7 +501,145 @@
    * Marks suggested:true + when=after_salary. Does not write balancesUpdatedAt
    * (user must Bekreft). Never re-seeds over confirmed or existing non-suggested bruk.
    */
-  function ensureSuggestedBalances(months, key, people, plannedSpends) {
+
+  /**
+   * Virtual carry pot: tracks unused/overspent envelope across months without
+   * requiring På konto confirm. På konto is a correction tool that resets the pot.
+   *
+   * pot_next = pot + monthly_net_effect − variable_spending − planned(once)
+   * monthly_net_effect ≈ (logged|planned income) − Fast auto − sparing
+   * variable_spending = logged expenses attributed to person (own + felles share)
+   *
+   * Confirmed bank (balancesUpdatedAt) is truth → ending pot = bruk (no invent).
+   */
+
+  function monthHasCarrySource(m) {
+    if (!m) return false;
+    if (m.balancesUpdatedAt && monthHasBalances(m)) return true;
+    if (monthHasSuggestedBalances(m)) return true;
+    if (m.carryPot && typeof m.carryPot === "object") {
+      var keys = Object.keys(m.carryPot);
+      for (var i = 0; i < keys.length; i++) {
+        var v = Number(m.carryPot[keys[i]]);
+        if (Number.isFinite(v)) return true;
+      }
+    }
+    return false;
+  }
+
+  /** Nearest earlier month with confirmed bank OR virtual/suggested carry pot. */
+  function findNearestPreviousWithCarrySource(months, monthKey, maxLookback) {
+    var look = maxLookback == null ? 36 : maxLookback;
+    var key = monthKey;
+    for (var i = 0; i < look; i++) {
+      key = shiftMonthKey(key, -1);
+      if (!key) return null;
+      var m = months && months[key];
+      if (m && monthHasCarrySource(m)) return key;
+    }
+    return null;
+  }
+
+  /**
+   * Ending carry pot for one person after a month's envelope effects.
+   * opts: { categories, monthIndex, plannedSpends, monthKey }
+   */
+  function computeCarryEndBrukForPerson(m, personId, people, opts) {
+    opts = opts || {};
+    if (!m || !personId) return null;
+    ensureBalancesShape(m, people);
+    var bal = (m.balances && m.balances[personId]) || {};
+    var start = parseBalanceAmount(bal.bruk);
+    if (start == null && m.carryPot && m.carryPot[personId] != null) {
+      var cp = Number(m.carryPot[personId]);
+      if (Number.isFinite(cp)) start = cp;
+    }
+    if (start == null) return null;
+
+    // Confirmed bank snapshot is truth — do not invent post-confirm cashflow
+    if (m.balancesUpdatedAt) return start;
+
+    var categories = opts.categories || [];
+    var monthIndex =
+      opts.monthIndex != null
+        ? opts.monthIndex
+        : opts.monthKey
+          ? monthIndexFromKey(opts.monthKey)
+          : 0;
+
+    var planLonn = plannedIncomeFor(m, personId, "lønn") || 0;
+    var planEkstra = plannedIncomeFor(m, personId, "ekstra") || 0;
+    var planInn = planLonn + planEkstra;
+    var planSparing = 0;
+    if (typeof plannedSparingFor === "function") {
+      planSparing = plannedSparingFor(m, personId) || 0;
+    } else if (m.plannedIncome && m.plannedIncome[personId]) {
+      var ps = Number(m.plannedIncome[personId].sparing);
+      if (Number.isFinite(ps) && ps > 0) planSparing = ps;
+    }
+
+    var parts = personCashflowParts(m, personId, people, categories, {});
+    var loggedInn = (parts.lønn || 0) + (parts.ekstra || 0);
+    var income = loggedInn > 0 ? loggedInn : planInn;
+    var sparing = (parts.sparing || 0) > 0 ? parts.sparing : planSparing;
+    var variableSpending = parts.utgifter || 0; // logged expenses (var + any logged fast)
+    var autoFast = autoSpendExtraForPerson(
+      m,
+      personId,
+      people,
+      categories,
+      monthIndex
+    );
+
+    // pot + monthly_net_effect − variable_spending
+    // monthly_net = income − Fast auto − sparing
+    return start + income - autoFast - sparing - variableSpending;
+  }
+
+  /** Household / per-person ending pots for a month (additive carryPot field). */
+  function computeMonthCarryPot(m, people, opts) {
+    opts = opts || {};
+    var active = activePeople(people);
+    var out = {};
+    var any = false;
+    active.forEach(function (p) {
+      var end = computeCarryEndBrukForPerson(m, p.id, people, opts);
+      if (end == null) return;
+      out[p.id] = Math.round(end * 100) / 100;
+      any = true;
+    });
+    return any ? out : null;
+  }
+
+  /**
+   * Persist ending carryPot on month (additive). Safe to call often.
+   */
+  function refreshMonthCarryPot(months, key, people, opts) {
+    if (!months || !key || !months[key]) return null;
+    var pot = computeMonthCarryPot(months[key], people, opts);
+    if (pot) {
+      months[key].carryPot = pot;
+      months[key].carryPotSource = months[key].balancesUpdatedAt
+        ? "bank"
+        : "virtual";
+    }
+    return pot;
+  }
+
+  function ensureSuggestedBalances(months, key, people, plannedSpends, maybeOpts) {
+    // Compat: 4th arg may be opts { plannedSpends, categories }
+    var categoriesOpt = [];
+    if (plannedSpends && !Array.isArray(plannedSpends) && typeof plannedSpends === "object") {
+      categoriesOpt = plannedSpends.categories || [];
+      plannedSpends = plannedSpends.plannedSpends || [];
+    }
+    if (maybeOpts && typeof maybeOpts === "object") {
+      if (Array.isArray(maybeOpts.categories)) categoriesOpt = maybeOpts.categories;
+      if (Array.isArray(maybeOpts.plannedSpends) && (!plannedSpends || !plannedSpends.length)) {
+        plannedSpends = maybeOpts.plannedSpends;
+      }
+    }
+    plannedSpends = Array.isArray(plannedSpends) ? plannedSpends : [];
     if (!months || !key) return { seeded: false, reason: "no-month" };
     if (!months[key]) {
       months[key] = {
@@ -555,41 +693,72 @@
       return { seeded: false, reason: "already-suggested" };
     }
 
-    var prevKey = findNearestPreviousWithConfirmedBalances(months, key);
+    // Carry pot: prefer nearest confirmed OR virtual/suggested month
+    var prevKey = findNearestPreviousWithCarrySource(months, key);
     var prev = prevKey && months[prevKey];
-    if (!prev || !prev.balancesUpdatedAt) {
-      return { seeded: false, reason: "no-prev-confirmed" };
+    if (!prev) {
+      return { seeded: false, reason: "no-prev-carry" };
     }
     ensureBalancesShape(prev, people);
 
+    var cats = categoriesOpt || [];
+    var prevMonthIndex = monthIndexFromKey(prevKey);
+    // Refresh ending pot on prev (virtual months roll with net − variable)
+    refreshMonthCarryPot(months, prevKey, people, {
+      categories: cats,
+      monthIndex: prevMonthIndex,
+      monthKey: prevKey,
+      plannedSpends: plannedSpends || []
+    });
+
     var seededAny = false;
+    var potMap = {};
     active.forEach(function (p) {
-      var prevBal = prev.balances[p.id] || {};
-      var prevBruk = parseBalanceAmount(prevBal.bruk);
-      if (prevBruk == null) return;
+      var base = null;
+      if (prev.balancesUpdatedAt) {
+        // Bank correction / confirmed → start from real bruk
+        base = parseBalanceAmount((prev.balances[p.id] || {}).bruk);
+      } else {
+        // Virtual roll: ending carry pot after prev month effects
+        if (prev.carryPot && prev.carryPot[p.id] != null && Number.isFinite(Number(prev.carryPot[p.id]))) {
+          base = Number(prev.carryPot[p.id]);
+        } else {
+          base = computeCarryEndBrukForPerson(prev, p.id, people, {
+            categories: cats,
+            monthIndex: prevMonthIndex,
+            monthKey: prevKey
+          });
+        }
+      }
+      if (base == null) return;
       var deduct = openPlannedSpendDeductionForPerson(
         plannedSpends || [],
         key,
         p.id,
         people
       );
-      var suggestedAmt = computeSuggestedBrukFromPrev(prevBruk, deduct);
+      var suggestedAmt = computeSuggestedBrukFromPrev(base, deduct);
       if (suggestedAmt == null) return;
       if (!m.balances[p.id] || typeof m.balances[p.id] !== "object") {
         m.balances[p.id] = emptyBalance();
       }
       m.balances[p.id].bruk = suggestedAmt;
-      // Do not copy spare; seed is payment-after from last known bank figure
       m.balances[p.id].spare = null;
       m.balances[p.id].when = BALANCE_WHEN_AFTER;
       m.balances[p.id].asOf = null;
       m.balances[p.id].suggested = true;
       m.balances[p.id].suggestedAfterPlans = true;
+      m.balances[p.id].fromCarryPot = true;
+      potMap[p.id] = suggestedAmt;
       seededAny = true;
     });
     if (seededAny) {
       m.balancesSuggested = true;
-      return { seeded: true, reason: "ok" };
+      m.carryPot = potMap;
+      m.carryPotSource = prev.balancesUpdatedAt ? "from-bank" : "virtual-roll";
+      // Same-month planned already in seed → mark reflected so Trygg does not double-count
+      markPlannedSpendsReflectedInBalance(plannedSpends || [], key);
+      return { seeded: true, reason: "ok", fromCarry: !prev.balancesUpdatedAt };
     }
     return { seeded: false, reason: "no-prev-bruk" };
   }
@@ -1853,10 +2022,12 @@
       safeToSpendRaw = safeToSpendNowRaw;
       safeToSpend = safeToSpendNow;
     } else if (useSaldo && !hasBruk) {
-      safeToSpendMode = "awaiting_saldo";
-      safeToSpendRaw = null;
-      safeToSpend = null;
-      needsSaldoForSafeToSpend = true;
+      // På konto is optional (correction tool). Without pot/bruk, fall back to
+      // plan-mode Trygg instead of blocking «Sett på konto» / null.
+      safeToSpendMode = "plan";
+      safeToSpendRaw = safeToSpendPlanRaw;
+      safeToSpend = safeToSpendPlan;
+      needsSaldoForSafeToSpend = false;
     }
 
     // Per-person Trygg å bruke (same mode rules; buffer split equally by people count)
@@ -1927,10 +2098,11 @@
         rawP = nowRawP;
         safeP = nowSafeP;
       } else if (useSaldo && !hasPersonBruk) {
-        modeP = "awaiting_saldo";
-        rawP = null;
-        safeP = null;
-        needsSaldoP = true;
+        // Optional På konto — plan fallback, not blocking
+        modeP = "plan";
+        rawP = planRawP;
+        safeP = planSafeP;
+        needsSaldoP = false;
       }
 
       cp.remainingBudgetAll = remAllP;
@@ -2189,12 +2361,7 @@
     ensureMonthShape(m, people);
     if (monthHasExpected(m)) {
       // Budgets already present — still may seed suggested bruk from prev − planned.
-      var sugEarly = ensureSuggestedBalances(
-        months,
-        key,
-        people,
-        opts.plannedSpends || []
-      );
+      var sugEarly = ensureSuggestedBalances(months, key, people, { plannedSpends: opts.plannedSpends || [], categories: opts.categories || categories || [] });
       return {
         copied: false,
         sourceKey: null,
@@ -2208,12 +2375,7 @@
       opts.maxLookback
     );
     if (!srcKey) {
-      var sugNoSrc = ensureSuggestedBalances(
-        months,
-        key,
-        people,
-        opts.plannedSpends || []
-      );
+      var sugNoSrc = ensureSuggestedBalances(months, key, people, { plannedSpends: opts.plannedSpends || [], categories: opts.categories || categories || [] });
       return {
         copied: false,
         sourceKey: null,
@@ -2224,12 +2386,7 @@
     var src = months[srcKey];
     if (copyAll) {
       copyExpectedFrom(src, m, people, monthIndexFromKey(key));
-      var sugAll = ensureSuggestedBalances(
-        months,
-        key,
-        people,
-        opts.plannedSpends || []
-      );
+      var sugAll = ensureSuggestedBalances(months, key, people, { plannedSpends: opts.plannedSpends || [], categories: opts.categories || categories || [] });
       return {
         copied: true,
         sourceKey: srcKey,
@@ -2282,12 +2439,7 @@
         }
       });
     });
-    var sugAf = ensureSuggestedBalances(
-      months,
-      key,
-      people,
-      opts.plannedSpends || []
-    );
+    var sugAf = ensureSuggestedBalances(months, key, people, { plannedSpends: opts.plannedSpends || [], categories: opts.categories || categories || [] });
     return {
       copied: any,
       sourceKey: any ? srcKey : null,
@@ -3314,12 +3466,12 @@
 
   /** Short nb label when balance is a suggested seed (rolling carry). */
   function balanceSuggestedLabel() {
-    return "Bygger på forrige bekreftede saldo";
+    return "Automatisk rullerende pot";
   }
 
   /** Hint under På konto when balances are suggested (unconfirmed). */
   function balanceSuggestedHint() {
-    return "Bygger på forrige bekreftede saldo (± planlagte utlegg). Bekreft eller endre.";
+    return "Trygg ruller automatisk (virtuell pot). Rett saldo bare hvis noe er feil — ikke nødvendig hver måned.";
   }
 
   /** Short nb label for mode/date badge. */
@@ -3575,6 +3727,11 @@
     copyBalancesFrom: copyBalancesFrom,
     clearAccidentalBalanceCarry: clearAccidentalBalanceCarry,
     ensureSuggestedBalances: ensureSuggestedBalances,
+    computeCarryEndBrukForPerson: computeCarryEndBrukForPerson,
+    computeMonthCarryPot: computeMonthCarryPot,
+    refreshMonthCarryPot: refreshMonthCarryPot,
+    findNearestPreviousWithCarrySource: findNearestPreviousWithCarrySource,
+    monthHasCarrySource: monthHasCarrySource,
     openPlannedSpendDeductionForPerson: openPlannedSpendDeductionForPerson,
     computeSuggestedBrukFromPrev: computeSuggestedBrukFromPrev,
     clearSuggestedBalanceFlag: clearSuggestedBalanceFlag,

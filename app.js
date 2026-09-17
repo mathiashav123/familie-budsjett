@@ -1436,7 +1436,7 @@
           '" /><span>kr</span></div></label>' +
           '<button type="button" class="btn primary sm pa-konto-confirm" data-bal-confirm="' +
           escapeAttr(person.id) +
-          '">Bekreft saldo</button>' +
+          '">Rett saldo</button>' +
           whenSeg +
           dateRow +
           diffHtml +
@@ -1511,11 +1511,11 @@
         newMonthHint.textContent =
           typeof Calc.balanceSuggestedHint === "function"
             ? Calc.balanceSuggestedHint()
-            : "Bygger på forrige bekreftede saldo (± planlagte utlegg). Bekreft eller endre.";
+            : "Trygg ruller automatisk (virtuell pot). Rett saldo bare hvis noe er feil — ikke nødvendig hver måned.";
       } else if (emptyBal) {
         newMonthHint.hidden = false;
         newMonthHint.textContent =
-          "Ny måned — bekreft På konto nå (kopieres ikke automatisk fra forrige).";
+          "Ny måned — Trygg ruller automatisk. Rett saldo bare hvis banken ikke stemmer.";
       } else {
         newMonthHint.hidden = true;
       }
@@ -2188,8 +2188,8 @@
         valEl.textContent = "—";
         valEl.className = "safe-spend-value";
       } else if (needsSaldo) {
-        valEl.textContent = "Sett på konto nå";
-        valEl.className = "safe-spend-value is-needs-saldo";
+        valEl.textContent = "—";
+        valEl.className = "safe-spend-value";
       } else {
         const amt = typeof amount === "number" ? amount : 0;
         const rawN = typeof raw === "number" ? raw : amt;
@@ -2254,12 +2254,12 @@
       if (!show) {
         hintEl.classList.remove("is-saldo-short");
         hintEl.textContent = wantSaldo
-          ? "Sett brukssaldo (På konto nå) for mer treffsikkert tall. Faste er allerede i banksaldo — ikke trukket på nytt. Variabelt telles når du logger kjøp."
+          ? "Trygg ruller automatisk (virtuell pot). På konto er valgfritt for å rette hvis noe er feil. Faste allerede i banksaldo — ikke trukket på nytt."
           : "Det du trygt kan bruke nå: forventet inntekt minus det du har brukt, minus faste utgifter som gjenstår.";
       } else if (needsSaldo) {
         hintEl.classList.remove("is-saldo-short");
         hintEl.textContent =
-          "Trygg å bruke for denne måneden mangler saldo — bekreft På konto nå." +
+          "Trygg ruller automatisk. På konto er valgfritt — rett bare hvis noe er feil." +
           fromPrevHint;
       } else if (fromSaldo) {
         const amt = typeof amount === "number" ? amount : 0;

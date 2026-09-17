@@ -1,0 +1,27 @@
+{
+  "exportPath": "/workspace/familie-budsjett-export-live.json",
+  "months": 120,
+  "baseline": "2026-09",
+  "sepBank": 231223,
+  "octAfterBil": 71223,
+  "bilAmount": 160000,
+  "confirmCount": 29,
+  "skipCount": 90,
+  "pot": {
+    "min": 71223,
+    "avg": 629974.555,
+    "max": 1234671
+  },
+  "trygg": {
+    "min": 71223,
+    "avg": 628641.2216666668,
+    "max": 1234671
+  },
+  "goodHigher": 35,
+  "badLower": 16,
+  "assertions": {
+    "ok": 706,
+    "fail": 0
+  },
+  "failures": []
+}
