@@ -654,6 +654,78 @@ code {
   color: var(--text);
   max-width: 100%;
 }
+
+.pa-konto-confirm {
+  margin-top: .45rem;
+  width: 100%;
+  min-height: 2.55rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+.pa-konto-breakdown {
+  margin: .45rem 0 0;
+  padding-top: .35rem;
+  border-top: 1px dashed var(--border, #d0d7de);
+}
+.pa-konto-breakdown > summary {
+  cursor: pointer;
+  font-size: .78rem;
+  font-weight: 700;
+  color: #1d4ed8;
+  list-style: none;
+}
+.pa-konto-breakdown > summary::-webkit-details-marker { display: none; }
+.pa-konto-breakdown > summary::before {
+  content: "▸ ";
+  color: #3b82f6;
+}
+.pa-konto-breakdown[open] > summary::before { content: "▾ "; }
+.pa-konto-breakdown-rows {
+  display: flex;
+  flex-direction: column;
+  gap: .18rem;
+  margin-top: .35rem;
+}
+.pa-konto-breakdown-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: .75rem;
+  font-size: .8rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.pa-konto-breakdown-row strong {
+  color: var(--text);
+  font-weight: 700;
+}
+.pa-konto-breakdown-row.is-eq {
+  margin-top: .2rem;
+  padding-top: .25rem;
+  border-top: 1px solid var(--border, #d0d7de);
+  font-weight: 700;
+  color: var(--text);
+}
+.pa-konto-breakdown-row.is-eq strong {
+  font-size: .92rem;
+}
+.pa-konto-breakdown-hint {
+  margin: .3rem 0 0;
+}
+.pa-konto-missing-prev {
+  margin-top: .35rem;
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+  align-items: flex-start;
+}
+.pa-konto-missing-prev .pa-konto-diff {
+  margin: 0;
+}
+.pa-konto-missing-prev .btn {
+  margin-top: .1rem;
+}
+
 @media (max-width: 480px) {
   .pa-konto-when-seg label {
     font-size: .72rem;

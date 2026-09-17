@@ -1819,6 +1819,103 @@ console.log("\n27. På konto nå: before_salary vs after_salary vs dated");
 }
 
 
+// --- På konto: breakdown parts + no double-count Fast ---
+console.log("\n28. På konto nå: forventet breakdown + Fast partial log");
+{
+  const people = Calc.defaultPeople();
+  const cats = [
+    {
+      id: "cHus",
+      name: "Husleie",
+      type: "fast",
+      owner: "felles",
+      archived: false,
+      autoSpend: true
+    },
+    {
+      id: "cMat",
+      name: "Mat",
+      type: "variabel",
+      owner: "felles",
+      archived: false
+    }
+  ];
+  // prev 20000. Logged: lønn 30000, sparing 2000, own mat 500, felles mat 1000 (share 500)
+  // Fast husleie plan 4000 felles — only 1000 logged → autoExtra share = (4000-1000)/2 = 1500
+  // utgifter = 500 + 500 (mat felles) + 500 (hus logged share) = 1500
+  // inn = 30000; sparing = 2000
+  // tilOvers = 30000 - 2000 - 1500 = 26500
+  // forventet = 20000 + 26500 - 1500 = 45000
+  const m = {
+    balances: {
+      p1: { bruk: 45000, spare: null, when: "after_salary", asOf: null },
+      p2: { bruk: null, spare: null }
+    },
+    budgets: {
+      cHus: { felles: 4000 },
+      cMat: { felles: 0 }
+    },
+    plannedIncome: { p1: { lønn: 30000 }, p2: { lønn: 20000 } },
+    incomes: [{ id: "i1", person: "p1", type: "lønn", amount: 30000 }],
+    savings: [{ id: "s1", person: "p1", amount: 2000 }],
+    expenses: [
+      { id: "eMat1", owner: "p1", categoryId: "cMat", amount: 500 },
+      { id: "eMat2", owner: "felles", categoryId: "cMat", amount: 1000 },
+      { id: "eHus", owner: "felles", categoryId: "cHus", amount: 1000 }
+    ]
+  };
+  const prevBalances = {
+    p1: { bruk: 20000, spare: null },
+    p2: { bruk: 10000, spare: null }
+  };
+  const rec = Calc.reconcilePaKonto(m, people, cats, 8, prevBalances);
+  const r = rec.byPerson.p1;
+  assert(r.parts && typeof r.parts === "object", "parts exposed");
+  assertEq(r.inn, 30000, "inn = lønn+ekstra");
+  assertEq(r.sparing, 2000, "sparing part");
+  assertEq(r.utgifter, 1500, "utgifter = own+felles shares");
+  assertEq(r.autoSpendExtra, 1500, "partial Fast → remaining auto only");
+  assertEq(r.prevBruk, 20000, "prevBruk");
+  assertEq(r.forventet, 45000, "forventet = prev+inn−ut−sparing−auto");
+  // Identity: prev + inn − utgifter − sparing − auto === forventet
+  const rebuilt =
+    r.prevBruk + r.inn - r.utgifter - r.sparing - r.autoSpendExtra;
+  assertEq(rebuilt, r.forventet, "breakdown identity holds");
+  // Full Fast logged → auto 0, utgifter includes full share 2000, same forventet
+  const mFull = {
+    ...m,
+    expenses: [
+      { id: "eMat1", owner: "p1", categoryId: "cMat", amount: 500 },
+      { id: "eMat2", owner: "felles", categoryId: "cMat", amount: 1000 },
+      { id: "eHus", owner: "felles", categoryId: "cHus", amount: 4000 }
+    ]
+  };
+  const recF = Calc.reconcilePaKonto(mFull, people, cats, 8, prevBalances);
+  const rf = recF.byPerson.p1;
+  assertEq(rf.autoSpendExtra, 0, "full Fast log → no auto");
+  assertEq(rf.utgifter, 3000, "utgifter includes full Fast share");
+  assertEq(rf.forventet, 45000, "no double-count vs partial");
+  assertEq(
+    rf.prevBruk + rf.inn - rf.utgifter - rf.sparing - rf.autoSpendExtra,
+    rf.forventet,
+    "full-log identity"
+  );
+
+  // before_salary: inn excluded
+  m.balances.p1.when = "before_salary";
+  const recB = Calc.reconcilePaKonto(m, people, cats, 8, prevBalances);
+  const rb = recB.byPerson.p1;
+  assertEq(rb.inn, 0, "before_salary inn 0");
+  assert(rb.excludeSalaryIncome === true, "excludeSalary flag");
+  assertEq(
+    rb.prevBruk + rb.inn - rb.utgifter - rb.sparing - rb.autoSpendExtra,
+    rb.forventet,
+    "before_salary identity"
+  );
+}
+
+
+
 console.log("\n=== Results:", passed, "passed,", failed, "failed ===\n");
 if (failed) {
   console.error("FAILURES:");
