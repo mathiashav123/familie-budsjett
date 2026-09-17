@@ -2163,6 +2163,19 @@
     }
     forwardSetValue(harEl, harNa);
 
+    const harHint = $("#forwardHarNaHint");
+    if (harHint) {
+      harHint.textContent = isPerson
+        ? "Trygg å bruke for valgt person denne måneden (lønn minus dine utgifter)."
+        : "Trygg å bruke denne måneden (eller bank hvis du har rettet På konto).";
+    }
+    const formulaHint = $("#forwardFormulaHint");
+    if (formulaHint) {
+      formulaHint.innerHTML = isPerson
+        ? "Formel (person): start fra din pot/bruk; hver måned <code>pot += din planInn − din Fast − din variabelt − dine planlagte utlegg</code> (lønn minus <em>mine</em> utgifter + felles-andel). Samlet-visning bruker begge lønninger. Bekreftet På konto beholder bank-Trygg."
+        : "Formel: start fra effektiv pot/Trygg (etter planlagte utlegg som bil én gang); hver fremtidig måned <code>pot += planInn − planUtFixed − planUtVariable − openPlannedThatMonth</code> (lønn minus alle utgifter). Person-fane: kun den personens lønn og utgiftsandel. Bekreftet På konto beholder bank-Trygg (Fast allerede i saldo). Tomme måneder gjenbruker siste kjente budsjett.";
+    }
+
     // Projection start = effective bruk/pot (post-bank). Prefer totalBruk
     // (includes calc-time fallback / seed), not Trygg-after-future-reserve.
     let startPot = null;
@@ -2190,6 +2203,13 @@
       }
     }
 
+    const forwardSub = document.querySelector("#forwardPanelCard .forward-sub");
+    if (forwardSub) {
+      forwardSub.textContent = isPerson
+        ? "Hvis du følger budsjettet (din lønn − dine utgifter)"
+        : "Hvis du følger budsjettet";
+    }
+
     const HORIZON = 156; // 13y so Dec/Nov of year+12 always in range
     let projection = null;
     if (
@@ -2204,7 +2224,8 @@
         categories: state.categories,
         plannedSpends: state.plannedSpends || [],
         startPot: startPot,
-        horizon: HORIZON
+        horizon: HORIZON,
+        personId: isPerson ? view : null
       });
     }
     state._forwardProjection = projection;
@@ -2395,7 +2416,13 @@
   function projectedPotForViewKey(viewKey) {
     if (!viewKey || typeof Calc.projectPotFollowBudget !== "function") return null;
     if (typeof Calc.shiftMonthKey !== "function") return null;
+    const innUtView = (state.settings && state.settings.innUtView) || "samlet";
+    const scopePersonId =
+      innUtView && innUtView !== "samlet" && innUtView !== "felles"
+        ? innUtView
+        : null;
     // Anchor: prefer nearest CONFIRMED bank month; else nearest suggested/carry.
+    // Personal Oversikt/Trygg uses that person's bruk only — never household sum.
     let anchorKey = null;
     let startPot = null;
     let fallbackKey = null;
@@ -2409,6 +2436,7 @@
       let total = 0;
       let any = false;
       activePeopleList().forEach(function (p) {
+        if (scopePersonId && p.id !== scopePersonId) return;
         const bal = mm.balances && mm.balances[p.id];
         if (
           bal &&
@@ -2460,12 +2488,19 @@
       categories: state.categories,
       plannedSpends: state.plannedSpends || [],
       startPot: startPot,
-      horizon: horizon
+      horizon: horizon,
+      personId: scopePersonId
     });
     if (!proj || !proj.potByKey) return null;
     const pot = proj.potByKey[viewKey];
     return Number.isFinite(pot)
-      ? { pot: pot, anchorKey: anchorKey, startPot: startPot, dist: dist }
+      ? {
+          pot: pot,
+          anchorKey: anchorKey,
+          startPot: startPot,
+          dist: dist,
+          personId: scopePersonId
+        }
       : null;
   }
 
@@ -2764,7 +2799,13 @@
         hintEl.textContent =
           "Projeksjon hvis budsjettet følges (fra " +
           projectionOverride.anchorKey +
-          "). Tomme fremtidige måneder: lønn − Fast − variabelt − planlagte utlegg. Bekreftet På konto beholder bank-Trygg. Se Fremover for detaljer.";
+          "). " +
+          (isPerson && whoName
+            ? "Personlig: " +
+              whoName +
+              "s lønn minus egne utgifter (+ felles-andel). "
+            : "Samlet husholdning: begge lønninger minus alle utgifter. ") +
+          "Bekreftet På konto beholder bank-Trygg. Se Fremover for detaljer.";
       } else if (needsSaldo) {
         hintEl.classList.remove("is-saldo-short");
         hintEl.textContent =

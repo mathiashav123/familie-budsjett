@@ -971,16 +971,23 @@
    * Project pot forward if user follows budget.
    * Formula (documented in UI):
    *   pot_{m+1} = pot_m + planInn − planUtFixed − planUtVariable − plannedSpendsThatMonth
-   * Lønn minus alle planlagte utgifter (Fast + variabelt + planlagte utlegg) → neste Trygg.
+   * Lønn minus planlagte utgifter (Fast + variabelt + planlagte utlegg) → neste Trygg.
    * startPot should be current effective bruk/pot (seed or bank), not Trygg-after-future-reserve.
    * Confirmed bank months on Oversikt keep bank-based Trygg (caller must not override
    * those with this projection — Fast already sits in the bank saldo).
+   *
+   * Scope (opts.personId):
+   *   - person p1/p2: planInn = that person's plannedIncome only; planUtFixed/Variable =
+   *     that person's budgets + felles %-share (same as personal Trygg); plannedSpends =
+   *     openPlannedSpendDeductionForPerson (own full + felles equal split).
+   *   - household / unset: full household totals (both incomes, all budgets).
+   * Never mix household cashflow onto a personal pot.
    *
    * Missing future months reuse the last known expected budgets/income (virtual
    * carry — does not mutate months). Horizon up to 240 months (20 years).
    *
    * Returns {
-   *   startPot, months:[{monthKey, pot, planInn, planUtFixed, planUtVariable, plannedSpends, delta}],
+   *   startPot, personId, months:[{monthKey, pot, planInn, planUtFixed, planUtVariable, plannedSpends, delta}],
    *   potAtHorizon, potByKey, byYear:[{year, monthKey, pot}],
    *   milestones:{m12,m60,m144}, formula
    * }.
@@ -993,6 +1000,17 @@
     var categories = opts.categories || [];
     var plannedSpends = opts.plannedSpends || [];
     var startPot = Number(opts.startPot);
+    var personId = opts.personId || null;
+    if (
+      personId === "samlet" ||
+      personId === "felles" ||
+      personId === "household" ||
+      !personId
+    ) {
+      personId = null;
+    } else if (!personById(people, personId)) {
+      personId = null;
+    }
     var horizon =
       opts.horizon == null
         ? 12
@@ -1000,6 +1018,7 @@
     if (!fromKey || !Number.isFinite(startPot)) {
       return {
         startPot: startPot,
+        personId: personId,
         months: [],
         potAtHorizon: null,
         potByKey: {},
@@ -1009,6 +1028,7 @@
           "pot = pot + planInn − planUtFixed − planUtVariable − planlagteUtlegg"
       };
     }
+    ensureCategorySplits(categories, people);
     var pot = startPot;
     var rows = [];
     var potByKey = {};
@@ -1050,10 +1070,38 @@
         };
       }
       var mi = monthIndexFromKey(key);
-      var planInn = plannedIncomeTotal(m, people);
-      var planUtFixed = plannedFixedBudgetTotal(m, categories, mi);
-      var planUtVar = plannedVariableBudgetTotal(m, categories, mi);
-      var planned = openPlannedSpendTotalForMonth(plannedSpends, key);
+      var planInn;
+      var planUtFixed;
+      var planUtVar;
+      var planned;
+      if (personId) {
+        planInn = plannedIncomeForPerson(m, personId);
+        planUtFixed = plannedFixedBudgetForPerson(
+          m,
+          personId,
+          categories,
+          people,
+          mi
+        );
+        planUtVar = plannedVariableBudgetForPerson(
+          m,
+          personId,
+          categories,
+          people,
+          mi
+        );
+        planned = openPlannedSpendDeductionForPerson(
+          plannedSpends,
+          key,
+          personId,
+          people
+        );
+      } else {
+        planInn = plannedIncomeTotal(m, people);
+        planUtFixed = plannedFixedBudgetTotal(m, categories, mi);
+        planUtVar = plannedVariableBudgetTotal(m, categories, mi);
+        planned = openPlannedSpendTotalForMonth(plannedSpends, key);
+      }
       pot = pot + planInn - planUtFixed - planUtVar - planned;
       pot = Math.round(pot * 100) / 100;
       var delta = planInn - planUtFixed - planUtVar - planned;
@@ -1089,6 +1137,7 @@
     var m144 = atOffset(144);
     return {
       startPot: startPot,
+      personId: personId,
       months: rows,
       potAtHorizon: rows.length ? rows[rows.length - 1].pot : startPot,
       potByKey: potByKey,
@@ -1870,6 +1919,66 @@
       felles += fellesShare(cat, personId, people, fb);
     });
     return own + felles;
+  }
+
+  /**
+   * Person share of Fast / variabelt planned budgets (own owner key + felles %-share).
+   * Same attribution as plannedUtForPerson / personal Trygg.
+   */
+  function plannedBudgetForPersonByType(
+    m,
+    personId,
+    categories,
+    people,
+    monthIndex,
+    typeFilter
+  ) {
+    var sum = 0;
+    (categories || []).forEach(function (cat) {
+      if (!cat || cat.archived) return;
+      if (typeFilter === "fast" && cat.type !== "fast") return;
+      if (typeFilter === "variable" && cat.type === "fast") return;
+      sum += budgetForOwner(m, cat.id, personId, monthIndex) || 0;
+      var fb = budgetForOwner(m, cat.id, "felles", monthIndex) || 0;
+      if (fb) sum += fellesShare(cat, personId, people, fb);
+    });
+    return sum;
+  }
+
+  function plannedFixedBudgetForPerson(m, personId, categories, people, monthIndex) {
+    return plannedBudgetForPersonByType(
+      m,
+      personId,
+      categories,
+      people,
+      monthIndex,
+      "fast"
+    );
+  }
+
+  function plannedVariableBudgetForPerson(
+    m,
+    personId,
+    categories,
+    people,
+    monthIndex
+  ) {
+    return plannedBudgetForPersonByType(
+      m,
+      personId,
+      categories,
+      people,
+      monthIndex,
+      "variable"
+    );
+  }
+
+  /** Planned lønn+ekstra for one person (no sparing). */
+  function plannedIncomeForPerson(m, personId) {
+    return (
+      plannedIncomeFor(m, personId, "lønn") +
+      plannedIncomeFor(m, personId, "ekstra")
+    );
   }
 
   function plannedUtFelles(m, categories, monthIndex) {
@@ -4231,6 +4340,10 @@
     calcPerson: calcPerson,
     remainingBudgetForPerson: remainingBudgetForPerson,
     plannedUtForPerson: plannedUtForPerson,
+    plannedFixedBudgetForPerson: plannedFixedBudgetForPerson,
+    plannedVariableBudgetForPerson: plannedVariableBudgetForPerson,
+    plannedIncomeForPerson: plannedIncomeForPerson,
+    plannedIncomeTotal: plannedIncomeTotal,
     plannedUtFelles: plannedUtFelles,
     calcFamily: calcFamily,
     personHasData: personHasData,
