@@ -1,12 +1,17 @@
 # Endringslogg – Familiebudsjett
 
-## 17. september 2026 (UTC+2) – Fix: Trygg å bruke = 0 uten saldo (oktober)
+## 17. september 2026 (UTC+2) – Foreslått saldo + Trygg uten skummelt 0
 
-- **Bug:** Ny måned uten bekreftet bruk falt tilbake til plan-modus. Med stort planlagt utlegg (f.eks. «Ny bil» 160k) ble `planInn − futureReserve` negativt → `Math.max(0)` = **0** — skummelt og misvisende.
-- **Calc:** Når saldo-modus er på og måneden mangler bruk: `safeToSpendMode = "awaiting_saldo"`, `safeToSpend = null` (plan-tall beholdes i `safeToSpendPlan*`). Flagg `needsSaldoForSafeToSpend`.
-- **UI (nb):** Viser **«Sett på konto nå»** (ikke 0). Hint: «Trygg å bruke for denne måneden mangler saldo — bekreft På konto nå.» Valgfritt: «Fra forrige: ca. X etter planlagte utlegg» (`prevBruk − reserve`, uten å skrive saldo).
-- **Uendret:** September med saldo (f.eks. 231223 − 160000 = **71223**). Plan-toggle av bruker fortsatt plan-formel.
-- Hjelper `estimateSafeFromPrevBruk`. Tester §33. Additiv lagring.
+- **Bug:** Ny måned uten bruk falt til plan-modus; stort planlagt utlegg → Trygg **0**. Rå `before_salary`-kopi er også feil.
+- **Foreslått På konto nå** (kun når ny måned mangler `balancesUpdatedAt` / bekreftet bruk, og forrige måned er bekreftet, og det finnes åpne `plannedSpends` med `monthKey ===` ny måned):
+  - **Formel:** `foreslått bruk = forrige bekreftede bruk − åpne planlagte utlegg (egen fullt; felles / antall personer)`
+  - **Ikke** råkopi av forrige saldo; **ikke** oppdiktet lønn i seed (payment-after fra sist kjente banktall).
+  - Markeres `suggested: true`, `when: after_salary`. Soft-cleanup rører ikke foreslåtte verdier.
+  - Hint: «Foreslått etter planlagte utlegg — bekreft eller endre». Bekreft/endre fjerner `suggested` + setter `balancesUpdatedAt`.
+- **Trygg:** Med foreslått saldo brukes saldo-modus; samme måneds planlagte trekkes **ikke** på nytt i `futureReserve` (allerede i seed). Senere måneder reserveres som før.
+- Uten forrige bekreftet bruk: `awaiting_saldo` → UI «Sett på konto nå» (ikke 0).
+- **Uendret:** September med bekreftet saldo (f.eks. 231223 − 160000 = **71223** i Trygg).
+- Tester §11d + §33. Additiv (`familie-budsjett-v1`).
 
 ## 17. september 2026 (UTC+2) – Fix: På konto Fast-lekkasje + saldo-sim
 

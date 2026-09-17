@@ -666,6 +666,112 @@ console.log("\n11c. Soft cleanup clears accidental carry without balancesUpdated
 }
 
 
+
+// --- Suggested balances: prev confirmed − same-month planned (not raw copy) ---
+console.log("\n11d. Suggested bruk seed = prev confirmed − plannedSpends (not raw copy)");
+{
+  const people = Calc.defaultPeople();
+  const planned = [
+    {
+      id: "ps1",
+      name: "Ny bil",
+      amount: 160000,
+      monthKey: "2026-10",
+      categoryId: "cBil",
+      owner: "felles",
+      done: false
+    }
+  ];
+  const months = {
+    "2026-09": {
+      balances: {
+        p1: { bruk: 150000, spare: 5000, when: "after_salary", asOf: null },
+        p2: { bruk: 81223, spare: 1000, when: "after_salary", asOf: null }
+      },
+      balancesUpdatedAt: "2026-09-17T12:00:00.000Z",
+      budgets: { cMat: 5000 },
+      plannedIncome: {
+        p1: { lønn: 25000, ekstra: null },
+        p2: { lønn: 15000, ekstra: null }
+      },
+      incomes: [],
+      savings: [],
+      expenses: []
+    }
+  };
+  const r = Calc.ensureMonthExpected(months, "2026-10", people, {
+    copyExpectedToNewMonths: true,
+    categories: [{ id: "cMat", name: "Mat", type: "variabel", owner: "felles", archived: false }],
+    plannedSpends: planned
+  });
+  assert(r.suggestedBalances === true, "October got suggested balances");
+  assert(months["2026-10"].balancesSuggested === true, "month balancesSuggested");
+  assert(!months["2026-10"].balancesUpdatedAt, "no confirm stamp yet");
+  // felles 160k / 2 = 80k each
+  assertEq(months["2026-10"].balances.p1.bruk, 70000, "p1 seed 150000-80000");
+  assertEq(months["2026-10"].balances.p2.bruk, 1223, "p2 seed 81223-80000");
+  assert(months["2026-10"].balances.p1.suggested === true, "p1 suggested");
+  assert(months["2026-10"].balances.p2.suggested === true, "p2 suggested");
+  assertEq(months["2026-10"].balances.p1.when, "after_salary", "marked after_salary");
+  assert(
+    months["2026-10"].balances.p1.spare == null ||
+      months["2026-10"].balances.p1.spare === "",
+    "spare not copied"
+  );
+  // Soft cleanup must NOT wipe suggested
+  const cleared = Calc.clearAccidentalBalanceCarry(months);
+  assertEq(months["2026-10"].balances.p1.bruk, 70000, "suggested survives soft cleanup");
+  // Trygg: suggested excludes same-month planned from reserve
+  const cOct = Calc.calcFamily(months["2026-10"], people, [], {
+    monthKey: "2026-10",
+    monthIndex: 9,
+    plannedSpends: planned,
+    spendBuffer: 0
+  });
+  assertEq(cOct.safeToSpendMode, "saldo", "oct saldo with suggested");
+  assert(cOct.hasSuggestedBalances === true, "hasSuggestedBalances");
+  assertEq(cOct.futureReserve, 0, "same-month planned already in seed");
+  assertEq(cOct.totalBruk, 71223, "total suggested bruk");
+  assertEq(cOct.safeToSpend, 71223, "Trygg = seed (not 0)");
+  // Confirm clears suggested
+  Calc.clearSuggestedBalanceFlag(months["2026-10"], "p1");
+  assert(months["2026-10"].balances.p1.suggested === false, "p1 cleared");
+  assert(months["2026-10"].balances.p2.suggested === true, "p2 still suggested");
+  Calc.clearSuggestedBalanceFlag(months["2026-10"], "p2");
+  assert(!months["2026-10"].balancesSuggested, "month flag cleared");
+
+  // before_salary prev WITHOUT planned in next month → still empty (no raw copy)
+  const months2 = {
+    "2026-10": {
+      balances: {
+        p1: { bruk: 50000, spare: 0, when: "before_salary", asOf: null },
+        p2: { bruk: 12000, spare: null, when: "before_salary", asOf: null }
+      },
+      balancesUpdatedAt: "2026-10-20T08:00:00.000Z",
+      budgets: { cMat: 5000 },
+      plannedIncome: {
+        p1: { lønn: 30000, ekstra: null },
+        p2: { lønn: 28000, ekstra: null }
+      },
+      incomes: [],
+      savings: [],
+      expenses: []
+    }
+  };
+  Calc.ensureMonthExpected(months2, "2026-11", people, {
+    copyExpectedToNewMonths: true,
+    categories: [{ id: "cMat", name: "Mat", type: "variabel", owner: "felles", archived: false }],
+    plannedSpends: []
+  });
+  assert(Calc.monthHasBalances(months2["2026-11"]) === false, "no seed without planned");
+  assertEq(
+    Calc.computeSuggestedBrukFromPrev(231223, 160000),
+    71223,
+    "helper formula"
+  );
+}
+
+
 // --- Excel fill: Felles household + personal variable lines ---
 console.log("\n12. Excel fill — Felles + personal planInn / planUt / til overs");
 {
@@ -2367,8 +2473,8 @@ console.log("\n33. awaiting_saldo — Oct no bruk + plannedSpend; Sep saldo unch
   assertEq(cSep.safeToSpend, 71223, "sep trygg = 231223-160000");
   assert(cSep.needsSaldoForSafeToSpend !== true, "sep no needsSaldo");
 
-  // October WITHOUT bruk: awaiting — not plan-clamped 0
-  const oct = {
+  // October empty + no prev in this isolated calc → awaiting (not scary 0)
+  const octEmpty = {
     balances: {
       p1: { bruk: null, spare: null },
       p2: { bruk: null, spare: null }
@@ -2382,26 +2488,48 @@ console.log("\n33. awaiting_saldo — Oct no bruk + plannedSpend; Sep saldo unch
     savings: [],
     expenses: []
   };
-  const cOct = Calc.calcFamily(oct, people, cats, {
+  const cOctEmpty = Calc.calcFamily(octEmpty, people, cats, {
     monthKey: "2026-10",
     monthIndex: 9,
     plannedSpends: planned,
     spendBuffer: 0
   });
-  assertEq(cOct.safeToSpendMode, "awaiting_saldo", "oct awaiting_saldo");
-  assert(cOct.needsSaldoForSafeToSpend === true, "oct needsSaldo");
-  assert(cOct.safeToSpend == null, "oct primary null (not 0)");
-  assert(cOct.safeToSpendRaw == null, "oct raw null");
-  assertEq(cOct.futureReserve, 160000, "oct still reserves Ny bil");
-  // plan would be negative → old UX showed Math.max(0)=0 — plan mirror may be 0
-  assert(cOct.safeToSpendPlanRaw < 0, "oct plan raw negative (old scary path)");
-  assertEq(cOct.safeToSpendPlan, 0, "oct plan clamped 0 (not used as primary)");
+  assertEq(cOctEmpty.safeToSpendMode, "awaiting_saldo", "oct empty awaiting_saldo");
+  assert(cOctEmpty.needsSaldoForSafeToSpend === true, "oct empty needsSaldo");
+  assert(cOctEmpty.safeToSpend == null, "oct empty primary null (not 0)");
+  assert(cOctEmpty.safeToSpendPlanRaw < 0, "oct plan raw negative (old scary path)");
+  assertEq(cOctEmpty.safeToSpendPlan, 0, "oct plan clamped 0 (not used as primary)");
 
-  // Per-person also awaiting when no own bruk
-  const p1 = cOct.byPerson.p1;
-  assertEq(p1.safeToSpendMode, "awaiting_saldo", "p1 awaiting");
-  assert(p1.safeToSpend == null, "p1 safe null");
-  assert(p1.needsSaldoForSafeToSpend === true, "p1 needsSaldo");
+  // Suggested seed from confirmed Sep: Trygg = 71223 (planned already in seed)
+  const monthsSeed = {
+    "2026-09": {
+      balances: {
+        p1: { bruk: 150000, spare: 0 },
+        p2: { bruk: 81223, spare: 0 }
+      },
+      balancesUpdatedAt: "2026-09-17T12:00:00.000Z",
+      budgets: { cMat: { felles: 5000 } },
+      plannedIncome: {
+        p1: { lønn: 25000, ekstra: null },
+        p2: { lønn: 15000, ekstra: null }
+      },
+      incomes: [],
+      savings: [],
+      expenses: []
+    }
+  };
+  const sug = Calc.ensureSuggestedBalances(monthsSeed, "2026-10", people, planned);
+  assert(sug.seeded === true, "seeded oct from sep");
+  const cOctSeed = Calc.calcFamily(monthsSeed["2026-10"], people, cats, {
+    monthKey: "2026-10",
+    monthIndex: 9,
+    plannedSpends: planned,
+    spendBuffer: 0
+  });
+  assertEq(cOctSeed.safeToSpendMode, "saldo", "oct seeded saldo");
+  assertEq(cOctSeed.totalBruk, 71223, "oct seeded total");
+  assertEq(cOctSeed.futureReserve, 0, "oct reserve excludes baked-in planned");
+  assertEq(cOctSeed.safeToSpend, 71223, "oct Trygg after seed");
 
   // Estimate helper: prev bruk − planned
   assert(typeof Calc.estimateSafeFromPrevBruk === "function", "estimate helper");

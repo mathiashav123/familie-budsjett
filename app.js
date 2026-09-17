@@ -328,9 +328,10 @@
     ensureMonthShape(m);
     const result = Calc.ensureMonthExpected(state.months, key, state.people, {
       copyExpectedToNewMonths: state.settings.copyExpectedToNewMonths !== false,
-      categories: state.categories
+      categories: state.categories,
+      plannedSpends: state.plannedSpends || []
     });
-    if (created || (result && result.copied)) save();
+    if (created || (result && (result.copied || result.suggestedBalances))) save();
     return m;
   }
 
@@ -1310,8 +1311,12 @@
         const asOfVal =
           Calc.normalizeBalanceAsOf(bal.asOf) ||
           (whenMode === "dated" ? today : "");
-        const whenLabel =
-          row.whenLabel || Calc.balanceWhenLabel(whenMode, asOfVal || null);
+        const isSuggested = !!(bal.suggested || (m.balancesSuggested && bal.bruk != null));
+        const whenLabel = isSuggested
+          ? (typeof Calc.balanceSuggestedLabel === "function"
+              ? Calc.balanceSuggestedLabel()
+              : "Foreslått etter planlagte utlegg")
+          : row.whenLabel || Calc.balanceWhenLabel(whenMode, asOfVal || null);
         const varMeta = row.variance;
         let diffHtml = "";
         if (row.forventet == null && row.oppgitt == null) {
@@ -1398,7 +1403,11 @@
               '" /></label>'
             : "";
         const modeBadge =
-          '<p class="pa-konto-when-badge">' + escapeHtml(whenLabel) + "</p>";
+          '<p class="pa-konto-when-badge' +
+          (isSuggested ? " is-suggested" : "") +
+          '">' +
+          escapeHtml(whenLabel) +
+          "</p>";
         return (
           '<div class="kontoer-person pa-konto-person" data-bal-person="' +
           escapeAttr(person.id) +
@@ -1483,10 +1492,24 @@
 
     const newMonthHint = $("#paKontoNewMonthHint");
     if (newMonthHint) {
+      const hasSuggested =
+        typeof Calc.monthHasSuggestedBalances === "function"
+          ? Calc.monthHasSuggestedBalances(m)
+          : !!(m && m.balancesSuggested);
       const emptyBal = Calc.monthHasBalances
         ? !Calc.monthHasBalances(m)
         : true;
-      newMonthHint.hidden = !emptyBal;
+      if (hasSuggested) {
+        newMonthHint.hidden = false;
+        newMonthHint.textContent =
+          "Foreslått etter planlagte utlegg — bekreft eller endre";
+      } else if (emptyBal) {
+        newMonthHint.hidden = false;
+        newMonthHint.textContent =
+          "Ny måned — bekreft På konto nå (kopieres ikke automatisk fra forrige).";
+      } else {
+        newMonthHint.hidden = true;
+      }
     }
 
     const updatedEl = $("#paKontoUpdated");
@@ -5764,6 +5787,11 @@
       const m = getMonth();
       ensurePersonBalance(m, personId);
       m.balances[personId][field] = parseAmount(el.value);
+      if (typeof Calc.clearSuggestedBalanceFlag === "function") {
+        Calc.clearSuggestedBalanceFlag(m, personId);
+      } else if (m.balances[personId]) {
+        m.balances[personId].suggested = false;
+      }
       m.balancesUpdatedAt = new Date().toISOString();
       save();
       render();
@@ -5782,6 +5810,11 @@
       );
       if (brukEl) m.balances[personId].bruk = parseAmount(brukEl.value);
       if (spareEl) m.balances[personId].spare = parseAmount(spareEl.value);
+      if (typeof Calc.clearSuggestedBalanceFlag === "function") {
+        Calc.clearSuggestedBalanceFlag(m, personId);
+      } else if (m.balances[personId]) {
+        m.balances[personId].suggested = false;
+      }
       m.balancesUpdatedAt = new Date().toISOString();
       save();
       showToast("Saldo lagret");
