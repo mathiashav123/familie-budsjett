@@ -1915,6 +1915,80 @@ console.log("\n28. På konto nå: forventet breakdown + Fast partial log");
 }
 
 
+// --- Trygg å bruke: saldo breakdown (71k vs 49k transparency) ---
+console.log("\n29. safeToSpendSaldoBreakdown identity + example 71k→49k");
+{
+  assert(typeof Calc.safeToSpendSaldoBreakdown === "function", "helper exported");
+  // Example: ~71k on account, ~22k held back → ~49k safe
+  const bd = Calc.safeToSpendSaldoBreakdown({
+    bruk: 71000,
+    remainingBudgetAll: 12000,
+    autoSpendExtra: 3000,
+    futureReserve: 7000,
+    spendBuffer: 0
+  });
+  assertEq(bd.bruk, 71000, "bruk 71000");
+  assertEq(bd.restBudget, 15000, "restBudget = rem + auto");
+  assertEq(bd.futureReserve, 7000, "futureReserve");
+  assertEq(bd.spendBuffer, 0, "buffer 0");
+  assertEq(bd.raw, 49000, "raw 49000");
+  assertEq(bd.safeToSpend, 49000, "safe 49000");
+  assertEq(
+    bd.bruk - bd.restBudget - bd.futureReserve - bd.spendBuffer,
+    bd.raw,
+    "identity holds"
+  );
+
+  // Buffer + clamp
+  const bd2 = Calc.safeToSpendSaldoBreakdown({
+    bruk: 10000,
+    remainingBudgetAll: 8000,
+    autoSpendExtra: 0,
+    futureReserve: 5000,
+    spendBuffer: 2000
+  });
+  assertEq(bd2.raw, -5000, "raw negative when over-reserved");
+  assertEq(bd2.safeToSpend, 0, "clamped to 0");
+
+  // Mirrors calcFamily saldo mode
+  const people = Calc.defaultPeople();
+  const cats = [
+    { id: "cMat", name: "Mat", type: "variabel", owner: "felles", archived: false },
+    { id: "cHus", name: "Hus", type: "fast", owner: "felles", archived: false, autoSpend: true }
+  ];
+  const m = {
+    balances: {
+      p1: { bruk: 40000, spare: 100000 },
+      p2: { bruk: 31000, spare: 0 }
+    },
+    budgets: { cMat: { felles: 10000 }, cHus: { felles: 6000 } },
+    plannedIncome: { p1: { lønn: 30000 }, p2: { lønn: 25000 } },
+    incomes: [],
+    savings: [],
+    expenses: []
+  };
+  const planned = [
+    { id: "ps1", amount: 7000, monthKey: "2026-10", person: "felles", categoryId: null, done: false }
+  ];
+  const c = Calc.calcFamily(m, people, cats, 8, {
+    useSaldoInSafeToSpend: true,
+    spendBuffer: 0,
+    monthKey: "2026-09",
+    plannedSpends: planned
+  });
+  const bdFam = Calc.safeToSpendSaldoBreakdown({
+    bruk: c.totalBruk,
+    remainingBudgetAll: c.remainingBudgetAll,
+    autoSpendExtra: c.autoSpendExtra,
+    futureReserve: c.futureReserve,
+    spendBuffer: c.spendBuffer
+  });
+  assertEq(bdFam.safeToSpend, c.safeToSpend, "breakdown matches calcFamily safe");
+  assertEq(bdFam.raw, c.safeToSpendRaw, "breakdown raw matches");
+  assertEq(c.totalBruk, 71000, "samlet bruk 71000");
+}
+
+
 
 console.log("\n=== Results:", passed, "passed,", failed, "failed ===\n");
 if (failed) {

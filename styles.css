@@ -3591,6 +3591,45 @@ button.cat-group-header {
 }
 
 
+/* ——— Trygg å bruke: saldo breakdown ——— */
+.safe-spend-breakdown {
+  margin: .35rem 0 .15rem;
+  padding: .4rem .55rem;
+  background: var(--bg-soft, #f6f8fa);
+  border: 1px solid var(--border, #d0d7de);
+  border-radius: var(--radius-sm, 8px);
+}
+.safe-spend-breakdown-rows {
+  display: flex;
+  flex-direction: column;
+  gap: .16rem;
+}
+.safe-spend-breakdown-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: .75rem;
+  font-size: .8rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.safe-spend-breakdown-row strong {
+  color: var(--text);
+  font-weight: 700;
+}
+.safe-spend-breakdown-row.is-eq {
+  margin-top: .15rem;
+  padding-top: .25rem;
+  border-top: 1px solid var(--border, #d0d7de);
+  font-weight: 700;
+  color: var(--text);
+}
+.safe-spend-breakdown-row.is-eq strong {
+  font-weight: 800;
+}
+
+
+
 /* ——— Underlinjer (kategori) ——— */
 .cat-lines-block {
   margin-top: .45rem;

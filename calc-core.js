@@ -2879,6 +2879,43 @@
     return "Oppgitt etter lønn";
   }
 
+
+  /**
+   * Compact saldo-mode Trygg å bruke parts for UI transparency.
+   * restBudget = remainingBudgetAll + autoSpendExtra (Fast auto still reserved).
+   * Identity: bruk − restBudget − futureReserve − spendBuffer = raw
+   * safeToSpend = max(0, raw)
+   */
+  function safeToSpendSaldoBreakdown(parts) {
+    var src = parts && typeof parts === "object" ? parts : {};
+    var bruk = Number(src.bruk);
+    if (!Number.isFinite(bruk)) bruk = 0;
+    var rem = Number(src.remainingBudgetAll);
+    if (!Number.isFinite(rem)) rem = 0;
+    var auto = Number(src.autoSpendExtra);
+    if (!Number.isFinite(auto)) auto = 0;
+    var future = Number(src.futureReserve);
+    if (!Number.isFinite(future)) future = 0;
+    var buffer = Number(src.spendBuffer);
+    if (!Number.isFinite(buffer)) buffer = 0;
+    if (rem < 0) rem = 0;
+    if (auto < 0) auto = 0;
+    if (future < 0) future = 0;
+    if (buffer < 0) buffer = 0;
+    var restBudget = rem + auto;
+    var raw = bruk - restBudget - future - buffer;
+    return {
+      bruk: bruk,
+      remainingBudgetAll: rem,
+      autoSpendExtra: auto,
+      restBudget: restBudget,
+      futureReserve: future,
+      spendBuffer: buffer,
+      raw: raw,
+      safeToSpend: Math.max(0, raw)
+    };
+  }
+
   /**
    * «På konto nå» reconciliation per person + samlet.
    * prevBalances: previous month balances map { [pid]: { bruk, spare } } or null.
@@ -3113,6 +3150,7 @@
     etterLonnFromBruk: etterLonnFromBruk,
     varianceMeta: varianceMeta,
     reconcilePaKonto: reconcilePaKonto,
+    safeToSpendSaldoBreakdown: safeToSpendSaldoBreakdown,
     BALANCE_WHEN_BEFORE: BALANCE_WHEN_BEFORE,
     BALANCE_WHEN_AFTER: BALANCE_WHEN_AFTER,
     BALANCE_WHEN_DATED: BALANCE_WHEN_DATED,
