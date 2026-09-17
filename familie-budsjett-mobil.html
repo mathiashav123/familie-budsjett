@@ -6853,7 +6853,15 @@ window.FAMILIE_BUDGET_SUPABASE = {
       key = shiftMonthKey(key, 1);
       if (!key) break;
       var m = months[key];
+      var miEarly = monthIndexFromKey(key);
       if (m && monthHasExpected(m)) {
+        // Heal incomplete carry (missing Sep plan cats) from prior template
+        // before adopting — else a thin Dec poisons 10y Fremover.
+        if (template) {
+          var wasStaleProj = isStaleIncompleteExpected(m, template);
+          fillMissingExpectedFrom(template, m, people, miEarly);
+          if (wasStaleProj) realignPlannedIncomeFrom(template, m, people);
+        }
         template = m;
       } else if (template) {
         // Virtual month: reuse expected budgets/income by VALUE, never share expenses array
@@ -7219,6 +7227,10 @@ window.FAMILIE_BUDGET_SUPABASE = {
 
     // Soft-clean accidental balance carries (no balancesUpdatedAt + identical to prev).
     clearAccidentalBalanceCarry(months);
+
+    // Additive heal: future months missing newer Sep plan cats (Div/Helse/Bil)
+    // or stale plannedIncome pick up from nearest previous expected. No expenses copied.
+    healAllMonthsExpected(months, people, {});
 
     return {
       version: 2,
@@ -8666,21 +8678,282 @@ window.FAMILIE_BUDGET_SUPABASE = {
   }
 
   /**
+   * True when target has no explicit budget slot for catId+ownerId.
+   * Note: budgetForOwnerRaw returns 0 for missing — do NOT use it with
+   * isBudgetValueSet (0 looks "set").
+   */
+  function ownerBudgetSlotMissing(m, catId, ownerId) {
+    var entry = m && m.budgets && m.budgets[catId];
+    if (!isBudgetValueSet(entry)) return true;
+    if (typeof entry !== "object") {
+      // Legacy scalar covers felles only
+      return ownerId !== "felles";
+    }
+    return !isBudgetValueSet(entry[ownerId]);
+  }
+
+  /**
+   * Additive: fill missing budgets / budgetLines / null plannedIncome from source.
+   * Never overwrites existing budget amounts or non-empty plannedIncome fields.
+   * Never touches expenses / incomes / savings / balances.
+   * Returns true if anything changed.
+   */
+  function fillMissingExpectedFrom(sourceMonth, targetMonth, people, monthIndex) {
+    if (!sourceMonth || !targetMonth) return false;
+    var changed = false;
+    targetMonth.budgets = targetMonth.budgets || {};
+    var srcBudgets = sourceMonth.budgets || {};
+    Object.keys(srcBudgets).forEach(function (catId) {
+      var srcEntry = srcBudgets[catId];
+      if (!budgetEntryHasValue(srcEntry)) return;
+      if (typeof srcEntry !== "object") {
+        // legacy scalar → felles
+        if (!budgetEntryHasValue(targetMonth.budgets[catId])) {
+          var cloned = cloneBudgetEntry(srcEntry);
+          if (cloned) {
+            targetMonth.budgets[catId] = cloned;
+            changed = true;
+          }
+        }
+        return;
+      }
+      Object.keys(srcEntry).forEach(function (oid) {
+        if (!isBudgetValueSet(srcEntry[oid])) return;
+        if (ownerBudgetSlotMissing(targetMonth, catId, oid)) {
+          setBudgetForOwnerRaw(targetMonth, catId, oid, srcEntry[oid]);
+          changed = true;
+        }
+      });
+    });
+    // Missing underlinjer only (do not replace existing line sets)
+    var srcLines = sourceMonth.budgetLines || {};
+    Object.keys(srcLines).forEach(function (catId) {
+      var byOwner = srcLines[catId];
+      if (!byOwner || typeof byOwner !== "object") return;
+      Object.keys(byOwner).forEach(function (oid) {
+        if (hasBudgetLines(targetMonth, catId, oid)) return;
+        if (!Array.isArray(byOwner[oid]) || !byOwner[oid].length) return;
+        if (!targetMonth.budgetLines) targetMonth.budgetLines = {};
+        if (!targetMonth.budgetLines[catId]) targetMonth.budgetLines[catId] = {};
+        targetMonth.budgetLines[catId][oid] = byOwner[oid]
+          .map(normalizeBudgetLine)
+          .filter(Boolean);
+        syncBudgetFromLines(targetMonth, catId, oid, monthIndex);
+        changed = true;
+      });
+    });
+    ensureMonthShape(targetMonth, people);
+    ensureMonthShape(sourceMonth, people);
+    var pi = sourceMonth.plannedIncome || {};
+    Object.keys(pi).forEach(function (pid) {
+      if (!targetMonth.plannedIncome[pid]) {
+        targetMonth.plannedIncome[pid] = emptyPlannedIncomeBlock();
+      }
+      PLANNED_INCOME_FIELDS.forEach(function (t) {
+        if (
+          pi[pid] &&
+          pi[pid][t] != null &&
+          pi[pid][t] !== "" &&
+          (targetMonth.plannedIncome[pid][t] == null ||
+            targetMonth.plannedIncome[pid][t] === "")
+        ) {
+          targetMonth.plannedIncome[pid][t] = pi[pid][t];
+          changed = true;
+        }
+      });
+    });
+    return changed;
+  }
+
+  /**
+   * True when target looks like a stale incomplete carry of source:
+   * - no expenses logged
+   * - every set budget value in target equals source
+   * - source has at least one budget or plannedIncome field target lacks / differs
+   * Customized amounts (e.g. Mat 999 vs source 5000) → false.
+   */
+  function isStaleIncompleteExpected(targetMonth, sourceMonth) {
+    if (!targetMonth || !sourceMonth) return false;
+    if (
+      Array.isArray(targetMonth.expenses) &&
+      targetMonth.expenses.length > 0
+    ) {
+      return false;
+    }
+    if (
+      Array.isArray(targetMonth.incomes) &&
+      targetMonth.incomes.length > 0
+    ) {
+      return false;
+    }
+    if (!monthHasExpected(targetMonth) || !monthHasExpected(sourceMonth)) {
+      return false;
+    }
+    var srcBudgets = sourceMonth.budgets || {};
+    var tgtBudgets = targetMonth.budgets || {};
+    var anyTarget = false;
+    var keys = Object.keys(tgtBudgets);
+    for (var i = 0; i < keys.length; i++) {
+      var catId = keys[i];
+      var te = tgtBudgets[catId];
+      if (!budgetEntryHasValue(te)) continue;
+      if (typeof te !== "object") {
+        anyTarget = true;
+        var se = srcBudgets[catId];
+        var srcVal =
+          typeof se === "object" && se
+            ? se.felles
+            : se;
+        if (Number(te) !== Number(srcVal)) return false;
+        continue;
+      }
+      var oids = Object.keys(te);
+      for (var j = 0; j < oids.length; j++) {
+        var oid = oids[j];
+        if (!isBudgetValueSet(te[oid])) continue;
+        anyTarget = true;
+        var sv = budgetForOwnerRaw(sourceMonth, catId, oid);
+        if (!isBudgetValueSet(sv) || Number(te[oid]) !== Number(sv)) {
+          return false;
+        }
+      }
+    }
+    if (!anyTarget) return false;
+    // Source richer in budgets?
+    var sk = Object.keys(srcBudgets);
+    for (var si = 0; si < sk.length; si++) {
+      var sc = sk[si];
+      var sEntry = srcBudgets[sc];
+      if (!budgetEntryHasValue(sEntry)) continue;
+      if (typeof sEntry !== "object") {
+        if (!budgetEntryHasValue(tgtBudgets[sc])) return true;
+      } else {
+        var so = Object.keys(sEntry);
+        for (var sj = 0; sj < so.length; sj++) {
+          if (
+            isBudgetValueSet(sEntry[so[sj]]) &&
+            ownerBudgetSlotMissing(targetMonth, sc, so[sj])
+          ) {
+            return true;
+          }
+        }
+      }
+    }
+    // Or planned income differs / incomplete while budgets are subset match
+    var spi = sourceMonth.plannedIncome || {};
+    var tpi = targetMonth.plannedIncome || {};
+    var pids = Object.keys(spi);
+    for (var p = 0; p < pids.length; p++) {
+      var pid = pids[p];
+      if (!spi[pid]) continue;
+      if (!tpi[pid]) return true;
+      for (var fi = 0; fi < PLANNED_INCOME_FIELDS.length; fi++) {
+        var f = PLANNED_INCOME_FIELDS[fi];
+        var sPv = spi[pid][f];
+        var tPv = tpi[pid][f];
+        if (sPv != null && sPv !== "") {
+          if (tPv == null || tPv === "" || Number(tPv) !== Number(sPv)) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * When target is a stale incomplete copy of source, realign plannedIncome
+   * (overwrite) from source. Budgets still only filled additively elsewhere.
+   */
+  function realignPlannedIncomeFrom(sourceMonth, targetMonth, people) {
+    if (!sourceMonth || !targetMonth) return false;
+    ensureMonthShape(targetMonth, people);
+    ensureMonthShape(sourceMonth, people);
+    var changed = false;
+    var pi = sourceMonth.plannedIncome || {};
+    Object.keys(pi).forEach(function (pid) {
+      if (!targetMonth.plannedIncome[pid]) {
+        targetMonth.plannedIncome[pid] = emptyPlannedIncomeBlock();
+      }
+      PLANNED_INCOME_FIELDS.forEach(function (t) {
+        if (pi[pid] && pi[pid][t] != null && pi[pid][t] !== "") {
+          if (targetMonth.plannedIncome[pid][t] !== pi[pid][t]) {
+            targetMonth.plannedIncome[pid][t] = pi[pid][t];
+            changed = true;
+          }
+        }
+      });
+    });
+    return changed;
+  }
+
+  /**
+   * Heal an already-seeded month from nearest previous expected:
+   * additive missing budgets/lines/null PI; if stale incomplete subset,
+   * also realign plannedIncome to previous (fixes e.g. Oct lønn 40000 vs Sep).
+   * Never copies expenses.
+   */
+  function healMonthExpectedFromPrevious(months, key, people, opts) {
+    opts = opts || {};
+    if (!months || !key || !months[key]) {
+      return { healed: false, sourceKey: null };
+    }
+    var m = months[key];
+    if (!monthHasExpected(m)) {
+      return { healed: false, sourceKey: null };
+    }
+    var srcKey = findNearestPreviousWithExpected(
+      months,
+      key,
+      opts.maxLookback
+    );
+    if (!srcKey || !months[srcKey]) {
+      return { healed: false, sourceKey: null };
+    }
+    var src = months[srcKey];
+    var mi = monthIndexFromKey(key);
+    // Snapshot before fill — after additive fill, subset may become complete
+    var wasStale = isStaleIncompleteExpected(m, src);
+    var changed = fillMissingExpectedFrom(src, m, people, mi);
+    if (wasStale) {
+      if (realignPlannedIncomeFrom(src, m, people)) changed = true;
+    }
+    return { healed: changed, sourceKey: changed ? srcKey : null };
+  }
+
+  /**
+   * Heal all persisted months in chronological order (load/migrate).
+   * Empty-expense future months pick up Sep plan categories additively.
+   */
+  function healAllMonthsExpected(months, people, opts) {
+    opts = opts || {};
+    if (!months) return { healedKeys: [] };
+    var keys = Object.keys(months).sort();
+    var healedKeys = [];
+    for (var i = 0; i < keys.length; i++) {
+      var r = healMonthExpectedFromPrevious(months, keys[i], people, opts);
+      if (r && r.healed) healedKeys.push(keys[i]);
+    }
+    return { healedKeys: healedKeys };
+  }
+
+  /**
    * On first visit to an empty month: copy expected from nearest previous
-   * month that has planned income / budgets. Never overwrites a month that
-   * already has expected values (user-customized or previously carried).
+   * month that has planned income / budgets. Existing months are not
+   * overwritten, but missing plan categories are filled additively from
+   * the previous expected month (heal). Expenses are never copied.
    *
    * opts.copyExpectedToNewMonths — default true
    * When false: legacy autoFill-only for categories marked autoFill
    *   (planned income is still copied for continuity with prior behavior).
-   * Returns { copied: boolean, sourceKey: string|null, mode: "all"|"autofill"|null }
+   * Returns { copied, healed, sourceKey, mode: "all"|"autofill"|"heal"|null }
    */
   function ensureMonthExpected(months, key, people, opts) {
     opts = opts || {};
     var copyAll = opts.copyExpectedToNewMonths !== false;
     var categories = opts.categories || [];
     if (!months || !key) {
-      return { copied: false, sourceKey: null, mode: null };
+      return { copied: false, healed: false, sourceKey: null, mode: null };
     }
     if (!months[key]) {
       months[key] = {
@@ -8696,12 +8969,15 @@ window.FAMILIE_BUDGET_SUPABASE = {
     var m = months[key];
     ensureMonthShape(m, people);
     if (monthHasExpected(m)) {
-      // Budgets already present — still may seed suggested bruk from prev − planned.
+      // Incomplete prior carry (e.g. Sep gained Div/Helse/Bil after Oct seeded):
+      // fill missing plan from nearest previous — never touch expenses.
+      var healEarly = healMonthExpectedFromPrevious(months, key, people, opts);
       var sugEarly = ensureSuggestedBalances(months, key, people, { plannedSpends: opts.plannedSpends || [], categories: opts.categories || categories || [] });
       return {
         copied: false,
-        sourceKey: null,
-        mode: null,
+        healed: !!(healEarly && healEarly.healed),
+        sourceKey: (healEarly && healEarly.healed && healEarly.sourceKey) || null,
+        mode: healEarly && healEarly.healed ? "heal" : null,
         suggestedBalances: !!(sugEarly && sugEarly.seeded)
       };
     }
@@ -8714,6 +8990,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
       var sugNoSrc = ensureSuggestedBalances(months, key, people, { plannedSpends: opts.plannedSpends || [], categories: opts.categories || categories || [] });
       return {
         copied: false,
+        healed: false,
         sourceKey: null,
         mode: null,
         suggestedBalances: !!(sugNoSrc && sugNoSrc.seeded)
@@ -8725,6 +9002,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
       var sugAll = ensureSuggestedBalances(months, key, people, { plannedSpends: opts.plannedSpends || [], categories: opts.categories || categories || [] });
       return {
         copied: true,
+        healed: false,
         sourceKey: srcKey,
         mode: "all",
         suggestedBalances: !!(sugAll && sugAll.seeded)
@@ -8778,6 +9056,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     var sugAf = ensureSuggestedBalances(months, key, people, { plannedSpends: opts.plannedSpends || [], categories: opts.categories || categories || [] });
     return {
       copied: any,
+      healed: false,
       sourceKey: any ? srcKey : null,
       mode: any ? "autofill" : null,
       suggestedBalances: !!(sugAf && sugAf.seeded)
@@ -10162,6 +10441,10 @@ window.FAMILIE_BUDGET_SUPABASE = {
     monthsBetweenKeys: monthsBetweenKeys,
     findNearestPreviousWithExpected: findNearestPreviousWithExpected,
     copyExpectedFrom: copyExpectedFrom,
+    fillMissingExpectedFrom: fillMissingExpectedFrom,
+    isStaleIncompleteExpected: isStaleIncompleteExpected,
+    healMonthExpectedFromPrevious: healMonthExpectedFromPrevious,
+    healAllMonthsExpected: healAllMonthsExpected,
     ensureMonthExpected: ensureMonthExpected,
     evalAmountExpression: evalAmountExpression,
     looksLikeAmountExpression: looksLikeAmountExpression,
@@ -11730,7 +12013,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
       if (sug && sug.seeded) seededNow = true;
     }
     // Always persist when suggested balances were seeded (carry / jump)
-    if (created || (result && result.copied) || seededNow) {
+    if (created || (result && (result.copied || result.healed)) || seededNow) {
       save();
     }
     return m;

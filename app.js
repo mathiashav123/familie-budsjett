@@ -363,7 +363,7 @@
       if (sug && sug.seeded) seededNow = true;
     }
     // Always persist when suggested balances were seeded (carry / jump)
-    if (created || (result && result.copied) || seededNow) {
+    if (created || (result && (result.copied || result.healed)) || seededNow) {
       save();
     }
     return m;
