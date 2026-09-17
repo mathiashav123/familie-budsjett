@@ -309,25 +309,58 @@
     return false;
   }
 
+  /**
+   * Intentionally a no-op: point-in-time «På konto nå» must never auto-follow
+   * into a new month. Budgets / planned income still carry via copyExpectedFrom.
+   * Kept exported for API stability / callers.
+   */
   function copyBalancesFrom(sourceMonth, targetMonth, people) {
-    if (!sourceMonth || !targetMonth) return targetMonth;
-    if (monthHasBalances(targetMonth)) return targetMonth;
-    ensureBalancesShape(targetMonth, people);
-    ensureBalancesShape(sourceMonth, people);
-    var src = sourceMonth.balances || {};
-    Object.keys(src).forEach(function (pid) {
-      if (!targetMonth.balances[pid]) {
-        targetMonth.balances[pid] = emptyBalance();
-      }
-      if (!src[pid]) return;
-      if (src[pid].bruk != null && src[pid].bruk !== "") {
-        targetMonth.balances[pid].bruk = src[pid].bruk;
-      }
-      if (src[pid].spare != null && src[pid].spare !== "") {
-        targetMonth.balances[pid].spare = src[pid].spare;
-      }
-    });
     return targetMonth;
+  }
+
+  function balanceFieldEqual(a, b) {
+    if (a == null || a === "" || b == null || b === "") return false;
+    var na = Number(a);
+    var nb = Number(b);
+    if (!Number.isFinite(na) || !Number.isFinite(nb)) return false;
+    return na === nb;
+  }
+
+  /**
+   * Soft cleanup of accidental carry-forward: months that got bruk/spare copied
+   * from the previous month without an explicit confirm (no balancesUpdatedAt).
+   * Never touches months that have balancesUpdatedAt.
+   * Returns number of person-fields cleared.
+   */
+  function clearAccidentalBalanceCarry(months) {
+    if (!months || typeof months !== "object") return 0;
+    var keys = Object.keys(months).filter(function (k) {
+      return /^\d{4}-\d{2}$/.test(k);
+    }).sort();
+    var cleared = 0;
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i];
+      var m = months[key];
+      if (!m || !m.balances || typeof m.balances !== "object") continue;
+      if (m.balancesUpdatedAt) continue;
+      var prevKey = shiftMonthKey(key, -1);
+      var prev = prevKey && months[prevKey];
+      if (!prev || !prev.balances || typeof prev.balances !== "object") continue;
+      Object.keys(m.balances).forEach(function (pid) {
+        var cur = m.balances[pid];
+        var pbal = prev.balances[pid];
+        if (!cur || typeof cur !== "object" || !pbal) return;
+        if (balanceFieldEqual(cur.bruk, pbal.bruk)) {
+          cur.bruk = null;
+          cleared++;
+        }
+        if (balanceFieldEqual(cur.spare, pbal.spare)) {
+          cur.spare = null;
+          cleared++;
+        }
+      });
+    }
+    return cleared;
   }
 
   function findNearestPreviousWithBalances(months, monthKey, maxLookback) {
@@ -524,6 +557,9 @@
     });
 
     ensureCategorySplits(cats, people);
+
+    // Soft-clean accidental balance carries (no balancesUpdatedAt + identical to prev).
+    clearAccidentalBalanceCarry(months);
 
     return {
       version: 2,
@@ -1700,7 +1736,7 @@
         }
       });
     });
-    copyBalancesFrom(sourceMonth, targetMonth, people);
+    // Do not copy balances — På konto nå is point-in-time per month.
     return targetMonth;
   }
 
@@ -1735,22 +1771,7 @@
     var m = months[key];
     ensureMonthShape(m, people);
     if (monthHasExpected(m)) {
-      // Still carry balances into months that already have expected but no balances
-      if (!monthHasBalances(m)) {
-        var balKeyEarly = findNearestPreviousWithBalances(
-          months,
-          key,
-          opts.maxLookback
-        );
-        if (balKeyEarly) {
-          copyBalancesFrom(months[balKeyEarly], m, people);
-          return {
-            copied: true,
-            sourceKey: balKeyEarly,
-            mode: "balances"
-          };
-        }
-      }
+      // Balances are never auto-copied into existing months.
       return { copied: false, sourceKey: null, mode: null };
     }
     var srcKey = findNearestPreviousWithExpected(
@@ -1764,14 +1785,6 @@
     var src = months[srcKey];
     if (copyAll) {
       copyExpectedFrom(src, m, people, monthIndexFromKey(key));
-      if (!monthHasBalances(m)) {
-        var balKey = findNearestPreviousWithBalances(
-          months,
-          key,
-          opts.maxLookback
-        );
-        if (balKey) copyBalancesFrom(months[balKey], m, people);
-      }
       return { copied: true, sourceKey: srcKey, mode: "all" };
     }
     // Legacy / setting OFF: only autoFill categories + planned income
@@ -1819,10 +1832,6 @@
         }
       });
     });
-    if (!monthHasBalances(m)) {
-      copyBalancesFrom(src, m, people);
-      if (monthHasBalances(m)) any = true;
-    }
     return {
       copied: any,
       sourceKey: any ? srcKey : null,
@@ -3058,6 +3067,7 @@
     ensureBalancesShape: ensureBalancesShape,
     monthHasBalances: monthHasBalances,
     copyBalancesFrom: copyBalancesFrom,
+    clearAccidentalBalanceCarry: clearAccidentalBalanceCarry,
     findNearestPreviousWithBalances: findNearestPreviousWithBalances,
     migrateState: migrateState,
     plannedIncomeFor: plannedIncomeFor,

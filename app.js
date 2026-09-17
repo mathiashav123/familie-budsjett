@@ -1433,6 +1433,14 @@
       }
     }
 
+    const newMonthHint = $("#paKontoNewMonthHint");
+    if (newMonthHint) {
+      const emptyBal = Calc.monthHasBalances
+        ? !Calc.monthHasBalances(m)
+        : true;
+      newMonthHint.hidden = !emptyBal;
+    }
+
     const updatedEl = $("#paKontoUpdated");
     if (updatedEl) {
       const stamp = m.balancesUpdatedAt;

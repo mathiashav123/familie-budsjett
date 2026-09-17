@@ -482,16 +482,17 @@ console.log("\n10. safeToSpend uses bruk (not spare); spare ignored");
   assertEq(cOff.safeToSpend, 39000, "plan safe when toggle off");
 }
 
-// --- Carry-forward copies balances ---
-console.log("\n11. Carry-forward copies balances when target empty");
+// --- Carry-forward must NOT copy balances (point-in-time) ---
+console.log("\n11. Carry-forward does NOT copy balances into new months");
 {
   const people = Calc.defaultPeople();
   const months = {
     "2026-08": {
       balances: {
-        p1: { bruk: 8000, spare: 1000 },
+        p1: { bruk: 8000, spare: 1000, when: "before_salary", asOf: null },
         p2: { bruk: 4000, spare: 500 }
       },
+      balancesUpdatedAt: "2026-08-15T10:00:00.000Z",
       budgets: { c1: 1000 },
       plannedIncome: {
         p1: { lønn: 30000, ekstra: null },
@@ -514,12 +515,26 @@ console.log("\n11. Carry-forward copies balances when target empty");
     copyExpectedToNewMonths: true,
     categories: [{ id: "c1", name: "Mat", type: "variabel", owner: "felles", archived: false, autoFill: true }]
   });
-  assert(r.copied === true, "copied expected+balances");
-  assertEq(months["2026-09"].balances.p1.bruk, 8000, "p1 bruk carried");
-  assertEq(months["2026-09"].balances.p2.spare, 500, "p2 spare carried");
+  assert(r.copied === true, "copied expected budgets/income");
+  assertEq(r.mode, "all", "mode all");
   assertEq(months["2026-09"].plannedIncome.p1.lønn, 30000, "planned income carried");
+  assertEq(Calc.budgetFor(months["2026-09"], "c1"), 1000, "budget carried");
+  // Point-in-time: bruk/spare must stay empty
+  assert(
+    months["2026-09"].balances.p1.bruk == null || months["2026-09"].balances.p1.bruk === "",
+    "p1 bruk NOT carried"
+  );
+  assert(
+    months["2026-09"].balances.p2.spare == null || months["2026-09"].balances.p2.spare === "",
+    "p2 spare NOT carried"
+  );
+  assert(Calc.monthHasBalances(months["2026-09"]) === false, "Sep has no balances");
+  // copyBalancesFrom is explicit no-op
+  const sep = months["2026-09"];
+  Calc.copyBalancesFrom(months["2026-08"], sep, people);
+  assert(Calc.monthHasBalances(sep) === false, "copyBalancesFrom is no-op");
 
-  // Do not overwrite existing balances
+  // Existing balances in a month are still left alone
   months["2026-10"] = {
     balances: { p1: { bruk: 1, spare: null }, p2: { bruk: null, spare: null } },
     budgets: {},
@@ -533,6 +548,112 @@ console.log("\n11. Carry-forward copies balances when target empty");
     categories: [{ id: "c1", name: "Mat", type: "variabel", owner: "felles", archived: false, autoFill: true }]
   });
   assertEq(months["2026-10"].balances.p1.bruk, 1, "existing balances kept");
+}
+
+// --- New month after before_salary must not inherit bruk ---
+console.log("\n11b. New month after before_salary balance does not inherit bruk");
+{
+  const people = Calc.defaultPeople();
+  const months = {
+    "2026-10": {
+      balances: {
+        p1: { bruk: 50000, spare: 2000, when: "before_salary", asOf: null },
+        p2: { bruk: 12000, spare: null, when: "before_salary", asOf: null }
+      },
+      balancesUpdatedAt: "2026-10-20T08:00:00.000Z",
+      budgets: { cMat: 5000 },
+      plannedIncome: {
+        p1: { lønn: 30000, ekstra: null },
+        p2: { lønn: 28000, ekstra: null }
+      },
+      incomes: [],
+      savings: [],
+      expenses: []
+    }
+  };
+  const r = Calc.ensureMonthExpected(months, "2026-11", people, {
+    copyExpectedToNewMonths: true,
+    categories: [{ id: "cMat", name: "Mat", type: "variabel", owner: "felles", archived: false }]
+  });
+  assert(r.copied === true, "Nov gets budgets/income");
+  assertEq(months["2026-11"].plannedIncome.p1.lønn, 30000, "Nov income carried");
+  assert(Calc.monthHasBalances(months["2026-11"]) === false, "Nov starts without balances");
+  assert(
+    !months["2026-11"].balances.p1 ||
+      months["2026-11"].balances.p1.bruk == null ||
+      months["2026-11"].balances.p1.bruk === "",
+    "Nov p1 bruk empty after Oct before_salary 50k"
+  );
+}
+
+// --- Soft cleanup: identical bruk without stamp cleared; stamped kept ---
+console.log("\n11c. Soft cleanup clears accidental carry without balancesUpdatedAt");
+{
+  assert(typeof Calc.clearAccidentalBalanceCarry === "function", "helper exported");
+  const months = {
+    "2026-10": {
+      balances: {
+        p1: { bruk: 50000, spare: 1000 },
+        p2: { bruk: 8000, spare: null }
+      },
+      balancesUpdatedAt: "2026-10-20T08:00:00.000Z"
+    },
+    "2026-11": {
+      // Accidental carry: same bruk/spare, no stamp
+      balances: {
+        p1: { bruk: 50000, spare: 1000 },
+        p2: { bruk: 8000, spare: null }
+      }
+    },
+    "2026-12": {
+      // Deliberately saved with same numbers — has stamp → keep
+      balances: {
+        p1: { bruk: 50000, spare: 1000 },
+        p2: { bruk: 9000, spare: null }
+      },
+      balancesUpdatedAt: "2026-12-01T12:00:00.000Z"
+    }
+  };
+  const n = Calc.clearAccidentalBalanceCarry(months);
+  assert(n >= 2, "cleared at least accidental bruk fields");
+  assert(
+    months["2026-11"].balances.p1.bruk == null,
+    "Nov accidental p1 bruk cleared"
+  );
+  assert(
+    months["2026-11"].balances.p1.spare == null,
+    "Nov accidental p1 spare cleared"
+  );
+  assert(
+    months["2026-11"].balances.p2.bruk == null,
+    "Nov accidental p2 bruk cleared"
+  );
+  assertEq(months["2026-12"].balances.p1.bruk, 50000, "Dec stamped kept");
+  assertEq(months["2026-12"].balances.p2.bruk, 9000, "Dec different p2 kept");
+  assertEq(months["2026-10"].balances.p1.bruk, 50000, "Oct source kept");
+
+  // migrateState runs soft cleanup
+  const migrated = Calc.migrateState({
+    people: Calc.defaultPeople(),
+    months: {
+      "2026-10": {
+        balances: { p1: { bruk: 111, spare: null }, p2: { bruk: null, spare: null } },
+        balancesUpdatedAt: "2026-10-01T00:00:00.000Z"
+      },
+      "2026-11": {
+        balances: { p1: { bruk: 111, spare: null }, p2: { bruk: null, spare: null } }
+      }
+    }
+  });
+  assert(
+    migrated.months["2026-11"].balances.p1.bruk == null,
+    "migrate soft-clears accidental Nov"
+  );
+  assertEq(
+    migrated.months["2026-10"].balances.p1.bruk,
+    111,
+    "migrate keeps stamped Oct"
+  );
 }
 
 

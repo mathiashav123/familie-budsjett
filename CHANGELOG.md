@@ -1,5 +1,13 @@
 # Endringslogg – Familiebudsjett
 
+## 17. september 2026 (UTC+2) – På konto: ingen auto-kopiering til ny måned
+
+- **Bugfix:** `copyBalancesFrom` / `ensureMonthExpected` kopierer ikke lenger bruk/spare (eller when/asOf) inn i nye måneder. Point-in-time «På konto nå» må bekreftes på nytt hver måned — ellers følger f.eks. oktober «før lønn» 50k feilaktig inn i november.
+- Ny måned starter med tom På konto nå. UI-hint: «Ny måned — bekreft På konto nå (kopieres ikke automatisk fra forrige).»
+- Soft cleanup ved migrering: måneder uten `balancesUpdatedAt` med identisk bruk/spare som forrige måned tømmes (utilsiktet carry). Måneder med `balancesUpdatedAt` røres ikke.
+- Budsjett og planlagt inntekt carry-forward som før. Tester: ny måned etter before_salary arver ikke bruk; soft cleanup.
+- Allerede feil november: tøm bruk (og spare) og bekreft saldo på nytt.
+
 ## 17. september 2026 (UTC+2) – Trygg å bruke: saldo-breakdown
 
 - Under **Trygg å bruke** (samlet og per person) i saldo-modus: kompakt regnestykke — På konto (bruk) − Rest av budsjett (igjen) − Planlagte utlegg − Buffer = Trygg å bruke.
