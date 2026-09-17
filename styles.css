@@ -3979,3 +3979,87 @@ button.cat-group-header {
   color: var(--teal-dark, #0f766e);
   font-weight: 650;
 }
+
+
+/* ——— Phase 1: logg pager, missed month, split wizard, engangs ——— */
+.tx-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  margin: .35rem 0 .55rem;
+}
+.tx-pager[hidden] { display: none !important; }
+.tx-pager-label {
+  font-size: .82rem;
+  color: var(--muted);
+  min-width: 7rem;
+  text-align: center;
+}
+.tx-item .badge-oneoff {
+  display: inline-block;
+  margin-left: .35rem;
+  padding: .05rem .35rem;
+  border-radius: 999px;
+  font-size: .68rem;
+  font-weight: 700;
+  background: #fef3c7;
+  color: #92400e;
+  vertical-align: middle;
+}
+.missed-month-banner p { margin: 0 0 .35rem; }
+.missed-month-actions {
+  flex-wrap: wrap;
+}
+.split-wizard-preview {
+  background: var(--card-2, #f8fafc);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: .65rem .75rem;
+  font-size: .9rem;
+}
+.split-wizard-preview .sw-row {
+  display: flex;
+  justify-content: space-between;
+  gap: .5rem;
+  padding: .2rem 0;
+}
+.split-wizard-custom {
+  display: grid;
+  gap: .45rem;
+}
+.split-wizard-custom .sw-input-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+}
+.split-wizard-custom input[type="number"] {
+  width: 5.5rem;
+  text-align: right;
+}
+
+
+/* Fast auto-spend + planned spends */
+.badge-auto, .badge-fast + .badge-auto {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 650;
+  background: #e8f1ff;
+  color: #1d4f91;
+  vertical-align: middle;
+}
+.auto-spend-hint { margin: 0.35rem 0 0.5rem; color: var(--muted, #667); }
+.auto-spend-toggle, .chk.auto-spend-toggle { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.5rem; font-size: 0.9rem; }
+.planned-spends-list { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.5rem; }
+.planned-spend-row {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 0.15rem;
+  text-align: left; width: 100%; padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border, #e5e7eb); border-radius: 12px; background: #fff;
+}
+.planned-spend-row .ps-amount { font-weight: 700; }
+.planned-spend-row .ps-meta { font-size: 0.85rem; color: var(--muted, #667); }
+.field-row.two { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }

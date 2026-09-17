@@ -345,7 +345,8 @@
           sparingView: "samlet"
         },
         savingsGoals: [],
-        archives: []
+        archives: [],
+        plannedSpends: []
       };
     }
 
@@ -385,6 +386,8 @@
             type: c.type === "fast" ? "fast" : "variabel",
             owner: owner === "felles" ? "felles" : owner,
             autoFill: c.autoFill != null ? !!c.autoFill : c.type === "fast",
+            // autoSpend: Fast counts as spent by default; false = «Ikke auto-tell denne»
+            autoSpend: c.autoSpend != null ? !!c.autoSpend : undefined,
             archived: !!c.archived,
             order: c.order != null && isFinite(Number(c.order)) ? Number(c.order) : undefined
           };
@@ -530,7 +533,8 @@
           )
       },
       savingsGoals: normalizeSavingsGoals(parsed.savingsGoals, people),
-      archives: normalizeArchives(parsed.archives)
+      archives: normalizeArchives(parsed.archives),
+      plannedSpends: normalizePlannedSpends(parsed.plannedSpends, people)
     };
   }
 
@@ -1004,6 +1008,195 @@
   }
 
 
+
+  /**
+   * Feature 1 – Fast auto-count as spent.
+   * Rule: category auto-spends when type==="fast" AND autoSpend !== false.
+   * Double-count rule (documented): effectiveActual = max(planned, logged).
+   * Yearly/quarterly: uses budgetFor / budgetForOwner (already month-aware via lines).
+   */
+  function categoryAutoSpends(cat) {
+    return !!(cat && !cat.archived && cat.type === "fast" && cat.autoSpend !== false);
+  }
+
+  function effectiveActualForCategory(m, cat, monthIndex) {
+    var logged = actualForCategory(m, cat.id, cat.name);
+    if (!categoryAutoSpends(cat)) return logged;
+    var planned = budgetFor(m, cat.id, monthIndex);
+    return Math.max(planned || 0, logged || 0);
+  }
+
+  function effectiveActualForCategoryOwner(m, cat, ownerId, monthIndex) {
+    var logged = actualForCategoryOwner(m, cat.id, cat.name, ownerId);
+    if (!categoryAutoSpends(cat)) return logged;
+    var planned = budgetForOwner(m, cat.id, ownerId, monthIndex);
+    return Math.max(planned || 0, logged || 0);
+  }
+
+  function autoSpendExtraForCategory(m, cat, monthIndex) {
+    if (!categoryAutoSpends(cat)) return 0;
+    var planned = budgetFor(m, cat.id, monthIndex);
+    var logged = actualForCategory(m, cat.id, cat.name);
+    return Math.max(0, (planned || 0) - (logged || 0));
+  }
+
+  function autoSpendExtraTotal(m, categories, monthIndex) {
+    var sum = 0;
+    (categories || []).forEach(function (cat) {
+      if (!cat || cat.archived) return;
+      sum += autoSpendExtraForCategory(m, cat, monthIndex);
+    });
+    return sum;
+  }
+
+  function autoSpendExtraForPerson(m, personId, people, categories, monthIndex) {
+    var sum = 0;
+    (categories || []).forEach(function (cat) {
+      if (!cat || cat.archived || !categoryAutoSpends(cat)) return;
+      var ownPlanned = budgetForOwner(m, cat.id, personId, monthIndex);
+      var ownLogged = actualForCategoryOwner(m, cat.id, cat.name, personId);
+      sum += Math.max(0, (ownPlanned || 0) - (ownLogged || 0));
+      var fellesPlanned = budgetForOwner(m, cat.id, "felles", monthIndex);
+      var fellesLogged = actualForCategoryOwner(m, cat.id, cat.name, "felles");
+      var extraF = Math.max(0, (fellesPlanned || 0) - (fellesLogged || 0));
+      if (extraF) sum += fellesShare(cat, personId, people, extraF);
+    });
+    return sum;
+  }
+
+  /**
+   * Feature 2 – Fremtidig / planlagt utlegg (state.plannedSpends[]).
+   * monthKey "YYYY-MM". Double-count: if a logged expense same month matches
+   * owner + categoryId (greedy 1:1), that item reserves 0 (expense already counts).
+   * No category → reserve full amount until done=true.
+   */
+  function normalizePlannedSpend(p, people) {
+    p = p || {};
+    var owner = mapLegacyOwner(p.owner || "felles");
+    if (owner !== "felles" && !personById(people, owner)) owner = "felles";
+    var amount = Number(p.amount);
+    var mk = p.monthKey ? String(p.monthKey) : "";
+    if (!/^\d{4}-\d{2}$/.test(mk)) mk = "";
+    return {
+      id: p.id || uid(),
+      amount: Number.isFinite(amount) && amount > 0 ? amount : 0,
+      categoryId: p.categoryId || null,
+      owner: owner,
+      monthKey: mk,
+      note: p.note ? String(p.note).slice(0, 120) : "",
+      done: !!p.done,
+      doneExpenseId: p.doneExpenseId || null
+    };
+  }
+
+  function normalizePlannedSpends(list, people) {
+    if (!Array.isArray(list)) return [];
+    return list
+      .map(function (p) {
+        return normalizePlannedSpend(p, people);
+      })
+      .filter(function (p) {
+        return p && p.amount > 0 && p.monthKey;
+      });
+  }
+
+  function plannedSpendsForMonth(list, monthKey) {
+    var mk = String(monthKey || "");
+    return (list || []).filter(function (p) {
+      return p && p.monthKey === mk;
+    });
+  }
+
+  /**
+   * Reserved amount for planned future spends in a month (after matching expenses).
+   * Matching: !done items; prefer doneExpenseId; else greedy same owner + categoryId.
+   */
+  function plannedSpendReserve(plannedSpends, monthKey, expenses) {
+    var items = plannedSpendsForMonth(plannedSpends, monthKey).filter(function (p) {
+      return p && !p.done && p.amount > 0;
+    });
+    if (!items.length) return 0;
+    var exps = (expenses || []).slice();
+    var used = {};
+    var reserve = 0;
+    items.forEach(function (item) {
+      if (item.doneExpenseId) {
+        var linked = exps.some(function (e) {
+          return e && e.id === item.doneExpenseId;
+        });
+        if (linked) return; // covered
+      }
+      if (!item.categoryId) {
+        reserve += item.amount;
+        return;
+      }
+      var matchIdx = -1;
+      for (var i = 0; i < exps.length; i++) {
+        if (used[i]) continue;
+        var e = exps[i];
+        if (!e) continue;
+        var eOwner = e.owner || "felles";
+        var eCat = e.categoryId || null;
+        if (eOwner === item.owner && eCat === item.categoryId) {
+          matchIdx = i;
+          break;
+        }
+      }
+      if (matchIdx >= 0) {
+        used[matchIdx] = true;
+        // Covered by logged purchase — do not reserve (avoid double count)
+        return;
+      }
+      reserve += item.amount;
+    });
+    return reserve;
+  }
+
+  function plannedSpendReserveForPerson(
+    plannedSpends,
+    monthKey,
+    expenses,
+    personId,
+    people
+  ) {
+    var items = plannedSpendsForMonth(plannedSpends, monthKey).filter(function (p) {
+      return p && !p.done && p.amount > 0;
+    });
+    if (!items.length) return 0;
+    var exps = (expenses || []).slice();
+    var used = {};
+    var active = activePeople(people);
+    var n = Math.max(1, active.length);
+    var sum = 0;
+    items.forEach(function (item) {
+      var covered = false;
+      if (item.doneExpenseId) {
+        covered = exps.some(function (e) {
+          return e && e.id === item.doneExpenseId;
+        });
+      }
+      if (!covered && item.categoryId) {
+        for (var i = 0; i < exps.length; i++) {
+          if (used[i]) continue;
+          var e = exps[i];
+          if (!e) continue;
+          if ((e.owner || "felles") === item.owner && (e.categoryId || null) === item.categoryId) {
+            used[i] = true;
+            covered = true;
+            break;
+          }
+        }
+      }
+      if (covered) return;
+      if (item.owner === personId) {
+        sum += item.amount;
+      } else if (item.owner === "felles") {
+        sum += item.amount / n;
+      }
+    });
+    return sum;
+  }
+
   /**
    * Remaining budget attributed to one person:
    * own max(0, planned−actual) + %-share of felles remaining (same splits as planUt).
@@ -1015,10 +1208,10 @@
       if (!cat || cat.archived) return;
       if (fastOnly && cat.type !== "fast") return;
       var ownPlanned = budgetForOwner(m, cat.id, personId, monthIndex);
-      var ownActual = actualForCategoryOwner(m, cat.id, cat.name, personId);
+      var ownActual = effectiveActualForCategoryOwner(m, cat, personId, monthIndex);
       sum += Math.max(0, (ownPlanned || 0) - (ownActual || 0));
       var fellesPlanned = budgetForOwner(m, cat.id, "felles", monthIndex);
-      var fellesActual = actualForCategoryOwner(m, cat.id, cat.name, "felles");
+      var fellesActual = effectiveActualForCategoryOwner(m, cat, "felles", monthIndex);
       var remFelles = Math.max(0, (fellesPlanned || 0) - (fellesActual || 0));
       if (remFelles) {
         sum += fellesShare(cat, personId, people, remFelles);
@@ -1027,7 +1220,7 @@
     return sum;
   }
 
-  function calcFamily(m, people, categories, settings, monthIndex) {
+  function calcFamily(m, people, categories, settings, monthIndex, plannedSpends, monthKey) {
     var active = activePeople(people);
     var n = Math.max(1, active.length);
     ensureMonthShape(m, people);
@@ -1101,9 +1294,11 @@
     });
     var catStats = activeCats.map(function (cat) {
       var planned = budgetFor(m, cat.id, monthIndex);
-      var actual = actualForCategory(m, cat.id, cat.name);
+      var logged = actualForCategory(m, cat.id, cat.name);
+      var effectiveActual = effectiveActualForCategory(m, cat, monthIndex);
+      var autoSpent = autoSpendExtraForCategory(m, cat, monthIndex);
       plannedTotal += planned;
-      actualBudgeted += actual;
+      actualBudgeted += effectiveActual;
       var plannedByOwner = { felles: budgetForOwner(m, cat.id, "felles", monthIndex) };
       active.forEach(function (p) {
         plannedByOwner[p.id] = budgetForOwner(m, cat.id, p.id, monthIndex);
@@ -1112,18 +1307,22 @@
         cat: cat,
         planned: planned,
         plannedByOwner: plannedByOwner,
-        actual: actual,
-        remain: planned - actual,
+        actual: effectiveActual,
+        loggedActual: logged,
+        autoSpent: autoSpent,
+        autoSpend: categoryAutoSpends(cat),
+        remain: planned - effectiveActual,
         over:
-          (actual > planned && planned > 0) || (planned === 0 && actual > 0)
+          (effectiveActual > planned && planned > 0) ||
+          (planned === 0 && effectiveActual > 0)
       };
     });
 
     var netPlan = planInn - plannedTotal;
+    // netActual uses logged only; overview may show effectiveUtgifter separately
     var netActual = samletInntekt - samletUtgifter;
 
-    // remainingFast = sum over Fast cats of max(0, budget − actual)
-    // remainingBudgetAll = all categories (fast + variabel) remaining planned spend
+    // remaining uses effectiveActual (Fast auto-spend → remain 0 unless overspent)
     var remainingFastBudgets = 0;
     var remainingBudgetAll = 0;
     catStats.forEach(function (s) {
@@ -1134,9 +1333,9 @@
       }
     });
 
-    // Legacy / plan-based: planInn − actualExpenses − remainingFast
-    var safeToSpendPlanRaw = planInn - samletUtgifter - remainingFastBudgets;
-    var safeToSpendPlan = Math.max(0, safeToSpendPlanRaw);
+    // Auto-spend credit: planned−logged for Fast (max rule already in effectiveActual)
+    var autoSpendExtra = autoSpendExtraTotal(m, categories, monthIndex);
+    var effectiveUtgifter = samletUtgifter + autoSpendExtra;
 
     var opts = settings && typeof settings === "object" ? settings : {};
     var useSaldo =
@@ -1147,12 +1346,27 @@
       if (Number.isFinite(bufN) && bufN > 0) spendBuffer = bufN;
     }
 
-    // Saldo-based (primary when bruk is set + toggle on):
-    // max(0, totalBruk − remainingBudgetAll − buffer). Spare stays out.
+    // Future planned spends reserve (Feature 2)
+    var mk = monthKey || opts.monthKey || null;
+    var futureReserve = plannedSpendReserve(
+      plannedSpends || opts.plannedSpends || [],
+      mk,
+      m.expenses
+    );
+
+    // Plan: planInn − effectiveExpenses − remainingFast − futureReserve
+    // (autoSpend Fast remain=0; commitment lives in effectiveUtgifter)
+    var safeToSpendPlanRaw =
+      planInn - effectiveUtgifter - remainingFastBudgets - futureReserve;
+    var safeToSpendPlan = Math.max(0, safeToSpendPlanRaw);
+
+    // Saldo-based: totalBruk − remainingAll − autoSpendExtra − futureReserve − buffer
+    // (remainingAll uses effectiveActual so Fast rem=0; re-add autoSpendExtra to keep commitment)
     var safeToSpendSaldoRaw = null;
     var safeToSpendSaldo = null;
     if (hasBruk) {
-      safeToSpendSaldoRaw = totalBruk - remainingBudgetAll - spendBuffer;
+      safeToSpendSaldoRaw =
+        totalBruk - remainingBudgetAll - autoSpendExtra - futureReserve - spendBuffer;
       safeToSpendSaldo = Math.max(0, safeToSpendSaldoRaw);
     }
 
@@ -1191,14 +1405,29 @@
         monthIndex,
         true
       );
+      var autoExtraP = autoSpendExtraForPerson(
+        m,
+        p.id,
+        people,
+        categories,
+        monthIndex
+      );
+      var futureP = plannedSpendReserveForPerson(
+        plannedSpends || opts.plannedSpends || [],
+        mk,
+        m.expenses,
+        p.id,
+        people
+      );
 
-      var planRawP = (cp.planInn || 0) - (cp.utgifter || 0) - remFastP;
+      var planRawP =
+        (cp.planInn || 0) - (cp.utgifter || 0) - autoExtraP - remFastP - futureP;
       var planSafeP = Math.max(0, planRawP);
 
       var saldoRawP = null;
       var saldoSafeP = null;
       if (hasPersonBruk) {
-        saldoRawP = brukN - remAllP - bufferShareEach;
+        saldoRawP = brukN - remAllP - autoExtraP - futureP - bufferShareEach;
         saldoSafeP = Math.max(0, saldoRawP);
       }
 
@@ -1213,6 +1442,8 @@
 
       cp.remainingBudgetAll = remAllP;
       cp.remainingFastBudgets = remFastP;
+      cp.autoSpendExtra = autoExtraP;
+      cp.futureReserve = futureP;
       cp.spendBufferShare = bufferShareEach;
       cp.hasBrukBalance = hasPersonBruk;
       cp.safeToSpendMode = modeP;
@@ -1260,6 +1491,9 @@
       netActual: netActual,
       remainingFastBudgets: remainingFastBudgets,
       remainingBudgetAll: remainingBudgetAll,
+      autoSpendExtra: autoSpendExtra,
+      effectiveUtgifter: effectiveUtgifter,
+      futureReserve: futureReserve,
       spendBuffer: spendBuffer,
       hasBrukBalances: hasBruk,
       useSaldoInSafeToSpend: useSaldo,
@@ -2245,6 +2479,111 @@
     });
   }
 
+
+  /** True if expense is marked as one-off (engangsutgift). Additive field. */
+  function expenseIsOneOff(e) {
+    return !!(e && (e.oneOff === true || e.engangs === true));
+  }
+
+  /**
+   * Sum expenses for a month. opts.excludeOneOff skips engangsutgift.
+   */
+  function sumExpenses(m, opts) {
+    opts = opts || {};
+    var list = (m && m.expenses) || [];
+    var sum = 0;
+    for (var i = 0; i < list.length; i++) {
+      var e = list[i];
+      if (!e) continue;
+      if (opts.excludeOneOff && expenseIsOneOff(e)) continue;
+      sum += Number(e.amount) || 0;
+    }
+    return sum;
+  }
+
+  /**
+   * Income-based felles split from planned lønn+ekstra in a month.
+   * Falls back to equal if no income.
+   */
+  function incomeBasedSplit(m, people) {
+    var active = activePeople(people);
+    var out = {};
+    if (!active.length) return out;
+    var weights = {};
+    var total = 0;
+    active.forEach(function (p) {
+      var w = plannedIncomeFor(m, p.id, "lønn") + plannedIncomeFor(m, p.id, "ekstra");
+      if (!Number.isFinite(w) || w < 0) w = 0;
+      weights[p.id] = w;
+      total += w;
+    });
+    if (total <= 0) return equalSplit(people);
+    return normalizeSplitTo100(weights, people);
+  }
+
+  /** Apply one split map to all active felles categories. */
+  function applySplitToFellesCategories(categories, people, split) {
+    var cleaned = normalizeSplitTo100(split || equalSplit(people), people);
+    (categories || []).forEach(function (cat) {
+      if (!cat || cat.archived || cat.owner !== "felles") return;
+      setCategorySplit(cat, cleaned, people);
+    });
+    return cleaned;
+  }
+
+  function monthKeyFromParts(year, monthIndex) {
+    return year + "-" + String(monthIndex + 1).padStart(2, "0");
+  }
+
+  function monthHasActivity(m) {
+    if (!m) return false;
+    if ((m.expenses && m.expenses.length) || (m.incomes && m.incomes.length) || (m.savings && m.savings.length)) {
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Detect skipped months between first data and throughYear/throughMonthIndex.
+   * Current month is never flagged. lightUse / missedHandled skip the prompt.
+   */
+  function detectMissedMonths(months, throughYear, throughMonthIndex) {
+    var map = months || {};
+    var keys = Object.keys(map).sort();
+    if (!keys.length) return [];
+    var first = keys[0];
+    var fy = parseInt(first.slice(0, 4), 10);
+    var fm = parseInt(first.slice(5, 7), 10) - 1;
+    if (!Number.isFinite(fy) || !Number.isFinite(fm)) return [];
+    var ty = Number(throughYear);
+    var tm = Number(throughMonthIndex);
+    if (!Number.isFinite(ty) || !Number.isFinite(tm)) return [];
+    var missed = [];
+    var y = fy;
+    var m = fm;
+    var seenActivity = false;
+    while (y < ty || (y === ty && m <= tm)) {
+      var key = monthKeyFromParts(y, m);
+      var mm = map[key];
+      var active = monthHasActivity(mm);
+      if (active) seenActivity = true;
+      var isCurrent = y === ty && m === tm;
+      if (seenActivity && !active && !isCurrent) {
+        var light = !!(mm && (mm.lightUse || mm.missedHandled));
+        if (!light) {
+          missed.push({ key: key, year: y, month: m });
+        }
+      }
+      m += 1;
+      if (m > 11) {
+        m = 0;
+        y += 1;
+      }
+      if (missed.length >= 6) break;
+    }
+    return missed;
+  }
+
   /** True if string looks like an arithmetic expression (not a plain number). */
   function looksLikeAmountExpression(input) {
     if (input == null) return false;
@@ -2322,6 +2661,17 @@
     GOAL_STATUSES: GOAL_STATUSES,
     actualForCategory: actualForCategory,
     actualForCategoryOwner: actualForCategoryOwner,
+    categoryAutoSpends: categoryAutoSpends,
+    effectiveActualForCategory: effectiveActualForCategory,
+    effectiveActualForCategoryOwner: effectiveActualForCategoryOwner,
+    autoSpendExtraForCategory: autoSpendExtraForCategory,
+    autoSpendExtraTotal: autoSpendExtraTotal,
+    autoSpendExtraForPerson: autoSpendExtraForPerson,
+    normalizePlannedSpend: normalizePlannedSpend,
+    normalizePlannedSpends: normalizePlannedSpends,
+    plannedSpendsForMonth: plannedSpendsForMonth,
+    plannedSpendReserve: plannedSpendReserve,
+    plannedSpendReserveForPerson: plannedSpendReserveForPerson,
     calcPerson: calcPerson,
     remainingBudgetForPerson: remainingBudgetForPerson,
     plannedUtForPerson: plannedUtForPerson,
@@ -2335,6 +2685,16 @@
     copyExpectedFrom: copyExpectedFrom,
     ensureMonthExpected: ensureMonthExpected,
     evalAmountExpression: evalAmountExpression,
-    looksLikeAmountExpression: looksLikeAmountExpression
+    looksLikeAmountExpression: looksLikeAmountExpression,
+    expenseIsOneOff: expenseIsOneOff,
+    sumExpenses: sumExpenses,
+    incomeBasedSplit: incomeBasedSplit,
+    applySplitToFellesCategories: applySplitToFellesCategories,
+    detectMissedMonths: detectMissedMonths,
+    monthHasActivity: monthHasActivity,
+    // feature aliases
+    categoryAutoSpends: categoryAutoSpends,
+    plannedSpendsForMonth: plannedSpendsForMonth,
+    normalizePlannedSpends: normalizePlannedSpends
   };
 });

@@ -276,7 +276,10 @@
   let catGroupsOpen = {}; // person/felles section keys → open (default true)
   let expandedCatId = null;
   let yearOverviewYear = null; // null → follow state.view.year
-  let loggScope = "month"; // "month" | "year"
+  let loggScope = "month"; // "month" | "year" | "all"
+  let loggPage = 0;
+  const LOGG_PAGE_SIZE = 40;
+  let missedMonthTarget = null; // { key, year, month }
 
   function load() {
     try {
@@ -285,6 +288,7 @@
       const parsed = JSON.parse(raw);
       const migrated = Calc.migrateState(parsed);
       if (!Array.isArray(migrated.savingsGoals)) migrated.savingsGoals = [];
+      if (!Array.isArray(migrated.plannedSpends)) migrated.plannedSpends = [];
       if (!Array.isArray(migrated.archives)) migrated.archives = [];
       migrated.savingsGoals = Calc.refreshSavingsGoalsStatus(
         migrated.savingsGoals,
@@ -303,6 +307,7 @@
   function save() {
     try {
       ensureArchives();
+      if (!Array.isArray(state.plannedSpends)) state.plannedSpends = [];
       if (!Array.isArray(state.savingsGoals)) state.savingsGoals = [];
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       var C=window.FamilieBudsjettCloud;
@@ -369,12 +374,15 @@
 
   // ——— Calculations (via calc-core) ———
   function calcFamily(m) {
+    if (!Array.isArray(state.plannedSpends)) state.plannedSpends = [];
     return Calc.calcFamily(
       m,
       state.people,
       state.categories,
       state.settings || {},
-      state.view.month
+      state.view.month,
+      state.plannedSpends,
+      monthKey(state.view.year, state.view.month)
     );
   }
 
@@ -399,7 +407,13 @@
     const key = prevMonthKey(state.view.year, state.view.month);
     const m = state.months[key];
     if (!m || !Array.isArray(m.expenses) || !m.expenses.length) return null;
-    return m.expenses.reduce(function (s, e) { return s + (e.amount || 0); }, 0);
+    // Typical monthly view: exclude engangsutgift
+    const sum = Calc.sumExpenses(m, { excludeOneOff: true });
+    return sum > 0 || m.expenses.some(function (e) { return !Calc.expenseIsOneOff(e); }) ? sum : null;
+  }
+
+  function currentMonthTypicalSpend(m) {
+    return Calc.sumExpenses(m, { excludeOneOff: true });
   }
 
   // ——— DOM ———
@@ -567,7 +581,8 @@
       planInn = c.planInn;
       actInn = c.samletInntekt;
       planUt = c.plannedTotal;
-      actUt = c.samletUtgifter;
+      actUt =
+        c.effectiveUtgifter != null ? c.effectiveUtgifter : c.samletUtgifter;
       netPlan = c.netPlan;
       netActual = c.netActual;
     } else {
@@ -929,7 +944,10 @@
     $("#monthLabel").textContent = MONTHS[state.view.month] + " " + state.view.year;
     applyMainTab(state.settings.mainTab || "oversikt");
     const txScopeSel = $("#txScope");
-    if (txScopeSel) txScopeSel.value = loggScope === "year" ? "year" : "month";
+    if (txScopeSel) {
+      txScopeSel.value =
+        loggScope === "all" ? "all" : loggScope === "year" ? "year" : "month";
+    }
 
     const heroTitle = $("#budgetHeroTitle");
     if (heroTitle) {
@@ -998,6 +1016,7 @@
     renderPlannedIncome(m, c);
     renderMissingIncomeBanner(m);
     renderSafeSpend(c);
+    renderPlannedSpends(c);
     renderHealth(c);
     renderVsPrev(c);
     renderPersonGrid(c);
@@ -1007,6 +1026,7 @@
     renderYearOverview();
     renderSparing();
     renderReminder(m);
+    renderMissedMonthBanner();
     renderPeopleManage();
     updateStorageInfo();
     fillOwnerSelect($("#newCatOwner"), "felles");
@@ -1594,6 +1614,10 @@
           ? c.remainingFastBudgets
           : 0;
       buf = c && typeof c.spendBuffer === "number" ? c.spendBuffer : 0;
+      var futureR =
+        c && typeof c.futureReserve === "number" ? c.futureReserve : 0;
+      var autoX =
+        c && typeof c.autoSpendExtra === "number" ? c.autoSpendExtra : 0;
       planHead =
         c && typeof c.safeToSpendPlan === "number" ? c.safeToSpendPlan : 0;
       brukForHint =
@@ -1836,10 +1860,16 @@
       el.hidden = true;
       return;
     }
-    const cur = c.samletUtgifter;
+    const m = getMonth();
+    const curTypical = currentMonthTypicalSpend(m);
+    const cur = curTypical;
     const change = ((cur - prev) / prev) * 100;
     const rounded = Math.round(change);
     const sign = rounded > 0 ? "+" : "";
+    const oneOffNote =
+      (m.expenses || []).some(function (e) { return Calc.expenseIsOneOff(e); })
+        ? " · uten engangs"
+        : "";
     el.textContent =
       "Utgifter vs forrige måned: " +
       sign +
@@ -1848,7 +1878,8 @@
       formatNOK(prev) +
       " → " +
       formatNOK(cur) +
-      ")";
+      ")" +
+      oneOffNote;
     el.hidden = false;
   }
 
@@ -2015,12 +2046,21 @@
         })
         .map(function (s) {
           const planned = budgetForOwner(m, s.cat.id, ownerId);
-          const actual = Calc.actualForCategoryOwner(m, s.cat.id, s.cat.name, ownerId);
+          const actual = Calc.effectiveActualForCategoryOwner(
+            m,
+            s.cat,
+            ownerId,
+            state.view.month
+          );
+          const logged = Calc.actualForCategoryOwner(m, s.cat.id, s.cat.name, ownerId);
+          const autoSpend = ((Calc.categoryAutoSpends||Calc.categoryAutoSpends))(s.cat);
           return {
             cat: s.cat,
             ownerId: ownerId,
             planned: planned,
             actual: actual,
+            loggedActual: logged,
+            autoSpend: autoSpend,
             remain: planned - actual,
             over: (actual > planned && planned > 0) || (planned === 0 && actual > 0)
           };
@@ -2384,7 +2424,13 @@
     const expandKey = (s.readOnlyShare ? "share:" : "") + s.ownerId + ":" + s.cat.id;
     const expanded = expandedCatId === expandKey;
     const isFast = s.cat.type === "fast";
-    const fastBadge = isFast ? '<span class="badge-fast">Fast</span>' : "";
+    const autoOn = !!(s.autoSpend || (s.cat && ((Calc.categoryAutoSpends||Calc.categoryAutoSpends))(s.cat)));
+    const fastBadge = isFast
+      ? '<span class="badge-fast">Fast</span>' +
+        (autoOn
+          ? '<span class="badge-auto" title="Planlagt beløp telles som brukt automatisk">Auto</span>'
+          : "")
+      : "";
     const warnTag = isOver
       ? '<span class="cat-warn-tag' +
         (isMildOver ? "" : " over") +
@@ -2455,12 +2501,29 @@
               ? " · forventet for husstanden"
               : " · forventet for denne personen") +
           (s.cat.autoFill ? " · autofyll" : "") +
+          (autoOn ? " · Fast — telt automatisk" : "") +
           (s.splitPct != null ? " · " + s.splitPct + " %" : "") +
           "</div>" +
+          (autoOn
+            ? '<p class="hint compact auto-spend-hint">Fast — telt automatisk (maks av plan og logg). Variabel logges via «Kjøpt noe».</p>'
+            : "") +
           '<div class="cat-detail-row">' +
           "<span>Faktisk (denne)</span><strong>" +
           formatNOK(actual) +
           "</strong></div>" +
+          (autoOn && s.loggedActual != null && s.loggedActual !== actual
+            ? '<div class="cat-detail-row"><span class="muted">Logget</span><span class="muted">' +
+              formatNOK(s.loggedActual) +
+              "</span></div>"
+            : "") +
+          (!s.readOnlyShare && isFast
+            ? '<label class="chk auto-spend-toggle"><input type="checkbox" data-autospend="' +
+              escapeAttr(s.cat.id) +
+              '"' +
+              (s.cat.autoSpend === false ? "" : " checked") +
+              ' /> Auto-tell som brukt</label>'
+            : "") +
+
           '<div class="cat-detail-row">' +
           '<span class="cat-remain ' +
           remainClass +
@@ -3407,6 +3470,7 @@
         note: e.note,
         label: (cat && cat.name) || e.category || "Utgift",
         who: nameOf(e.owner),
+        oneOff: Calc.expenseIsOneOff(e),
         raw: e
       });
     });
@@ -3446,41 +3510,83 @@
   function renderTransactions(m) {
     const list = $("#txList");
     const empty = $("#txEmpty");
+    const pager = $("#txPager");
+    const pagerLabel = $("#txPagerLabel");
     const q = ($("#txSearch").value || "").trim().toLowerCase();
     const filter = $("#txFilter").value || "all";
     const scopeEl = $("#txScope");
-    if (scopeEl) loggScope = scopeEl.value === "year" ? "year" : "month";
+    if (scopeEl) {
+      if (scopeEl.value === "all") loggScope = "all";
+      else if (scopeEl.value === "year") loggScope = "year";
+      else loggScope = "month";
+    }
 
     let items = [];
-    if (loggScope === "year") {
+    if (loggScope === "all") {
+      Object.keys(state.months)
+        .sort()
+        .reverse()
+        .forEach(function (key) {
+          const mm = state.months[key];
+          if (!mm) return;
+          ensureMonthShape(mm);
+          allTxForMonth(mm).forEach(function (tx) {
+            tx._monthKey = key;
+            items.push(tx);
+          });
+        });
+    } else if (loggScope === "year") {
       const y = state.view.year;
-      for (let mo = 0; mo < 12; mo++) {
+      for (let mo = 11; mo >= 0; mo--) {
         const key = monthKey(y, mo);
         const mm = state.months[key];
         if (!mm) continue;
         ensureMonthShape(mm);
-        allTxForMonth(mm).forEach(function (t) {
-          t._monthKey = key;
-          items.push(t);
+        allTxForMonth(mm).forEach(function (tx) {
+          tx._monthKey = key;
+          items.push(tx);
         });
       }
     } else {
       items = allTxForMonth(m);
     }
     if (filter !== "all") {
-      items = items.filter(function (t) { return t.kind === filter; });
+      items = items.filter(function (tx) { return tx.kind === filter; });
     }
     if (q) {
-      items = items.filter(function (t) {
-        const hay = [t.label, t.note, t.who, t.kind].join(" ").toLowerCase();
+      items = items.filter(function (tx) {
+        const hay = [tx.label, tx.note, tx.who, tx.kind, tx.oneOff ? "engangs" : ""].join(" ").toLowerCase();
         return hay.indexOf(q) >= 0;
       });
     }
 
-    if (!items.length) {
+    const total = items.length;
+    const pageCount = Math.max(1, Math.ceil(total / LOGG_PAGE_SIZE) || 1);
+    if (loggPage >= pageCount) loggPage = pageCount - 1;
+    if (loggPage < 0) loggPage = 0;
+    const start = loggPage * LOGG_PAGE_SIZE;
+    const pageItems = items.slice(start, start + LOGG_PAGE_SIZE);
+
+    if (pager && pagerLabel) {
+      if (total > LOGG_PAGE_SIZE) {
+        pager.hidden = false;
+        const from = total ? start + 1 : 0;
+        const to = Math.min(start + LOGG_PAGE_SIZE, total);
+        pagerLabel.textContent = from + "–" + to + " av " + total;
+        const prevBtn = $("#txPagePrev");
+        const nextBtn = $("#txPageNext");
+        if (prevBtn) prevBtn.disabled = loggPage <= 0;
+        if (nextBtn) nextBtn.disabled = loggPage >= pageCount - 1;
+      } else {
+        pager.hidden = true;
+      }
+    }
+
+    if (!total) {
       list.innerHTML = "";
       empty.hidden = false;
-      if (q || filter !== "all" || loggScope === "year") {
+      if (pager) pager.hidden = true;
+      if (q || filter !== "all" || loggScope !== "month") {
         empty.querySelector("p").textContent = "Ingen treff for filteret.";
       } else {
         empty.querySelector("p").textContent = "Ingen transaksjoner denne måneden ennå.";
@@ -3489,30 +3595,33 @@
     }
     empty.hidden = true;
 
-    list.innerHTML = items
-      .map(function (t) {
-        const title = t.note || t.label;
+    list.innerHTML = pageItems
+      .map(function (tx) {
+        const title = tx.note || tx.label;
+        const oneOffBadge = tx.oneOff
+          ? '<span class="badge-oneoff">Engangs</span>'
+          : "";
         const meta =
-          t.label +
+          tx.label +
           " · " +
-          t.who +
-          (t._monthKey ? " · " + t._monthKey : "") +
-          (t.date ? " · " + formatDateNb(t.date) : "");
-        const sign = t.kind === "expense" ? "" : t.kind === "saving" ? "" : "";
+          tx.who +
+          (tx._monthKey ? " · " + tx._monthKey : "") +
+          (tx.date ? " · " + formatDateNb(tx.date) : "");
         return (
           '<button type="button" class="tx-item" data-tx="' +
-          escapeAttr(t.id) +
+          escapeAttr(tx.id) +
           '" data-kind="' +
-          escapeAttr(t.kind) +
+          escapeAttr(tx.kind) +
           '">' +
           '<div class="title">' +
           escapeHtml(title) +
+          oneOffBadge +
           "</div>" +
           '<div class="amount ' +
-          escapeAttr(t.kind) +
+          escapeAttr(tx.kind) +
           '">' +
-          (t.kind === "expense" ? "" : t.kind === "income" ? "+" : "") +
-          formatNOK(t.amount) +
+          (tx.kind === "expense" ? "" : tx.kind === "income" ? "+" : "") +
+          formatNOK(tx.amount) +
           "</div>" +
           '<div class="meta">' +
           escapeHtml(meta) +
@@ -3847,6 +3956,13 @@
           '"' +
           (c.autoFill ? " checked" : "") +
           " /> Autofyll budsjett</label>" +
+          (c.type === "fast"
+            ? '<label class="chk"><input type="checkbox" data-autospend="' +
+              escapeAttr(c.id) +
+              '"' +
+              (c.autoSpend === false ? "" : " checked") +
+              " /> Auto-tell som brukt</label>"
+            : "") +
           '<button type="button" class="btn sm ghost" data-archive="' +
           escapeAttr(c.id) +
           '">' +
@@ -3861,6 +3977,116 @@
   }
 
   // ——— Dialog helpers ———
+
+  function openPlannedSpend(edit) {
+    if (!Array.isArray(state.plannedSpends)) state.plannedSpends = [];
+    $("#plannedSpendTitle").textContent = edit ? "Rediger planlagt utlegg" : "Planlegg utlegg";
+    $("#psId").value = edit ? edit.id : "";
+    $("#psAmount").value = edit ? String(edit.amount).replace(".", ",") : "";
+    $("#psNote").value = edit ? edit.note || "" : "";
+    const mk = edit && edit.monthKey
+      ? edit.monthKey
+      : monthKey(state.view.year, state.view.month);
+    const parts = mk.split("-");
+    $("#psYear").value = parts[0] || String(state.view.year);
+    $("#psMonth").value = String(Math.max(0, parseInt(parts[1], 10) - 1));
+    const who = edit ? edit.owner : (activePeopleList()[0] && activePeopleList()[0].id) || "felles";
+    renderWhoSegGeneric($("#psWhoSeg"), who, "psWho");
+    fillCategorySelectOptional($("#psCategory"), edit ? edit.categoryId : null, who);
+    $("#psDelete").hidden = !edit;
+    openDlg("#dlgPlannedSpend");
+    setTimeout(function () { try { $("#psAmount").focus(); } catch (e) {} }, 30);
+  }
+
+  function renderWhoSegGeneric(el, selected, name) {
+    if (!el) return;
+    const people = activePeopleList();
+    let html = people
+      .map(function (p) {
+        return (
+          '<label class="seg-item"><input type="radio" name="' +
+          name +
+          '" value="' +
+          escapeAttr(p.id) +
+          '"' +
+          (selected === p.id ? " checked" : "") +
+          " /><span>" +
+          escapeHtml(p.name) +
+          "</span></label>"
+        );
+      })
+      .join("");
+    html +=
+      '<label class="seg-item"><input type="radio" name="' +
+      name +
+      '" value="felles"' +
+      (selected === "felles" ? " checked" : "") +
+      " /><span>Felles</span></label>";
+    el.innerHTML = html;
+  }
+
+  function fillCategorySelectOptional(sel, selectedId, who) {
+    if (!sel) return;
+    const cats = categoriesForWho(who || "felles");
+    sel.innerHTML =
+      '<option value="">(valgfritt)</option>' +
+      cats
+        .map(function (c) {
+          return (
+            '<option value="' +
+            escapeAttr(c.id) +
+            '"' +
+            (c.id === selectedId ? " selected" : "") +
+            ">" +
+            escapeHtml(c.name) +
+            "</option>"
+          );
+        })
+        .join("");
+  }
+
+  function renderPlannedSpends(c) {
+    const host = $("#plannedSpendsList");
+    const wrap = $("#plannedSpendsCard");
+    if (!host || !wrap) return;
+    if (!Array.isArray(state.plannedSpends)) state.plannedSpends = [];
+    const mk = monthKey(state.view.year, state.view.month);
+    const items = Calc.plannedSpendsForMonth(state.plannedSpends, mk);
+    const reserve =
+      c && typeof c.futureReserve === "number" ? c.futureReserve : 0;
+    const sumEl = $("#plannedSpendsSum");
+    if (sumEl) {
+      sumEl.textContent =
+        reserve > 0 ? formatNOK(reserve) + " reservert" : "Ingen reserve";
+    }
+    if (!items.length) {
+      host.innerHTML =
+        '<p class="hint compact">Ingen planlagte utlegg denne måneden. Trykk «Planlegg utlegg» for å reservere penger til fremtidige kjøp.</p>';
+      return;
+    }
+    host.innerHTML = items
+      .map(function (p) {
+        const cat = p.categoryId ? catById(p.categoryId) : null;
+        const who = p.owner === "felles" ? "Felles" : nameOf(p.owner);
+        const done = p.done ? " · markert kjøpt" : "";
+        return (
+          '<button type="button" class="planned-spend-row" data-edit-planned="' +
+          escapeAttr(p.id) +
+          '">' +
+          '<span class="ps-amount">' +
+          formatNOK(p.amount) +
+          "</span>" +
+          '<span class="ps-meta">' +
+          escapeHtml(who) +
+          (cat ? " · " + escapeHtml(cat.name) : "") +
+          (p.note ? " · " + escapeHtml(p.note) : "") +
+          escapeHtml(done) +
+          "</span></button>"
+        );
+      })
+      .join("");
+  }
+
   function openExpense(edit) {
     const last = (state.settings && state.settings.lastExpense) || {};
     $("#expenseTitle").textContent = edit ? "Rediger kjøp" : "Kjøpt noe";
@@ -3878,6 +4104,8 @@
     });
     $("#expNote").value = edit ? edit.note || "" : "";
     $("#expDate").value = edit ? edit.date || todayISO() : todayISO();
+    const oneOffEl = $("#expOneOff");
+    if (oneOffEl) oneOffEl.checked = !!(edit && Calc.expenseIsOneOff(edit));
     const whoDefault = edit
       ? edit.owner
       : last.owner || (activePeopleList()[0] && activePeopleList()[0].id) || "felles";
@@ -3961,7 +4189,7 @@
   }
 
   function exportCsv() {
-    const rows = [["dato", "type", "kategori", "hvem", "beløp", "notat", "måned"]];
+    const rows = [["dato", "type", "kategori", "hvem", "beløp", "notat", "måned", "engangs"]];
     Object.keys(state.months)
       .sort()
       .forEach(function (key) {
@@ -3975,7 +4203,8 @@
             nameOf(e.owner),
             String(e.amount != null ? e.amount : "").replace(".", ","),
             e.note || "",
-            key
+            key,
+            Calc.expenseIsOneOff(e) ? "ja" : ""
           ]);
         });
         (m.incomes || []).forEach(function (i) {
@@ -3986,7 +4215,8 @@
             nameOf(i.person),
             String(i.amount != null ? i.amount : "").replace(".", ","),
             i.note || "",
-            key
+            key,
+            ""
           ]);
         });
         (m.savings || []).forEach(function (s) {
@@ -3997,7 +4227,8 @@
             nameOf(s.person),
             String(s.amount != null ? s.amount : "").replace(".", ","),
             s.note || "",
-            key
+            key,
+            ""
           ]);
         });
       });
@@ -4319,7 +4550,16 @@
 
   function applyCloudState(payload) {
     if (!payload || typeof payload !== "object") return;
-    state = Calc.migrateState(payload);
+    var Sync = window.FamilieBudsjettSync;
+    var localArchives = Array.isArray(state.archives) ? state.archives : [];
+    var incoming = Object.assign({}, payload);
+    if (Sync && typeof Sync.mergeArchivesPreservingMonths === "function") {
+      incoming.archives = Sync.mergeArchivesPreservingMonths(
+        localArchives,
+        Array.isArray(payload.archives) ? payload.archives : []
+      );
+    }
+    state = Calc.migrateState(incoming);
     if (!Array.isArray(state.savingsGoals)) state.savingsGoals = [];
     if (!Array.isArray(state.archives)) state.archives = [];
     state.savingsGoals = Calc.refreshSavingsGoalsStatus(
@@ -4503,6 +4743,191 @@
         } else showToast(code);
       });
     }
+  }
+
+
+  function monthTitleNb(year, monthIndex) {
+    return MONTHS[monthIndex] + " " + year;
+  }
+
+  function renderMissedMonthBanner() {
+    const el = $("#missedMonthBanner");
+    const text = $("#missedMonthText");
+    if (!el || !text) return;
+    const now = new Date();
+    const throughY = now.getFullYear();
+    const throughM = now.getMonth();
+    const missed = Calc.detectMissedMonths(state.months, throughY, throughM);
+    if (!missed.length) {
+      missedMonthTarget = null;
+      el.hidden = true;
+      return;
+    }
+    missedMonthTarget = missed[missed.length - 1];
+    const label = monthTitleNb(missedMonthTarget.year, missedMonthTarget.month);
+    const extra =
+      missed.length > 1 ? " (og " + (missed.length - 1) + " til)" : "";
+    text.textContent =
+      label +
+      " ble hoppet over" +
+      extra +
+      ". Kopier plan frem, marker lett bruk, eller gå dit og fyll inn.";
+    el.hidden = false;
+  }
+
+  function ensureMonthFlags(m) {
+    if (!m) return;
+    if (m.lightUse == null) m.lightUse = false;
+    if (m.missedHandled == null) m.missedHandled = false;
+  }
+
+  function handleMissedCopyPlan() {
+    if (!missedMonthTarget) return;
+    const key = missedMonthTarget.key;
+    const y = missedMonthTarget.year;
+    const mo = missedMonthTarget.month;
+    state.view = { year: y, month: mo };
+    const m = getMonth();
+    const prevKey = prevMonthKey(y, mo);
+    const prev = state.months[prevKey];
+    if (prev) {
+      Calc.copyExpectedFrom(prev, m, state.people, mo);
+    }
+    ensureMonthFlags(m);
+    m.missedHandled = true;
+    save();
+    render();
+    showToast("Plan kopiert til " + monthTitleNb(y, mo));
+  }
+
+  function handleMissedLightUse() {
+    if (!missedMonthTarget) return;
+    const key = missedMonthTarget.key;
+    if (!state.months[key]) state.months[key] = emptyMonth();
+    const m = state.months[key];
+    ensureMonthShape(m);
+    ensureMonthFlags(m);
+    m.lightUse = true;
+    m.missedHandled = true;
+    save();
+    render();
+    showToast(monthTitleNb(missedMonthTarget.year, missedMonthTarget.month) + " markert som lett bruk");
+  }
+
+  function handleMissedJump() {
+    if (!missedMonthTarget) return;
+    state.view = {
+      year: missedMonthTarget.year,
+      month: missedMonthTarget.month
+    };
+    save();
+    applyMainTab("plan");
+    render();
+  }
+
+  function handleMissedDismiss() {
+    if (!missedMonthTarget) return;
+    const key = missedMonthTarget.key;
+    if (!state.months[key]) state.months[key] = emptyMonth();
+    const m = state.months[key];
+    ensureMonthShape(m);
+    ensureMonthFlags(m);
+    m.missedHandled = true;
+    save();
+    render();
+  }
+
+  function splitWizardMode() {
+    const el = document.querySelector('#dlgSplitWizard input[name="splitWizardMode"]:checked');
+    return el ? el.value : "equal";
+  }
+
+  function splitWizardCompute() {
+    const mode = splitWizardMode();
+    const people = activePeopleList();
+    if (mode === "income") {
+      return Calc.incomeBasedSplit(getMonth(), state.people);
+    }
+    if (mode === "custom") {
+      const split = {};
+      people.forEach(function (p) {
+        const inp = document.querySelector('#splitWizardCustom [data-sw-person="' + p.id + '"]');
+        const n = inp ? parseFloat(String(inp.value).replace(",", ".")) : 0;
+        split[p.id] = Number.isFinite(n) ? n : 0;
+      });
+      return Calc.normalizeSplitTo100(split, state.people);
+    }
+    return Calc.equalSplit(state.people);
+  }
+
+  function renderSplitWizardPreview() {
+    const custom = $("#splitWizardCustom");
+    const preview = $("#splitWizardPreview");
+    if (!preview) return;
+    const mode = splitWizardMode();
+    const people = activePeopleList();
+    if (custom) {
+      custom.hidden = mode !== "custom";
+      if (mode === "custom" && !custom.dataset.built) {
+        custom.innerHTML = people
+          .map(function (p) {
+            const eq = Math.round((100 / Math.max(1, people.length)) * 100) / 100;
+            return (
+              '<div class="sw-input-row"><label for="sw-' +
+              escapeAttr(p.id) +
+              '">' +
+              escapeHtml(p.name) +
+              '</label><input type="number" min="0" max="100" step="1" id="sw-' +
+              escapeAttr(p.id) +
+              '" data-sw-person="' +
+              escapeAttr(p.id) +
+              '" value="' +
+              eq +
+              '" /> <span>%</span></div>'
+            );
+          })
+          .join("");
+        custom.dataset.built = "1";
+      }
+    }
+    const split = splitWizardCompute();
+    preview.innerHTML =
+      '<div class="hint compact" style="margin:0 0 .35rem">Forhåndsvisning</div>' +
+      people
+        .map(function (p) {
+          const pct = split[p.id] != null ? split[p.id] : 0;
+          return (
+            '<div class="sw-row"><span>' +
+            escapeHtml(p.name) +
+            "</span><strong>" +
+            pct +
+            " %</strong></div>"
+          );
+        })
+        .join("");
+  }
+
+  function openSplitWizard() {
+    const custom = $("#splitWizardCustom");
+    if (custom) delete custom.dataset.built;
+    const eq = document.querySelector('#dlgSplitWizard input[name="splitWizardMode"][value="equal"]');
+    if (eq) eq.checked = true;
+    renderSplitWizardPreview();
+    openDlg("#dlgSplitWizard");
+  }
+
+  function applySplitWizard() {
+    const split = splitWizardCompute();
+    Calc.applySplitToFellesCategories(state.categories, state.people, split);
+    save();
+    closeDlg("#dlgSplitWizard");
+    render();
+    const parts = activePeopleList()
+      .map(function (p) {
+        return (p.name || p.id) + " " + (split[p.id] != null ? split[p.id] : 0) + "%";
+      })
+      .join(" / ");
+    showToast("Felles-fordeling: " + parts);
   }
 
   function bind() {
@@ -4710,6 +5135,81 @@
 
     const fabBuy = $("#fabBuy");
     if (fabBuy) fabBuy.addEventListener("click", function () { openExpense(null); });
+    const btnPlanSpend = $("#btnPlanSpend");
+    if (btnPlanSpend) {
+      btnPlanSpend.addEventListener("click", function () { openPlannedSpend(null); });
+    }
+    const btnPlanSpendMer = $("#btnMerPlanSpend");
+    if (btnPlanSpendMer) {
+      btnPlanSpendMer.addEventListener("click", function () { openPlannedSpend(null); });
+    }
+    document.body.addEventListener("click", function (e) {
+      const row = e.target.closest("[data-edit-planned]");
+      if (!row) return;
+      const id = row.getAttribute("data-edit-planned");
+      const item = (state.plannedSpends || []).find(function (x) { return x.id === id; });
+      if (item) openPlannedSpend(item);
+    });
+    const psClose = $("#plannedSpendClose");
+    if (psClose) psClose.addEventListener("click", function () { closeDlg("#dlgPlannedSpend"); });
+    const psCancel = $("#psCancel");
+    if (psCancel) psCancel.addEventListener("click", function () { closeDlg("#dlgPlannedSpend"); });
+    const formPs = $("#formPlannedSpend");
+    if (formPs) {
+      formPs.addEventListener("submit", function (e) {
+        e.preventDefault();
+        const amount = parseAmount($("#psAmount").value);
+        if (amount == null || amount <= 0) {
+          showToast("Skriv inn et beløp");
+          return;
+        }
+        const whoEl = document.querySelector('#dlgPlannedSpend input[name="psWho"]:checked');
+        const y = parseInt($("#psYear").value, 10);
+        const mo = parseInt($("#psMonth").value, 10);
+        if (!Number.isFinite(y) || !Number.isFinite(mo)) {
+          showToast("Velg måned");
+          return;
+        }
+        const id = $("#psId").value;
+        const payload = Calc.normalizePlannedSpend(
+          {
+            id: id || uid(),
+            amount: amount,
+            categoryId: $("#psCategory").value || null,
+            owner: whoEl ? whoEl.value : "felles",
+            monthKey: monthKey(y, mo),
+            note: ($("#psNote").value || "").trim(),
+            done: false
+          },
+          state.people
+        );
+        if (!Array.isArray(state.plannedSpends)) state.plannedSpends = [];
+        if (id) {
+          const idx = state.plannedSpends.findIndex(function (x) { return x.id === id; });
+          if (idx >= 0) state.plannedSpends[idx] = payload;
+          else state.plannedSpends.push(payload);
+        } else {
+          state.plannedSpends.push(payload);
+        }
+        save();
+        closeDlg("#dlgPlannedSpend");
+        render();
+        showToast("Utlegg planlagt");
+      });
+    }
+    const psDel = $("#psDelete");
+    if (psDel) {
+      psDel.addEventListener("click", function () {
+        const id = $("#psId").value;
+        if (!id || !confirm("Slette dette planlagte utlegget?")) return;
+        state.plannedSpends = (state.plannedSpends || []).filter(function (x) {
+          return x.id !== id;
+        });
+        save();
+        closeDlg("#dlgPlannedSpend");
+        render();
+      });
+    }
     $("#reminderLog").addEventListener("click", function () { openExpense(null); });
 
     const chips = $("#expAmountChips");
@@ -5003,9 +5503,42 @@
       });
     }
 
+    const btnMissedCopy = $("#missedCopyPlan");
+    if (btnMissedCopy) btnMissedCopy.addEventListener("click", handleMissedCopyPlan);
+    const btnMissedLight = $("#missedLightUse");
+    if (btnMissedLight) btnMissedLight.addEventListener("click", handleMissedLightUse);
+    const btnMissedJump = $("#missedJump");
+    if (btnMissedJump) btnMissedJump.addEventListener("click", handleMissedJump);
+    const btnMissedDismiss = $("#missedDismiss");
+    if (btnMissedDismiss) btnMissedDismiss.addEventListener("click", handleMissedDismiss);
+
+    const btnMerSplit = $("#btnMerSplitWizard");
+    if (btnMerSplit) {
+      btnMerSplit.addEventListener("click", function () {
+        openSplitWizard();
+      });
+    }
+    const splitClose = $("#splitWizardClose");
+    if (splitClose) splitClose.addEventListener("click", function () { closeDlg("#dlgSplitWizard"); });
+    const splitCancel = $("#splitWizardCancel");
+    if (splitCancel) splitCancel.addEventListener("click", function () { closeDlg("#dlgSplitWizard"); });
+    const splitApply = $("#splitWizardApply");
+    if (splitApply) splitApply.addEventListener("click", applySplitWizard);
+    const dlgSplit = $("#dlgSplitWizard");
+    if (dlgSplit) {
+      dlgSplit.addEventListener("change", function (e) {
+        if (e.target && e.target.name === "splitWizardMode") renderSplitWizardPreview();
+        if (e.target && e.target.matches("[data-sw-person]")) renderSplitWizardPreview();
+      });
+      dlgSplit.addEventListener("input", function (e) {
+        if (e.target && e.target.matches("[data-sw-person]")) renderSplitWizardPreview();
+      });
+    }
+
     const btnMerLogg = $("#btnMerLogg");
     if (btnMerLogg) {
       btnMerLogg.addEventListener("click", function () {
+        loggPage = 0;
         applyMainTab("logg");
         save();
         render();
@@ -5281,6 +5814,17 @@
 
     // Budget inputs (delegated) — per owner
     $("#categoryList").addEventListener("change", function (e) {
+      /* data-autospend-plan-bound */
+      const asEl = e.target.closest("[data-autospend]");
+      if (asEl && e.target.matches("input[data-autospend]")) {
+        const cat = catById(asEl.getAttribute("data-autospend"));
+        if (cat) {
+          cat.autoSpend = !!e.target.checked;
+          save();
+          render();
+        }
+        return;
+      }
       if (e.target.closest("[data-line-name], [data-line-amount]")) return;
       const input = e.target.closest("[data-budget]");
       if (!input) return;
@@ -5500,12 +6044,34 @@
       else openSaving(tx.person, tx);
     });
 
-    $("#txSearch").addEventListener("input", function () { renderTransactions(getMonth()); });
-    $("#txFilter").addEventListener("change", function () { renderTransactions(getMonth()); });
+    $("#txSearch").addEventListener("input", function () {
+      loggPage = 0;
+      renderTransactions(getMonth());
+    });
+    $("#txFilter").addEventListener("change", function () {
+      loggPage = 0;
+      renderTransactions(getMonth());
+    });
+    const txPagePrev = $("#txPagePrev");
+    const txPageNext = $("#txPageNext");
+    if (txPagePrev) {
+      txPagePrev.addEventListener("click", function () {
+        loggPage = Math.max(0, loggPage - 1);
+        renderTransactions(getMonth());
+      });
+    }
+    if (txPageNext) {
+      txPageNext.addEventListener("click", function () {
+        loggPage += 1;
+        renderTransactions(getMonth());
+      });
+    }
     const txScope = $("#txScope");
     if (txScope) {
       txScope.addEventListener("change", function () {
-        loggScope = txScope.value === "year" ? "year" : "month";
+        loggPage = 0;
+        loggScope =
+          txScope.value === "all" ? "all" : txScope.value === "year" ? "year" : "month";
         renderTransactions(getMonth());
       });
     }
@@ -5545,6 +6111,7 @@
       const cat = catById(catId);
       const m = getMonth();
       const id = $("#expId").value;
+      const oneOffEl = $("#expOneOff");
       const payload = {
         id: id || uid(),
         owner: whoEl ? whoEl.value : "felles",
@@ -5552,8 +6119,10 @@
         category: cat ? cat.name : "",
         amount: amount,
         note: $("#expNote").value.trim(),
-        date: $("#expDate").value || todayISO()
+        date: $("#expDate").value || todayISO(),
+        oneOff: !!(oneOffEl && oneOffEl.checked)
       };
+      if (!payload.oneOff) delete payload.oneOff;
       if (id) {
         const idx = m.expenses.findIndex(function (x) { return x.id === id; });
         if (idx >= 0) m.expenses[idx] = payload;
@@ -5873,6 +6442,7 @@
         const cat = catById(type);
         if (cat) {
           cat.type = t.value;
+          if (cat.type === "fast" && cat.autoSpend == null) cat.autoSpend = true;
           save();
           render();
         }
@@ -5893,6 +6463,16 @@
         const cat = catById(af);
         if (cat) {
           cat.autoFill = t.checked;
+          save();
+          render();
+        }
+        return;
+      }
+      const as = t.getAttribute("data-autospend");
+      if (as) {
+        const cat = catById(as);
+        if (cat) {
+          cat.autoSpend = !!t.checked;
           save();
           render();
         }

@@ -61,6 +61,16 @@
     </div>
   </div>
 
+  <div id="missedMonthBanner" class="reminder soft-reminder missed-month-banner" hidden role="status">
+    <p id="missedMonthText">En måned ble hoppet over.</p>
+    <div class="reminder-actions missed-month-actions">
+      <button type="button" class="btn primary sm" id="missedCopyPlan">Kopier plan</button>
+      <button type="button" class="btn secondary sm" id="missedLightUse">Lett bruk</button>
+      <button type="button" class="btn ghost sm" id="missedJump">Gå til måned</button>
+      <button type="button" class="btn ghost sm" id="missedDismiss">Ikke nå</button>
+    </div>
+  </div>
+
   <main id="main" class="wrap">
     <!-- ——— PLAN ——— -->
     <div id="panelPlan" class="tab-panel" role="tabpanel" aria-labelledby="tabPlan" hidden>
@@ -173,6 +183,17 @@
           <span class="health-meter-label" id="healthMeterLabel"></span>
         </div>
         <div class="health" id="healthSummary" hidden></div>
+      </section>
+
+      
+      <section class="card compact-card" id="plannedSpendsCard" aria-labelledby="plannedSpendsTitle">
+        <div class="card-head">
+          <h2 id="plannedSpendsTitle">Planlagte utlegg</h2>
+          <button type="button" class="btn primary sm" id="btnPlanSpend">Planlegg utlegg</button>
+        </div>
+        <p class="hint compact">Reserver penger til fremtidige kjøp. Teller i Trygg å bruke for valgt måned. Unngår dobbelttelling hvis du logger samme kategori.</p>
+        <p class="meta-line" id="plannedSpendsSum">Ingen reserve</p>
+        <div id="plannedSpendsList" class="planned-spends-list"></div>
       </section>
 
       <div class="backup-banner" id="backupBanner">
@@ -308,7 +329,13 @@
           <select id="txScope" class="select" title="Periode">
             <option value="month">Denne måneden</option>
             <option value="year">Hele året</option>
+            <option value="all">Alle aktive måneder</option>
           </select>
+        </div>
+        <div class="tx-pager" id="txPager" hidden>
+          <button type="button" class="btn ghost sm" id="txPagePrev" aria-label="Forrige side">←</button>
+          <span class="tx-pager-label" id="txPagerLabel">1–40</span>
+          <button type="button" class="btn ghost sm" id="txPageNext" aria-label="Neste side">→</button>
         </div>
         <div id="txList" class="tx-list"></div>
         <div id="txEmpty" class="empty" hidden>
@@ -395,8 +422,10 @@
         <p class="hint compact">Snarveier til logg, familie, år, innstillinger og demo-data. Sparing har egen fane.</p>
         <div class="mer-actions">
           <button type="button" class="btn primary mer-btn" id="btnNewCatMer">+ Ny kategori</button>
+          <button type="button" class="btn mer-btn" id="btnMerPlanSpend">Planlegg utlegg</button>
           <button type="button" class="btn mer-btn" id="btnMerLogg">Logg</button>
           <button type="button" class="btn mer-btn" id="btnMerPeople">Familie / Personer</button>
+          <button type="button" class="btn mer-btn" id="btnMerSplitWizard">Fordeling Felles %</button>
           <button type="button" class="btn mer-btn" id="btnMerYear">År</button>
           <button type="button" class="btn ghost mer-btn" id="btnMerSparing">Sparing (fane)</button>
           <button type="button" class="btn mer-btn" id="btnMerSettings">Innstillinger</button>
@@ -627,6 +656,10 @@
           <span>Notat <em class="opt">(valgfritt)</em></span>
           <input id="expNote" class="input" type="text" maxlength="120" placeholder="F.eks. Rema" autocomplete="off" />
         </label>
+        <label class="check-row">
+          <input type="checkbox" id="expOneOff" />
+          <span>Engangsutgift <em class="opt">(utenfor vanlig månedsnivå)</em></span>
+        </label>
         <label class="exp-stay-wrap check-row">
           <input type="checkbox" id="expStayOpen" />
           <span>Legg til mer etter lagring</span>
@@ -707,6 +740,64 @@
     </form>
   </dialog>
 
+
+  
+  <dialog id="dlgPlannedSpend" class="modal">
+    <form id="formPlannedSpend" class="modal-card">
+      <header class="modal-head">
+        <h2 id="plannedSpendTitle">Planlegg utlegg</h2>
+        <button type="button" class="icon-btn" id="plannedSpendClose" aria-label="Lukk">×</button>
+      </header>
+      <div class="modal-body stack">
+        <input type="hidden" id="psId" />
+        <label class="field">
+          <span>Beløp (kr)</span>
+          <input id="psAmount" class="input lg amount-expr" type="text" inputmode="decimal" placeholder="0" required autocomplete="off" />
+        </label>
+        <fieldset class="who-set">
+          <legend>Hvem</legend>
+          <div class="seg who-seg" id="psWhoSeg" role="radiogroup" aria-label="Hvem"></div>
+        </fieldset>
+        <label class="field">
+          <span>Kategori <em class="opt">(valgfritt)</em></span>
+          <select id="psCategory" class="select lg"></select>
+        </label>
+        <div class="field-row two">
+          <label class="field">
+            <span>År</span>
+            <input id="psYear" class="input" type="number" min="2000" max="2100" required />
+          </label>
+          <label class="field">
+            <span>Måned</span>
+            <select id="psMonth" class="select" required>
+              <option value="0">Januar</option>
+              <option value="1">Februar</option>
+              <option value="2">Mars</option>
+              <option value="3">April</option>
+              <option value="4">Mai</option>
+              <option value="5">Juni</option>
+              <option value="6">Juli</option>
+              <option value="7">August</option>
+              <option value="8">September</option>
+              <option value="9">Oktober</option>
+              <option value="10">November</option>
+              <option value="11">Desember</option>
+            </select>
+          </label>
+        </div>
+        <label class="field">
+          <span>Notat <em class="opt">(valgfritt)</em></span>
+          <input id="psNote" class="input" type="text" maxlength="120" placeholder="F.eks. ny sofa" autocomplete="off" />
+        </label>
+        <p class="hint compact">Når måneden kommer, reserveres beløpet i Trygg å bruke. Logger du et kjøp i samme kategori/hvem, telles ikke dobbelt.</p>
+      </div>
+      <footer class="modal-foot">
+        <button type="button" class="btn danger ghost" id="psDelete" hidden>Slett</button>
+        <button type="button" class="btn ghost" id="psCancel">Avbryt</button>
+        <button type="submit" class="btn primary">Lagre</button>
+      </footer>
+    </form>
+  </dialog>
 
   <!-- Modal: sparemål -->
   <dialog id="dlgGoal" class="modal">
@@ -846,6 +937,30 @@
   </dialog>
 
   <!-- Modal: settings -->
+  <dialog id="dlgSplitWizard" class="modal">
+    <div class="modal-card">
+      <header class="modal-head">
+        <h2>Fordeling Felles %</h2>
+        <button type="button" class="icon-btn" id="splitWizardClose" aria-label="Lukk">×</button>
+      </header>
+      <div class="modal-body stack">
+        <p class="hint compact">Sett hvordan fellesutgifter fordeles mellom personene. Gjelder alle Felles-kategorier.</p>
+        <fieldset class="who-set">
+          <legend>Velg fordeling</legend>
+          <label class="check-row"><input type="radio" name="splitWizardMode" value="equal" checked /> <span>Lik fordeling (f.eks. 50/50)</span></label>
+          <label class="check-row"><input type="radio" name="splitWizardMode" value="income" /> <span>Etter planlagt inntekt denne måneden</span></label>
+          <label class="check-row"><input type="radio" name="splitWizardMode" value="custom" /> <span>Egendefinert</span></label>
+        </fieldset>
+        <div id="splitWizardCustom" class="split-wizard-custom" hidden></div>
+        <div id="splitWizardPreview" class="split-wizard-preview" aria-live="polite"></div>
+      </div>
+      <footer class="modal-foot">
+        <button type="button" class="btn ghost" id="splitWizardCancel">Avbryt</button>
+        <button type="button" class="btn primary" id="splitWizardApply">Bruk på Felles</button>
+      </footer>
+    </div>
+  </dialog>
+
   <dialog id="dlgSettings" class="modal">
     <div class="modal-card">
       <header class="modal-head">

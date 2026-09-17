@@ -385,9 +385,11 @@ console.log("\n8. safeToSpend = planInn − actualExpenses − remainingFast");
   const c = Calc.calcFamily(m, people, cats);
   assertEq(c.planInn, 50000, "planInn 50000");
   assertEq(c.samletUtgifter, 13500, "actual expenses 13500");
-  // remainingFast = max(0,10000-10000)+max(0,2000-500) = 0+1500 = 1500
-  assertEq(c.remainingFastBudgets, 1500, "remainingFast 1500");
-  // safe = max(0, 50000 - 13500 - 1500) = 35000
+  // Fast auto-spend: effectiveActual=max(plan,logged) → remFast=0; autoSpendExtra=1500 (Strøm)
+  assertEq(c.remainingFastBudgets, 0, "remainingFast 0 with auto-spend");
+  assertEq(c.autoSpendExtra, 1500, "autoSpendExtra 1500");
+  assertEq(c.effectiveUtgifter, 15000, "effectiveUtgifter 15000");
+  // safe = planInn − effectiveUtgifter − remFast = 50000 − 15000 − 0 = 35000
   assertEq(c.safeToSpend, 35000, "safeToSpend 35000");
   assertEq(c.safeToSpendRaw, 35000, "safeToSpendRaw 35000");
 
@@ -453,16 +455,17 @@ console.log("\n10. safeToSpend uses bruk (not spare); spare ignored");
       { id: "e2", owner: "felles", categoryId: "cMat", amount: 1000 }
     ]
   };
-  // remainingFast=6000; remainingAll=6000+4000=10000
-  // saldo safe = 70000 - 10000 - 0 = 60000
-  // plan safe = 50000 - 5000 - 6000 = 39000
+  // Auto-spend: remFast=0, autoSpendExtra=6000, remAll (variabel only)=4000
+  // saldo = 70000 - 4000 - 6000 - 0 = 60000 (unchanged)
+  // plan = 50000 - (5000+6000) - 0 = 39000
   const cHighSpare = Calc.calcFamily(base, people, cats);
   const noSpare = JSON.parse(JSON.stringify(base));
   noSpare.balances.p1.spare = null;
   noSpare.balances.p2.spare = 0;
   const cNoSpare = Calc.calcFamily(noSpare, people, cats);
-  assertEq(cHighSpare.remainingFastBudgets, 6000, "remainingFast 6000");
-  assertEq(cHighSpare.remainingBudgetAll, 10000, "remainingBudgetAll 10000");
+  assertEq(cHighSpare.remainingFastBudgets, 0, "remainingFast 0 auto-spend");
+  assertEq(cHighSpare.autoSpendExtra, 6000, "autoSpendExtra 6000");
+  assertEq(cHighSpare.remainingBudgetAll, 4000, "remainingBudgetAll variabel only");
   assertEq(cHighSpare.safeToSpendMode, "saldo", "mode saldo when bruk set");
   assertEq(cHighSpare.safeToSpend, 60000, "safeToSpend from saldo");
   assertEq(cHighSpare.safeToSpendPlan, 39000, "plan formula still available");
@@ -757,11 +760,12 @@ console.log("\n14. Saldo safeToSpend, buffer, etterLonn, fallback without bruk")
       { id: "e2", owner: "felles", categoryId: "cMat", amount: 1000 }
     ]
   };
-  // remainingAll = max(0,8000-2000)+max(0,4000-1000) = 6000+3000 = 9000
-  // totalBruk = 15000; buffer 3000 → safe = max(0,15000-9000-3000)=3000
+  // Auto-spend: remAll variabel=3000, autoSpendExtra=6000; buffer 3000
+  // safe = 15000 - 3000 - 6000 - 3000 = 3000 (unchanged)
   const c = Calc.calcFamily(m, people, cats, { spendBuffer: 3000 });
   assertEq(c.totalBruk, 15000, "totalBruk");
-  assertEq(c.remainingBudgetAll, 9000, "remainingBudgetAll");
+  assertEq(c.remainingBudgetAll, 3000, "remainingBudgetAll variabel");
+  assertEq(c.autoSpendExtra, 6000, "autoSpendExtra");
   assertEq(c.spendBuffer, 3000, "buffer applied");
   assertEq(c.safeToSpendMode, "saldo", "saldo mode");
   assertEq(c.safeToSpend, 3000, "safe with buffer");
@@ -776,8 +780,9 @@ console.log("\n14. Saldo safeToSpend, buffer, etterLonn, fallback without bruk")
   const cEmpty = Calc.calcFamily(emptyBal, people, cats, { spendBuffer: 3000 });
   assertEq(cEmpty.safeToSpendMode, "plan", "fallback plan without bruk");
   assert(cEmpty.etterLonn == null, "etterLonn null without bruk");
-  // plan: planInn 50000 - actual 3000 - remainingFast 6000 = 41000
+  // plan: 50000 - (3000+6000 auto) - remFast0 = 41000
   assertEq(cEmpty.safeToSpend, 41000, "plan safe without bruk");
+  assertEq(cEmpty.autoSpendExtra, 6000, "autoSpend in plan mode");
   assertEq(cEmpty.safeToSpendPlan, 41000, "plan mirror");
   // migrate settings defaults
   const migrated = Calc.migrateState({ version: 2, people, categories: [], months: {}, settings: {} });
@@ -822,31 +827,29 @@ console.log("\n15. Per-person safeToSpend (saldo + plan + felles % + equal buffe
     ]
   };
   const c = Calc.calcFamily(m, people, cats, { spendBuffer: 2000 });
-  // Household remAll uses category totals (all owners):
-  //   Lån max(0,10000-4000)=6000
-  //   Mat max(0,4000-(1000+200))=2800  (felles+p1 spend on Mat)
-  //   MatP1 max(0,2000-500)=1500
-  //   → 10300; totalBruk 30000; buffer 2000 → safe 17700
+  // Auto-spend: Lån rem→0 (autoExtra 6000). remAll = Mat 2800 + MatP1 1500 = 4300
+  // safe = 30000 - 4300 - 6000 - 2000 = 17700 (unchanged)
   assertEq(c.safeToSpendMode, "saldo", "household saldo");
-  assertEq(c.remainingBudgetAll, 10300, "household remAll");
+  assertEq(c.remainingBudgetAll, 4300, "household remAll");
+  assertEq(c.autoSpendExtra, 6000, "household autoSpendExtra");
   assertEq(c.safeToSpend, 17700, "household safe");
 
   const m1 = c.byPerson.p1;
   const m2 = c.byPerson.p2;
-  // p1 remAll: own MatP1 1500
-  //   + Lån felles rem 6000 * 60% = 3600
-  //   + Mat felles rem 3000 * 50% = 1500
-  //   = 6600
-  assertEq(Math.round(m1.remainingBudgetAll * 100) / 100, 6600, "p1 remAll");
-  // p2 remAll: Lån 6000*40%=2400 + Mat 3000*50%=1500 = 3900
-  assertEq(Math.round(m2.remainingBudgetAll * 100) / 100, 3900, "p2 remAll");
+  // p1 remAll without Lån: MatP1 1500 + Mat felles 3000*50% = 3000
+  // p1 autoExtra = Lån 6000*60% = 3600
+  assertEq(Math.round(m1.remainingBudgetAll * 100) / 100, 3000, "p1 remAll");
+  assertEq(Math.round(m1.autoSpendExtra * 100) / 100, 3600, "p1 autoSpendExtra");
+  // p2 remAll: Mat 1500; autoExtra 2400
+  assertEq(Math.round(m2.remainingBudgetAll * 100) / 100, 1500, "p2 remAll");
+  assertEq(Math.round(m2.autoSpendExtra * 100) / 100, 2400, "p2 autoSpendExtra");
   // buffer share = 1000 each
   assertEq(m1.spendBufferShare, 1000, "p1 buffer share");
   assertEq(m2.spendBufferShare, 1000, "p2 buffer share");
-  // p1 saldo: 20000 - 6600 - 1000 = 12400
+  // p1 saldo: 20000 - 3000 - 3600 - 1000 = 12400
   assertEq(m1.safeToSpendMode, "saldo", "p1 saldo mode");
   assertEq(Math.round(m1.safeToSpend * 100) / 100, 12400, "p1 safe saldo");
-  // p2 saldo: 10000 - 3900 - 1000 = 5100
+  // p2 saldo: 10000 - 1500 - 2400 - 1000 = 5100
   assertEq(Math.round(m2.safeToSpend * 100) / 100, 5100, "p2 safe saldo");
   // Spare never counted — huge spare does not change
   assert(m1.safeToSpend < 50000, "spare not in p1 safe");
@@ -860,16 +863,17 @@ console.log("\n15. Per-person safeToSpend (saldo + plan + felles % + equal buffe
   const p2p = cPlan.byPerson.p2;
   // p1 utgifter = ownExp (500+200) + fellesShare (4000*0.6 + 1000*0.5) = 700 + 2400 + 500 = 3600
   assertEq(Math.round(p1p.utgifter * 100) / 100, 3600, "p1 utgifter");
-  // p1 remFast = Lån 6000 * 60% = 3600 (MatP1/Mat variabel)
-  assertEq(Math.round(p1p.remainingFastBudgets * 100) / 100, 3600, "p1 remFast");
-  // p1 plan safe = 30000 - 3600 - 3600 = 22800
+  // remFast 0 with auto-spend; autoExtra replaces it
+  assertEq(Math.round(p1p.remainingFastBudgets * 100) / 100, 0, "p1 remFast");
+  assertEq(Math.round(p1p.autoSpendExtra * 100) / 100, 3600, "p1 autoExtra plan");
+  // p1 plan = 30000 - 3600 utgifter - 3600 auto - 0 remFast = 22800
   assertEq(p1p.safeToSpendMode, "plan", "p1 plan mode");
   assertEq(Math.round(p1p.safeToSpend * 100) / 100, 22800, "p1 plan safe");
   // p2 utgifter = 4000*0.4 + 1000*0.5 = 1600+500 = 2100
   assertEq(Math.round(p2p.utgifter * 100) / 100, 2100, "p2 utgifter");
-  // p2 remFast = 6000*0.4 = 2400
-  assertEq(Math.round(p2p.remainingFastBudgets * 100) / 100, 2400, "p2 remFast");
-  // p2 plan = 20000 - 2100 - 2400 = 15500
+  assertEq(Math.round(p2p.remainingFastBudgets * 100) / 100, 0, "p2 remFast");
+  assertEq(Math.round(p2p.autoSpendExtra * 100) / 100, 2400, "p2 autoExtra plan");
+  // p2 plan = 20000 - 2100 - 2400 - 0 = 15500
   assertEq(Math.round(p2p.safeToSpend * 100) / 100, 15500, "p2 plan safe");
 }
 
@@ -1370,6 +1374,84 @@ console.log("\n24. Årsarkiv / sparemål-status / koblede innskudd / flerår");
   assertEq(mig.months["2022-03"].savings[0].goalId, "g9", "migrate goalId");
   assertEq(mig.archives.length, 1, "migrate archives");
   assertEq(mig.archives[0].year, 2021, "migrate archive year");
+}
+
+
+// --- Feature 1: Fast auto-spend + Feature 2: planned spends ---
+console.log("\n25. Fast auto-spend max-rule + opt-out + yearly once + plannedSpends");
+{
+  const people = Calc.defaultPeople();
+  const cats = [
+    { id: "cRent", name: "Husleie", type: "fast", owner: "felles", archived: false },
+    { id: "cIns", name: "Forsikring", type: "fast", owner: "felles", archived: false, autoSpend: false },
+    { id: "cFood", name: "Mat", type: "variabel", owner: "felles", archived: false }
+  ];
+  const m = {
+    balances: {},
+    budgets: { cRent: 12000, cIns: 3000, cFood: 5000 },
+    budgetLines: {
+      cIns: {
+        felles: [
+          { id: "l1", name: "Årlig", amount: 12000, interval: "year", mode: "once", month: 2 }
+        ]
+      }
+    },
+    plannedIncome: {
+      p1: { lønn: 40000, ekstra: null },
+      p2: { lønn: 30000, ekstra: null }
+    },
+    incomes: [],
+    savings: [],
+    expenses: [
+      { id: "e1", owner: "felles", categoryId: "cRent", amount: 5000 } // partial log
+    ]
+  };
+  // March (monthIndex 2): Forsikring once hits; but autoSpend false → not auto
+  const cMar = Calc.calcFamily(m, people, cats, {}, 2);
+  assertEq(cMar.catStats.find(s => s.cat.id === "cRent").actual, 12000, "rent effective max(12000,5000)");
+  assertEq(cMar.catStats.find(s => s.cat.id === "cRent").loggedActual, 5000, "rent logged 5000");
+  assertEq(cMar.catStats.find(s => s.cat.id === "cRent").autoSpent, 7000, "rent autoSpent 7000");
+  assert(cMar.catStats.find(s => s.cat.id === "cRent").remain === 0, "rent remain 0");
+  assertEq(cMar.autoSpendExtra, 7000, "only rent auto (ins opted out)");
+  // Ins planned 12000 in March but no auto → remain 12000 in remFast
+  assertEq(cMar.remainingFastBudgets, 12000, "ins remainingFast (no auto)");
+  // April: yearly once = 0 for ins
+  const cApr = Calc.calcFamily(m, people, cats, {}, 3);
+  assertEq(cApr.remainingFastBudgets, 0, "ins not in April");
+  assertEq(cApr.autoSpendExtra, 7000, "rent still auto in April");
+
+  // Opt-out toggle off → both auto
+  cats[1].autoSpend = true;
+  // But budget lines: need monthIndex for contribution — March gets 12000
+  const cMar2 = Calc.calcFamily(m, people, cats, {}, 2);
+  assertEq(cMar2.autoSpendExtra, 7000 + 12000, "rent+ins auto");
+  assertEq(cMar2.remainingFastBudgets, 0, "no remFast when both auto");
+
+  // Planned future spend
+  const planned = Calc.normalizePlannedSpends([
+    { amount: 8000, owner: "p1", monthKey: "2026-09", note: "Sofa", categoryId: "cFood" },
+    { amount: 2000, owner: "felles", monthKey: "2026-10", note: "Gave" }
+  ], people);
+  assertEq(planned.length, 2, "2 planned spends");
+  const cSep = Calc.calcFamily(m, people, cats, {}, 8, planned, "2026-09");
+  assertEq(cSep.futureReserve, 8000, "sept reserve 8000");
+  // Matching expense covers it
+  m.expenses.push({ id: "eSofa", owner: "p1", categoryId: "cFood", amount: 8000 });
+  const cSep2 = Calc.calcFamily(m, people, cats, {}, 8, planned, "2026-09");
+  assertEq(cSep2.futureReserve, 0, "covered by matching expense");
+  // Other month still reserved
+  const cOct = Calc.calcFamily(m, people, cats, {}, 9, planned, "2026-10");
+  assertEq(cOct.futureReserve, 2000, "oct still reserved");
+
+  // migrate keeps plannedSpends
+  const mig = Calc.migrateState({
+    version: 2,
+    people,
+    categories: cats,
+    months: {},
+    plannedSpends: planned
+  });
+  assertEq(mig.plannedSpends.length, 2, "migrate plannedSpends");
 }
 
 

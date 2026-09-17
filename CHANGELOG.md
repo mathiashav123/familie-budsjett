@@ -1,5 +1,31 @@
 # Endringslogg – Familiebudsjett
 
+## 17. september 2026 (UTC+2) – Fast auto-tell + planlagte utlegg
+
+### 1. Faste utgifter telles automatisk som brukt
+- Kategorier med type **Fast** teller planlagt beløp som faktisk/brukt for «igjen», fremdrift og Trygg å bruke (fra månedens start).
+- **Dobbelttelling:** `effektivFaktisk = max(planlagt, logget)`. Har du logget mer enn plan, brukes det loggførte. Har du logget mindre/ingenting, brukes planen.
+- Årlige/kvartalsvise underlinjer: kun i månedene planen treffer (Fordel vs I måned / Betales i) – samme `budgetFor`-logikk som før.
+- Variabel forblir manuell via «Kjøpt noe».
+- UI: merke **Auto** + hint «Fast — telt automatisk» på Plan; avkrysning **Auto-tell som brukt** / «Ikke auto-tell» per kategori (felt `autoSpend`, standard på for Fast).
+
+### 2. Planlagte utlegg (fremtidig bruk)
+- Nytt: **Planlegg utlegg** (Oversikt-kort + Mer): beløp, valgfri kategori, hvem, måned, notat.
+- Reserverer beløpet i Trygg å bruke / remaining for mål-måneden (`futureReserve`).
+- **Dobbelttelling:** matching loggført kjøp (samme eier + kategori) i måneden nuller reserven for det utlegget; ellers til `done` markeres.
+- Lagres additivt som `plannedSpends[]` på state. Nøkkel uendret: **`familie-budsjett-v1`**.
+
+### Formler (Trygg å bruke)
+- `autoSpendExtra = Σ max(0, plan−logget)` for Fast med auto-tell
+- `effectiveUtgifter = samletUtgifter + autoSpendExtra`
+- Plan: `planInn − effectiveUtgifter − remainingFast − futureReserve`
+- Saldo: `totalBruk − remainingBudgetAll − autoSpendExtra − futureReserve − buffer`  
+  (remaining* bruker effektiv faktisk, så Fast-auto har remain 0; autoSpendExtra holder reservasjonen)
+
+### Tester / deploy
+- `test-calc.mjs` utvidet (auto-spend max-regel, opt-out, yearly once, plannedSpends). Ingen wipe.
+
+
 ## 7. september 2026 (UTC+2) – 20-års forbedringer (arkiv, sparemål, synk)
 
 ### 1. Årsarkiv / kompakt historikk

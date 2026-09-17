@@ -250,10 +250,78 @@
    *
    * Structured form always includes version + updated_at for smarter clients.
    */
+  /**
+   * Slim archive for routine sync: keep rollup/refs, drop cold months[].
+   * Full months only when includeArchiveMonths is true (restore/export).
+   */
+  function slimArchiveEntry(a) {
+    if (!a || typeof a !== "object") return a;
+    var months = a.months && typeof a.months === "object" ? a.months : null;
+    var monthCount = months ? Object.keys(months).length : Number(a.monthCount) || 0;
+    return {
+      year: a.year,
+      archivedAt: a.archivedAt || null,
+      rollup: a.rollup && typeof a.rollup === "object" ? a.rollup : null,
+      sparingYear: a.sparingYear || 0,
+      monthCount: monthCount,
+      monthsLazy: true
+    };
+  }
+
+  function slimArchivesForSync(archives) {
+    return (archives || []).map(slimArchiveEntry);
+  }
+
+  function archiveHasFullMonths(a) {
+    return !!(a && a.months && typeof a.months === "object" && Object.keys(a.months).length);
+  }
+
+  /**
+   * Merge remote archives into local: never wipe full months when remote is lazy/slim.
+   */
+  function mergeArchivesPreservingMonths(localArchives, remoteArchives) {
+    var local = Array.isArray(localArchives) ? localArchives : [];
+    var remote = Array.isArray(remoteArchives) ? remoteArchives : [];
+    var byYear = {};
+    local.forEach(function (a) {
+      if (a && Number.isFinite(Number(a.year))) byYear[a.year] = a;
+    });
+    remote.forEach(function (r) {
+      if (!r || !Number.isFinite(Number(r.year))) return;
+      var y = r.year;
+      var prev = byYear[y];
+      if (!prev) {
+        byYear[y] = r;
+        return;
+      }
+      if (archiveHasFullMonths(r)) {
+        byYear[y] = r;
+        return;
+      }
+      // Remote slim: keep local months, refresh rollup/refs from remote
+      byYear[y] = Object.assign({}, prev, {
+        archivedAt: r.archivedAt || prev.archivedAt || null,
+        rollup: r.rollup || prev.rollup || null,
+        sparingYear: r.sparingYear != null ? r.sparingYear : prev.sparingYear,
+        monthCount: r.monthCount != null ? r.monthCount : prev.monthCount,
+        months: archiveHasFullMonths(prev) ? prev.months : (prev.months || {})
+      });
+      if (byYear[y].monthsLazy && archiveHasFullMonths(byYear[y])) {
+        delete byYear[y].monthsLazy;
+      }
+    });
+    return Object.keys(byYear)
+      .map(Number)
+      .sort(function (a, b) { return a - b; })
+      .map(function (y) { return byYear[y]; });
+  }
+
   function packCloudPayload(state, opts) {
     opts = opts || {};
     var st = state && typeof state === "object" ? state : {};
     var archives = Array.isArray(st.archives) ? st.archives : [];
+    var includeMonths = opts.includeArchiveMonths === true;
+    var packedArchives = includeMonths ? archives : slimArchivesForSync(archives);
     var active = Object.assign({}, st);
     // Structured split: activePayload without heavy archive months (refs + archives[] beside it)
     active.archives = [];
@@ -267,15 +335,18 @@
       version: st.version || 2,
       updated_at: opts.updatedAt || isoNow(),
       activePayload: active,
-      archives: archives,
+      archives: packedArchives,
       archiveRefs: archives.map(function (a) {
+        var months = a.months && typeof a.months === "object" ? a.months : null;
         return {
           year: a.year,
           archivedAt: a.archivedAt || null,
-          monthCount: a.months ? Object.keys(a.months).length : 0,
-          sparingYear: a.sparingYear || 0
+          monthCount: months ? Object.keys(months).length : Number(a.monthCount) || 0,
+          sparingYear: a.sparingYear || 0,
+          monthsIncluded: includeMonths && !!(months && Object.keys(months).length)
         };
-      })
+      }),
+      archivesLazy: !includeMonths
     };
   }
 
@@ -343,6 +414,10 @@
     estimatePayloadBytes: estimatePayloadBytes,
     packCloudPayload: packCloudPayload,
     unpackCloudPayload: unpackCloudPayload,
+    slimArchiveEntry: slimArchiveEntry,
+    slimArchivesForSync: slimArchivesForSync,
+    archiveHasFullMonths: archiveHasFullMonths,
+    mergeArchivesPreservingMonths: mergeArchivesPreservingMonths,
     isGzipCloudPayload: isGzipCloudPayload,
     wrapGzipCloudPayload: wrapGzipCloudPayload,
     SYNC_META_KEY: "familie-budsjett-sync-meta-v1"
