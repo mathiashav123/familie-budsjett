@@ -1581,6 +1581,7 @@
 
     // Pick household or per-person Trygg å bruke (same tabs as Inn/Ut)
     let amount, raw, mode, remAll, remFast, buf, planHead, brukForHint, hasBrukForHint;
+    let futureR = 0;
     if (isPerson && pc) {
       amount = typeof pc.safeToSpend === "number" ? pc.safeToSpend : 0;
       raw = typeof pc.safeToSpendRaw === "number" ? pc.safeToSpendRaw : 0;
@@ -1595,6 +1596,8 @@
         typeof pc.spendBufferShare === "number" ? pc.spendBufferShare : 0;
       planHead =
         typeof pc.safeToSpendPlan === "number" ? pc.safeToSpendPlan : 0;
+      futureR =
+        typeof pc.futureReserve === "number" ? pc.futureReserve : 0;
       const bal = c.balanceByPerson && c.balanceByPerson[view];
       brukForHint =
         bal && bal.bruk != null && Number.isFinite(Number(bal.bruk))
@@ -1614,7 +1617,7 @@
           ? c.remainingFastBudgets
           : 0;
       buf = c && typeof c.spendBuffer === "number" ? c.spendBuffer : 0;
-      var futureR =
+      futureR =
         c && typeof c.futureReserve === "number" ? c.futureReserve : 0;
       var autoX =
         c && typeof c.autoSpendExtra === "number" ? c.autoSpendExtra : 0;
@@ -1702,6 +1705,9 @@
                 formatNOK(buf) +
                 (isPerson ? " (andel)" : "")
               : "") +
+            (futureR > 0
+              ? " og " + formatNOK(futureR) + " planlagt (inkl. senere måneder)"
+              : "") +
             ". Spare er utenfor.";
         }
       } else {
@@ -1720,6 +1726,12 @@
             " uten å røre faste utgifter" +
             (remFast > 0 ? " (" + formatNOK(remFast) + " faste igjen)" : "") +
             ".";
+        }
+        if (futureR > 0) {
+          base +=
+            " " +
+            formatNOK(futureR) +
+            " er reservert til planlagte utlegg (også senere måneder).";
         }
         if (wantSaldo && !hasBrukForHint) {
           base += " Sett brukssaldo for mer treffsikkert tall.";
@@ -4051,40 +4063,81 @@
     if (!host || !wrap) return;
     if (!Array.isArray(state.plannedSpends)) state.plannedSpends = [];
     const mk = monthKey(state.view.year, state.view.month);
-    const items = Calc.plannedSpendsForMonth(state.plannedSpends, mk);
+    const thisMonth = Calc.plannedSpendsForMonth(state.plannedSpends, mk);
+    const fromMonth =
+      typeof Calc.plannedSpendsFromMonth === "function"
+        ? Calc.plannedSpendsFromMonth(state.plannedSpends, mk)
+        : thisMonth;
+    const later = fromMonth.filter(function (p) {
+      return p && p.monthKey && p.monthKey > mk && !p.done;
+    });
     const reserve =
       c && typeof c.futureReserve === "number" ? c.futureReserve : 0;
+    const laterSum = later.reduce(function (s, p) {
+      return s + (p.amount || 0);
+    }, 0);
     const sumEl = $("#plannedSpendsSum");
     if (sumEl) {
-      sumEl.textContent =
-        reserve > 0 ? formatNOK(reserve) + " reservert" : "Ingen reserve";
+      if (reserve > 0) {
+        sumEl.textContent =
+          formatNOK(reserve) +
+          " reservert" +
+          (laterSum > 0
+            ? " (inkl. " + formatNOK(laterSum) + " i senere måneder)"
+            : "");
+      } else {
+        sumEl.textContent = "Ingen reserve";
+      }
     }
-    if (!items.length) {
+    function rowHtml(p, showMonth) {
+      const cat = p.categoryId ? catById(p.categoryId) : null;
+      const who = p.owner === "felles" ? "Felles" : nameOf(p.owner);
+      const done = p.done ? " · markert kjøpt" : "";
+      const mkLabel = showMonth && p.monthKey ? " · " + p.monthKey : "";
+      return (
+        '<button type="button" class="planned-spend-row" data-edit-planned="' +
+        escapeAttr(p.id) +
+        '">' +
+        '<span class="ps-amount">' +
+        formatNOK(p.amount) +
+        "</span>" +
+        '<span class="ps-meta">' +
+        escapeHtml(who) +
+        (cat ? " · " + escapeHtml(cat.name) : "") +
+        (p.note ? " · " + escapeHtml(p.note) : "") +
+        escapeHtml(mkLabel) +
+        escapeHtml(done) +
+        "</span></button>"
+      );
+    }
+    if (!thisMonth.length && !later.length) {
       host.innerHTML =
-        '<p class="hint compact">Ingen planlagte utlegg denne måneden. Trykk «Planlegg utlegg» for å reservere penger til fremtidige kjøp.</p>';
+        '<p class="hint compact">Ingen planlagte utlegg fra denne måneden og ut. Trykk «Planlegg utlegg» — beløpet reserveres også i måneder før kjøpet.</p>';
       return;
     }
-    host.innerHTML = items
-      .map(function (p) {
-        const cat = p.categoryId ? catById(p.categoryId) : null;
-        const who = p.owner === "felles" ? "Felles" : nameOf(p.owner);
-        const done = p.done ? " · markert kjøpt" : "";
-        return (
-          '<button type="button" class="planned-spend-row" data-edit-planned="' +
-          escapeAttr(p.id) +
-          '">' +
-          '<span class="ps-amount">' +
-          formatNOK(p.amount) +
-          "</span>" +
-          '<span class="ps-meta">' +
-          escapeHtml(who) +
-          (cat ? " · " + escapeHtml(cat.name) : "") +
-          (p.note ? " · " + escapeHtml(p.note) : "") +
-          escapeHtml(done) +
-          "</span></button>"
-        );
-      })
-      .join("");
+    let html = "";
+    if (thisMonth.length) {
+      html += thisMonth.map(function (p) {
+        return rowHtml(p, false);
+      }).join("");
+    } else {
+      html +=
+        '<p class="hint compact">Ingen utlegg planlagt i denne måneden.</p>';
+    }
+    if (later.length) {
+      html +=
+        '<p class="hint compact" style="margin-top:0.5rem">Kommende (reserveres nå):</p>';
+      html += later
+        .slice()
+        .sort(function (a, b) {
+          return String(a.monthKey).localeCompare(String(b.monthKey));
+        })
+        .map(function (p) {
+          return rowHtml(p, true);
+        })
+        .join("");
+    }
+    host.innerHTML = html;
   }
 
   function openExpense(edit) {

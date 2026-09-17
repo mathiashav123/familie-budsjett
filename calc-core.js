@@ -1066,8 +1066,10 @@
 
   /**
    * Feature 2 – Fremtidig / planlagt utlegg (state.plannedSpends[]).
-   * monthKey "YYYY-MM". Double-count: if a logged expense same month matches
-   * owner + categoryId (greedy 1:1), that item reserves 0 (expense already counts).
+   * monthKey "YYYY-MM". When viewing month M, reserve = sum of open items with
+   * monthKey >= M (same month + later). Past months after the event drop out.
+   * Double-count: if a logged expense in the viewed month matches owner +
+   * categoryId (greedy 1:1), that item reserves 0 (expense already counts).
    * No category → reserve full amount until done=true.
    */
   function normalizePlannedSpend(p, people) {
@@ -1107,12 +1109,22 @@
     });
   }
 
+  /** Open + scheduled items with monthKey >= viewed month (YYYY-MM string order). */
+  function plannedSpendsFromMonth(list, monthKey) {
+    var mk = String(monthKey || "");
+    if (!mk) return [];
+    return (list || []).filter(function (p) {
+      return p && p.monthKey && String(p.monthKey) >= mk;
+    });
+  }
+
   /**
-   * Reserved amount for planned future spends in a month (after matching expenses).
-   * Matching: !done items; prefer doneExpenseId; else greedy same owner + categoryId.
+   * Reserved amount for planned spends from viewed month onward (after matching expenses).
+   * Window: monthKey >= viewed M. Matching: !done; prefer doneExpenseId; else greedy
+   * same owner + categoryId against viewed-month expenses.
    */
   function plannedSpendReserve(plannedSpends, monthKey, expenses) {
-    var items = plannedSpendsForMonth(plannedSpends, monthKey).filter(function (p) {
+    var items = plannedSpendsFromMonth(plannedSpends, monthKey).filter(function (p) {
       return p && !p.done && p.amount > 0;
     });
     if (!items.length) return 0;
@@ -1159,7 +1171,7 @@
     personId,
     people
   ) {
-    var items = plannedSpendsForMonth(plannedSpends, monthKey).filter(function (p) {
+    var items = plannedSpendsFromMonth(plannedSpends, monthKey).filter(function (p) {
       return p && !p.done && p.amount > 0;
     });
     if (!items.length) return 0;
@@ -2670,6 +2682,7 @@
     normalizePlannedSpend: normalizePlannedSpend,
     normalizePlannedSpends: normalizePlannedSpends,
     plannedSpendsForMonth: plannedSpendsForMonth,
+    plannedSpendsFromMonth: plannedSpendsFromMonth,
     plannedSpendReserve: plannedSpendReserve,
     plannedSpendReserveForPerson: plannedSpendReserveForPerson,
     calcPerson: calcPerson,
@@ -2695,6 +2708,8 @@
     // feature aliases
     categoryAutoSpends: categoryAutoSpends,
     plannedSpendsForMonth: plannedSpendsForMonth,
+    plannedSpendsFromMonth: plannedSpendsFromMonth,
+    plannedSpendReserve: plannedSpendReserve,
     normalizePlannedSpends: normalizePlannedSpends
   };
 });
