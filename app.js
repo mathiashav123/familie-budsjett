@@ -2387,7 +2387,8 @@
 
   /**
    * Projected pot at viewKey if budget is followed from the nearest
-   * confirmed/seeded anchor month. Used so Nov 2038 ≠ Nov 2026 on Oversikt.
+   * confirmed/seeded anchor month. Used on Oversikt for all empty future
+   * months so Oct ≠ Nov ≠ Dec ≠ Nov 2038 when plan surplus accumulates.
    */
   function projectedPotForViewKey(viewKey) {
     if (!viewKey || typeof Calc.projectPotFollowBudget !== "function") return null;
@@ -2633,8 +2634,9 @@
       }
     }
 
-    // Far-future empty months: show follow-budget projected pot so
-    // Nov 2038 accumulates (≠ seeded 71223 forever). Near empty months keep seed.
+    // Empty future months (near AND far): show follow-budget projected pot so
+    // Oct ≠ Nov ≠ Dec when surplus accumulates (not frozen at seed ~71223).
+    // Far future (>12m) also projects when seed lookback cannot reach bank month.
     let projectionOverride = null;
     const viewKeyNow = monthKey(state.view.year, state.view.month);
     const cal = new Date();
@@ -2648,19 +2650,25 @@
       !viewMonthObj ||
       !Array.isArray(viewMonthObj.expenses) ||
       viewMonthObj.expenses.length === 0;
-    // Far future (>12m): project even if seed lookback cannot reach 2026.
-    const onlySeedOrFallback =
-      viewMonthObj &&
-      !viewMonthObj.balancesUpdatedAt &&
-      (viewMonthObj.balancesSuggested ||
-        (c && (c.hasSuggestedBalances || c.brukFromDisplayFallback)) ||
-        (ahead != null && ahead > 12));
-    if (
-      viewEmpty &&
-      onlySeedOrFallback &&
-      ahead != null &&
-      ahead > 12
-    ) {
+    const useProj =
+      typeof Calc.shouldUseProjectedPotForOversikt === "function"
+        ? Calc.shouldUseProjectedPotForOversikt({
+            ahead: ahead,
+            viewEmpty: viewEmpty,
+            balancesUpdatedAt: !!(viewMonthObj && viewMonthObj.balancesUpdatedAt),
+            balancesSuggested: !!(viewMonthObj && viewMonthObj.balancesSuggested),
+            hasSuggestedBalances: !!(c && c.hasSuggestedBalances),
+            brukFromDisplayFallback: !!(c && c.brukFromDisplayFallback)
+          })
+        : viewEmpty &&
+          viewMonthObj &&
+          !viewMonthObj.balancesUpdatedAt &&
+          ahead != null &&
+          ahead > 0 &&
+          (viewMonthObj.balancesSuggested ||
+            (c && (c.hasSuggestedBalances || c.brukFromDisplayFallback)) ||
+            ahead > 12);
+    if (useProj) {
       projectionOverride = projectedPotForViewKey(viewKeyNow);
       if (projectionOverride && Number.isFinite(projectionOverride.pot)) {
         amount = projectionOverride.pot;
@@ -2754,7 +2762,7 @@
         hintEl.textContent =
           "Projeksjon hvis budsjettet følges (fra " +
           projectionOverride.anchorKey +
-          "). Tomme nær-måneder viser seed; langt frem akkumulert pot. Se Fremover for detaljer.";
+          "). Tomme fremtidige måneder viser akkumulert pot (ruller måned for måned). Se Fremover for detaljer.";
       } else if (needsSaldo) {
         hintEl.classList.remove("is-saldo-short");
         hintEl.textContent =

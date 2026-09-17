@@ -1,5 +1,28 @@
 # Endringslogg – Familiebudsjett
 
+## 2026-09-17 – Fix: nære tomme måneder ruller projisert pot (Oct ≠ Nov ≠ Dec)
+
+### Rotårsak
+Etter forrige fix projiserte Oversikt Trygg kun når måneden var **>12 mnd** frem. Nære tomme måneder (okt/nov/des 2026) ble stående på **samme seed ~71 223**, selv om Fremover allerede viste stigende pot (+planInn − variabelt − bil).
+
+### Fix
+1. **Oversikt Trygg:** alle **tomme fremtidige** måneder (`ahead > 0`) med kun seed/fallback bruker `projectPotFollowBudget` (samme som Fremover) — ikke bare >12 mnd.
+2. Bekreftet På konto og måneder med utgifter uendret (Sep 2026 forblir 71 223 med bil-reserve).
+3. Hint: «akkumulert pot (ruller måned for måned)».
+4. **Tester §40** + `shouldUseProjectedPotForOversikt`.
+
+### Tall (Mathias / live export, start Sep bruk 231 223)
+| Måned | Før (Trygg UI) | Etter (projeksjon) |
+| --- | --- | --- |
+| 2026-09 | 71 223 (live) | 71 223 (uendret) |
+| 2026-10 | 71 223 seed | 130 123 |
+| 2026-11 | 71 223 seed | 193 665 |
+| 2026-12 | 71 223 seed | 257 207 |
+| 2027-01 | 71 223 seed | 320 749 |
+
+### Deploy
+- `pack-mobil.mjs` + synk host/pages; Pages `main`.
+
 ## 2026-09-17 – Fix: månedhelse-lekkasje + Fremover delta til 2038
 
 ### Rotårsak

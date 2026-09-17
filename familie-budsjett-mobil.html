@@ -6636,6 +6636,32 @@ window.FAMILIE_BUDGET_SUPABASE = {
     return sum;
   }
 
+
+  /**
+   * Oversikt Trygg: when to replace seed/fallback with follow-budget projected pot.
+   * Empty future months (ahead > 0) with only suggested seed / display-fallback,
+   * or far-future (>12m) even without seed. Never overrides confirmed På konto.
+   */
+  function shouldUseProjectedPotForOversikt(opts) {
+    opts = opts || {};
+    var ahead = opts.ahead;
+    var viewEmpty = !!opts.viewEmpty;
+    var confirmed = !!opts.balancesUpdatedAt;
+    var seedOrFallback = !!(
+      opts.balancesSuggested ||
+      opts.hasSuggestedBalances ||
+      opts.brukFromDisplayFallback ||
+      (ahead != null && ahead > 12)
+    );
+    return (
+      viewEmpty &&
+      !confirmed &&
+      seedOrFallback &&
+      ahead != null &&
+      ahead > 0
+    );
+  }
+
   /**
    * Project pot forward if user follows budget.
    * Formula (documented in UI):
@@ -9812,6 +9838,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     clearAccidentalBalanceCarry: clearAccidentalBalanceCarry,
     ensureSuggestedBalances: ensureSuggestedBalances,
     resolveDisplayBrukFallback: resolveDisplayBrukFallback,
+    shouldUseProjectedPotForOversikt: shouldUseProjectedPotForOversikt,
     projectPotFollowBudget: projectPotFollowBudget,
     plannedVariableBudgetTotal: plannedVariableBudgetTotal,
     computeCarryEndBrukForPerson: computeCarryEndBrukForPerson,
@@ -13495,7 +13522,8 @@ window.FAMILIE_BUDGET_SUPABASE = {
 
   /**
    * Projected pot at viewKey if budget is followed from the nearest
-   * confirmed/seeded anchor month. Used so Nov 2038 ≠ Nov 2026 on Oversikt.
+   * confirmed/seeded anchor month. Used on Oversikt for all empty future
+   * months so Oct ≠ Nov ≠ Dec ≠ Nov 2038 when plan surplus accumulates.
    */
   function projectedPotForViewKey(viewKey) {
     if (!viewKey || typeof Calc.projectPotFollowBudget !== "function") return null;
@@ -13741,8 +13769,9 @@ window.FAMILIE_BUDGET_SUPABASE = {
       }
     }
 
-    // Far-future empty months: show follow-budget projected pot so
-    // Nov 2038 accumulates (≠ seeded 71223 forever). Near empty months keep seed.
+    // Empty future months (near AND far): show follow-budget projected pot so
+    // Oct ≠ Nov ≠ Dec when surplus accumulates (not frozen at seed ~71223).
+    // Far future (>12m) also projects when seed lookback cannot reach bank month.
     let projectionOverride = null;
     const viewKeyNow = monthKey(state.view.year, state.view.month);
     const cal = new Date();
@@ -13756,19 +13785,25 @@ window.FAMILIE_BUDGET_SUPABASE = {
       !viewMonthObj ||
       !Array.isArray(viewMonthObj.expenses) ||
       viewMonthObj.expenses.length === 0;
-    // Far future (>12m): project even if seed lookback cannot reach 2026.
-    const onlySeedOrFallback =
-      viewMonthObj &&
-      !viewMonthObj.balancesUpdatedAt &&
-      (viewMonthObj.balancesSuggested ||
-        (c && (c.hasSuggestedBalances || c.brukFromDisplayFallback)) ||
-        (ahead != null && ahead > 12));
-    if (
-      viewEmpty &&
-      onlySeedOrFallback &&
-      ahead != null &&
-      ahead > 12
-    ) {
+    const useProj =
+      typeof Calc.shouldUseProjectedPotForOversikt === "function"
+        ? Calc.shouldUseProjectedPotForOversikt({
+            ahead: ahead,
+            viewEmpty: viewEmpty,
+            balancesUpdatedAt: !!(viewMonthObj && viewMonthObj.balancesUpdatedAt),
+            balancesSuggested: !!(viewMonthObj && viewMonthObj.balancesSuggested),
+            hasSuggestedBalances: !!(c && c.hasSuggestedBalances),
+            brukFromDisplayFallback: !!(c && c.brukFromDisplayFallback)
+          })
+        : viewEmpty &&
+          viewMonthObj &&
+          !viewMonthObj.balancesUpdatedAt &&
+          ahead != null &&
+          ahead > 0 &&
+          (viewMonthObj.balancesSuggested ||
+            (c && (c.hasSuggestedBalances || c.brukFromDisplayFallback)) ||
+            ahead > 12);
+    if (useProj) {
       projectionOverride = projectedPotForViewKey(viewKeyNow);
       if (projectionOverride && Number.isFinite(projectionOverride.pot)) {
         amount = projectionOverride.pot;
@@ -13862,7 +13897,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
         hintEl.textContent =
           "Projeksjon hvis budsjettet følges (fra " +
           projectionOverride.anchorKey +
-          "). Tomme nær-måneder viser seed; langt frem akkumulert pot. Se Fremover for detaljer.";
+          "). Tomme fremtidige måneder viser akkumulert pot (ruller måned for måned). Se Fremover for detaljer.";
       } else if (needsSaldo) {
         hintEl.classList.remove("is-saldo-short");
         hintEl.textContent =

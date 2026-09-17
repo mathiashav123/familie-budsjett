@@ -928,6 +928,32 @@
     return sum;
   }
 
+
+  /**
+   * Oversikt Trygg: when to replace seed/fallback with follow-budget projected pot.
+   * Empty future months (ahead > 0) with only suggested seed / display-fallback,
+   * or far-future (>12m) even without seed. Never overrides confirmed På konto.
+   */
+  function shouldUseProjectedPotForOversikt(opts) {
+    opts = opts || {};
+    var ahead = opts.ahead;
+    var viewEmpty = !!opts.viewEmpty;
+    var confirmed = !!opts.balancesUpdatedAt;
+    var seedOrFallback = !!(
+      opts.balancesSuggested ||
+      opts.hasSuggestedBalances ||
+      opts.brukFromDisplayFallback ||
+      (ahead != null && ahead > 12)
+    );
+    return (
+      viewEmpty &&
+      !confirmed &&
+      seedOrFallback &&
+      ahead != null &&
+      ahead > 0
+    );
+  }
+
   /**
    * Project pot forward if user follows budget.
    * Formula (documented in UI):
@@ -4104,6 +4130,7 @@
     clearAccidentalBalanceCarry: clearAccidentalBalanceCarry,
     ensureSuggestedBalances: ensureSuggestedBalances,
     resolveDisplayBrukFallback: resolveDisplayBrukFallback,
+    shouldUseProjectedPotForOversikt: shouldUseProjectedPotForOversikt,
     projectPotFollowBudget: projectPotFollowBudget,
     plannedVariableBudgetTotal: plannedVariableBudgetTotal,
     computeCarryEndBrukForPerson: computeCarryEndBrukForPerson,

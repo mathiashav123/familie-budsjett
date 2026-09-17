@@ -3566,6 +3566,145 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
   } // end live export body
 }
 
+
+// --- §40 Near empty months: Oversikt projects pot (Oct ≠ Nov ≠ Dec) ---
+{
+  console.log("\n§40 near-empty Oversikt projection (not frozen seed)");
+  assert(
+    typeof Calc.shouldUseProjectedPotForOversikt === "function",
+    "40 helper exported"
+  );
+  // Gate: near seeded empty → project; confirmed → no; current month ahead=0 → no
+  assert(
+    Calc.shouldUseProjectedPotForOversikt({
+      ahead: 1,
+      viewEmpty: true,
+      balancesSuggested: true,
+      balancesUpdatedAt: false
+    }) === true,
+    "40 Oct seed empty → use projection"
+  );
+  assert(
+    Calc.shouldUseProjectedPotForOversikt({
+      ahead: 2,
+      viewEmpty: true,
+      balancesSuggested: true,
+      balancesUpdatedAt: false
+    }) === true,
+    "40 Nov seed empty → use projection"
+  );
+  assert(
+    Calc.shouldUseProjectedPotForOversikt({
+      ahead: 3,
+      viewEmpty: true,
+      balancesSuggested: true,
+      balancesUpdatedAt: false
+    }) === true,
+    "40 Dec seed empty → use projection"
+  );
+  assert(
+    Calc.shouldUseProjectedPotForOversikt({
+      ahead: 0,
+      viewEmpty: true,
+      balancesSuggested: true,
+      balancesUpdatedAt: false
+    }) === false,
+    "40 current month ahead=0 → no projection override"
+  );
+  assert(
+    Calc.shouldUseProjectedPotForOversikt({
+      ahead: 1,
+      viewEmpty: true,
+      balancesSuggested: true,
+      balancesUpdatedAt: true
+    }) === false,
+    "40 confirmed På konto → keep real Trygg"
+  );
+  assert(
+    Calc.shouldUseProjectedPotForOversikt({
+      ahead: 1,
+      viewEmpty: false,
+      balancesSuggested: true,
+      balancesUpdatedAt: false
+    }) === false,
+    "40 month with expenses → no projection override"
+  );
+  assert(
+    Calc.shouldUseProjectedPotForOversikt({
+      ahead: 146,
+      viewEmpty: true,
+      balancesSuggested: false,
+      balancesUpdatedAt: false
+    }) === true,
+    "40 far future without seed still projects"
+  );
+
+  const fs = require("fs");
+  const path = require("path");
+  const { fileURLToPath } = require("url");
+  const livePath = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "familie-budsjett-export-live.json"
+  );
+  let live = null;
+  try {
+    live = JSON.parse(fs.readFileSync(livePath, "utf8"));
+  } catch (e) {
+    live = null;
+  }
+  assert(live && live.months, "40 live export present");
+  if (live && live.months) {
+    const months = JSON.parse(JSON.stringify(live.months));
+    const people = live.people;
+    const cats = live.categories;
+    const planned = live.plannedSpends || [];
+    ["2026-09", "2026-10", "2026-11", "2026-12", "2027-01"].forEach((key) => {
+      Calc.ensureMonthExpected(months, key, people, {
+        copyExpectedToNewMonths: true,
+        categories: cats,
+        plannedSpends: planned
+      });
+    });
+    // Seed left Oct/Nov/Dec at same ~71223 — that freeze was the bug on Oversikt
+    assertEq(months["2026-10"].balances.p1.bruk, 71223, "40 oct seed 71223");
+    assertEq(months["2026-11"].balances.p1.bruk, 71223, "40 nov seed 71223");
+    assertEq(months["2026-12"].balances.p1.bruk, 71223, "40 dec seed 71223");
+
+    const proj = Calc.projectPotFollowBudget({
+      months,
+      fromKey: "2026-09",
+      people,
+      categories: cats,
+      plannedSpends: planned,
+      startPot: 231223,
+      horizon: 16
+    });
+    const oct = proj.potByKey["2026-10"];
+    const nov = proj.potByKey["2026-11"];
+    const dec = proj.potByKey["2026-12"];
+    const jan = proj.potByKey["2027-01"];
+    assertEq(oct, 130123, "40 oct projected pot after bil+flows");
+    assertEq(nov, 193665, "40 nov projected pot");
+    assertEq(dec, 257207, "40 dec projected pot");
+    assertEq(jan, 320749, "40 jan 2027 projected pot");
+    assert(oct !== nov, "40 Oct ≠ Nov");
+    assert(nov !== dec, "40 Nov ≠ Dec");
+    assert(dec !== jan, "40 Dec ≠ Jan");
+    assert(nov > oct, "40 pot rises Nov after Oct bil hit");
+    assert(dec > nov, "40 pot rises Dec");
+    // UI gate would replace seed with these pots for ahead 1..3
+    assert(
+      Calc.shouldUseProjectedPotForOversikt({
+        ahead: 1,
+        viewEmpty: true,
+        balancesSuggested: true
+      }),
+      "40 UI would show oct projection not seed"
+    );
+  }
+}
+
 console.log("\n=== Results:", passed, "passed,", failed, "failed ===\n");
 if (failed) {
   console.error("FAILURES:");
