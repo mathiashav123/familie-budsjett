@@ -1120,10 +1120,13 @@
 
   /**
    * Reserved amount for planned spends from viewed month onward (after matching expenses).
-   * Window: monthKey >= viewed M. Matching: !done; prefer doneExpenseId; else greedy
-   * same owner + categoryId against viewed-month expenses.
+   * Window: monthKey >= viewed M. Matching only for same-month plans (item.monthKey ===
+   * viewed): !done; prefer doneExpenseId; else greedy same owner + categoryId against
+   * viewed-month expenses. Later months (item.monthKey > viewed) always full-reserve
+   * unless done / doneExpenseId explicitly covers them.
    */
   function plannedSpendReserve(plannedSpends, monthKey, expenses) {
+    var viewedMk = String(monthKey || "");
     var items = plannedSpendsFromMonth(plannedSpends, monthKey).filter(function (p) {
       return p && !p.done && p.amount > 0;
     });
@@ -1138,26 +1141,26 @@
         });
         if (linked) return; // covered
       }
-      if (!item.categoryId) {
-        reserve += item.amount;
-        return;
-      }
-      var matchIdx = -1;
-      for (var i = 0; i < exps.length; i++) {
-        if (used[i]) continue;
-        var e = exps[i];
-        if (!e) continue;
-        var eOwner = e.owner || "felles";
-        var eCat = e.categoryId || null;
-        if (eOwner === item.owner && eCat === item.categoryId) {
-          matchIdx = i;
-          break;
+      // Only match category against viewed-month expenses for same-month plans
+      var sameMonth = viewedMk && String(item.monthKey || "") === viewedMk;
+      if (sameMonth && item.categoryId) {
+        var matchIdx = -1;
+        for (var i = 0; i < exps.length; i++) {
+          if (used[i]) continue;
+          var e = exps[i];
+          if (!e) continue;
+          var eOwner = e.owner || "felles";
+          var eCat = e.categoryId || null;
+          if (eOwner === item.owner && eCat === item.categoryId) {
+            matchIdx = i;
+            break;
+          }
         }
-      }
-      if (matchIdx >= 0) {
-        used[matchIdx] = true;
-        // Covered by logged purchase — do not reserve (avoid double count)
-        return;
+        if (matchIdx >= 0) {
+          used[matchIdx] = true;
+          // Covered by logged purchase — do not reserve (avoid double count)
+          return;
+        }
       }
       reserve += item.amount;
     });
@@ -1171,6 +1174,7 @@
     personId,
     people
   ) {
+    var viewedMk = String(monthKey || "");
     var items = plannedSpendsFromMonth(plannedSpends, monthKey).filter(function (p) {
       return p && !p.done && p.amount > 0;
     });
@@ -1187,7 +1191,8 @@
           return e && e.id === item.doneExpenseId;
         });
       }
-      if (!covered && item.categoryId) {
+      var sameMonth = viewedMk && String(item.monthKey || "") === viewedMk;
+      if (!covered && sameMonth && item.categoryId) {
         for (var i = 0; i < exps.length; i++) {
           if (used[i]) continue;
           var e = exps[i];

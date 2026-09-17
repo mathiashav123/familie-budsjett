@@ -1453,6 +1453,41 @@ console.log("\n25. Fast auto-spend max-rule + opt-out + yearly once + plannedSpe
   assertEq(Calc.plannedSpendsFromMonth(planned, "2026-09").length, 2, "fromMonth lists 2");
   assertEq(Calc.plannedSpendsFromMonth(planned, "2026-10").length, 1, "fromMonth lists 1");
 
+  // Bugfix: Sep view + Oct plan + Sep expense same category must NOT clear Oct reserve
+  const plannedOctOnly = Calc.normalizePlannedSpends([
+    { amount: 5000, owner: "p1", monthKey: "2026-10", note: "PC", categoryId: "cFood" }
+  ], people);
+  const sepExpSameCat = [{ id: "eSepFood", owner: "p1", categoryId: "cFood", amount: 300 }];
+  assertEq(
+    Calc.plannedSpendReserve(plannedOctOnly, "2026-09", sepExpSameCat),
+    5000,
+    "sep view: oct plan still reserved despite sep expense same cat"
+  );
+  assertEq(
+    Calc.plannedSpendReserveForPerson(plannedOctOnly, "2026-09", sepExpSameCat, "p1", people),
+    5000,
+    "sep view person: oct plan still reserved despite sep expense same cat"
+  );
+  // Same-month match still clears
+  assertEq(
+    Calc.plannedSpendReserve(plannedOctOnly, "2026-10", sepExpSameCat),
+    0,
+    "oct view: same-month expense same cat clears oct plan"
+  );
+  // Explicit done / doneExpenseId still clears future
+  const plannedDone = Calc.normalizePlannedSpends([
+    { amount: 5000, owner: "p1", monthKey: "2026-10", note: "PC", categoryId: "cFood", done: true }
+  ], people);
+  assertEq(Calc.plannedSpendReserve(plannedDone, "2026-09", []), 0, "done item not reserved");
+  const plannedLinked = Calc.normalizePlannedSpends([
+    { amount: 5000, owner: "p1", monthKey: "2026-10", note: "PC", categoryId: "cFood", doneExpenseId: "eSepFood" }
+  ], people);
+  assertEq(
+    Calc.plannedSpendReserve(plannedLinked, "2026-09", sepExpSameCat),
+    0,
+    "doneExpenseId in viewed expenses clears even future month"
+  );
+
   // migrate keeps plannedSpends
   const mig = Calc.migrateState({
     version: 2,

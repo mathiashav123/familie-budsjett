@@ -1,5 +1,12 @@
 # Endringslogg – Familiebudsjett
 
+## 17. september 2026 (UTC+2) – Fix: planlagt utlegg matches kun samme måned
+
+- Bug: `plannedSpendReserve` / `plannedSpendReserveForPerson` matchet kategori+eier mot **vist måneds** utgifter også for *senere* planlagte utlegg. Oktober-plan ble nullstilt i september-visning hvis september hadde utgift i samme kategori.
+- Fix: kategori-match kun når `item.monthKey ===` vist måned. Senere måneder (`monthKey >` vist) reserveres fullt (med mindre `done` / `doneExpenseId`).
+- Dialog-hint: beløpet reserveres allerede før kjøpemåneden. Oversikt / Trygg å bruke: synlig linje «Reservert til planlagte utlegg: X».
+- Lagring fortsatt additiv (`familie-budsjett-v1`). Regresjonstest: sep-visning + okt-plan + sep-utgift samme kategori → reserve inkluderer okt-beløp.
+
 ## 17. september 2026 (UTC+2) – Planlagte utlegg reserveres før kjøpemåned
 
 - `futureReserve` summerer åpne `plannedSpends` med `monthKey >=` vist måned (samme + senere), ikke bare mål-måneden.
