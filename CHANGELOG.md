@@ -1,5 +1,12 @@
 # Endringslogg – Familiebudsjett
 
+## 17. september 2026 (UTC+2) – Trygg å bruke: saldo-breakdown
+
+- Under **Trygg å bruke** (samlet og per person) i saldo-modus: kompakt regnestykke — På konto (bruk) − Rest av budsjett (igjen) − Planlagte utlegg − Buffer = Trygg å bruke.
+- Kort hint: «På konto er ikke det samme som trygg å bruke — appen holder av budsjett som gjenstår.»
+- Forklarer hvorfor bank ~71k ≠ trygg ~49k (budsjett som gjenstår + planlagte utlegg holdes av).
+- Hjelper `safeToSpendSaldoBreakdown` + tester. Additiv UI, ingen wipe.
+
 ## 17. september 2026 (UTC+2) – På konto: Bekreft saldo + forventet-breakdown
 
 - **Bekreft saldo**-knapp per person: parser bruk (+ spare hvis åpen), lagrer `balances`, stamp `balancesUpdatedAt`, toast «Saldo lagret», re-render. Blur/change beholder backup-lagring.

@@ -548,6 +548,50 @@
     );
   }
 
+
+  /**
+   * Compact saldo-mode breakdown under Trygg å bruke (samlet + per person).
+   * Explains why bank saldo ≠ trygg å bruke.
+   */
+  function formatSafeSpendBreakdownHtml(bd) {
+    if (!bd) return "";
+    const rows = [];
+    rows.push(
+      '<div class="safe-spend-breakdown-row"><span>På konto (bruk)</span><strong>' +
+        formatNOK(bd.bruk) +
+        "</strong></div>"
+    );
+    rows.push(
+      '<div class="safe-spend-breakdown-row is-minus"><span>− Rest av budsjett (igjen)</span><strong>' +
+        formatNOK(bd.restBudget) +
+        "</strong></div>"
+    );
+    if ((bd.futureReserve || 0) > 0.5) {
+      rows.push(
+        '<div class="safe-spend-breakdown-row is-minus"><span>− Planlagte utlegg (reservert)</span><strong>' +
+          formatNOK(bd.futureReserve) +
+          "</strong></div>"
+      );
+    }
+    if ((bd.spendBuffer || 0) > 0.5) {
+      rows.push(
+        '<div class="safe-spend-breakdown-row is-minus"><span>− Buffer</span><strong>' +
+          formatNOK(bd.spendBuffer) +
+          "</strong></div>"
+      );
+    }
+    rows.push(
+      '<div class="safe-spend-breakdown-row is-eq"><span>= Trygg å bruke</span><strong>' +
+        formatNOK(bd.safeToSpend) +
+        "</strong></div>"
+    );
+    return (
+      '<div class="safe-spend-breakdown-rows" role="group" aria-label="Slik er Trygg å bruke regnet">' +
+      rows.join("") +
+      "</div>"
+    );
+  }
+
   /**
    * Transparent forventet breakdown so Mathias can audit gaps vs bank.
    * Uses mode-aware parts from reconcilePaKonto.
@@ -1914,6 +1958,8 @@
         typeof pc.safeToSpendPlan === "number" ? pc.safeToSpendPlan : 0;
       futureR =
         typeof pc.futureReserve === "number" ? pc.futureReserve : 0;
+      var autoX =
+        typeof pc.autoSpendExtra === "number" ? pc.autoSpendExtra : 0;
       const bal = c.balanceByPerson && c.balanceByPerson[view];
       brukForHint =
         bal && bal.bruk != null && Number.isFinite(Number(bal.bruk))
@@ -1987,6 +2033,25 @@
         reserveEl.textContent = "Reservert til planlagte utlegg: —";
       }
     }
+
+    const breakEl = $("#safeSpendBreakdown");
+    if (breakEl) {
+      if (show && fromSaldo && hasBrukForHint && typeof Calc.safeToSpendSaldoBreakdown === "function") {
+        const bd = Calc.safeToSpendSaldoBreakdown({
+          bruk: brukForHint,
+          remainingBudgetAll: remAll,
+          autoSpendExtra: typeof autoX === "number" ? autoX : 0,
+          futureReserve: futureR,
+          spendBuffer: buf
+        });
+        breakEl.hidden = false;
+        breakEl.innerHTML = formatSafeSpendBreakdownHtml(bd);
+      } else {
+        breakEl.hidden = true;
+        breakEl.innerHTML = "";
+      }
+    }
+
     if (hintEl) {
       const wantSaldo = !c || c.useSaldoInSafeToSpend !== false;
       if (!show) {
@@ -2021,21 +2086,7 @@
             " er dekket først).";
         } else {
           hintEl.textContent =
-            "Fra brukssaldo" +
-            whose +
-            ": ca. " +
-            formatNOK(amount) +
-            " etter gjenstående plan" +
-            (remAll > 0 ? " (" + formatNOK(remAll) + " igjen)" : "") +
-            (buf > 0
-              ? " og buffer " +
-                formatNOK(buf) +
-                (isPerson ? " (andel)" : "")
-              : "") +
-            (futureR > 0
-              ? " og " + formatNOK(futureR) + " planlagt (inkl. senere måneder)"
-              : "") +
-            ". Spare er utenfor.";
+            "På konto er ikke det samme som trygg å bruke — appen holder av budsjett som gjenstår.";
         }
       } else {
         hintEl.classList.remove("is-saldo-short");
