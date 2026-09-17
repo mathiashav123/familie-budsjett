@@ -523,11 +523,29 @@
 
   function formatVarianceText(meta) {
     if (!meta) return "";
-    if (meta.kind === "ok") return "I tråd med forventet";
+    if (meta.kind === "ok") return "Ser riktig ut";
     if (meta.kind === "more") {
-      return formatNOK(meta.abs) + " mer enn forventet";
+      return (
+        "Ca. " +
+        formatNOK(meta.abs) +
+        " høyere — glemt inntekt, eller logget for mye?"
+      );
     }
-    return formatNOK(meta.abs) + " mindre enn forventet";
+    return (
+      "Ca. " +
+      formatNOK(meta.abs) +
+      " lavere enn loggen tilsier — sjekk om du har glemt kjøp"
+    );
+  }
+
+  /** Extra HTML under diff when bank is lower than expected (forgotten purchase). */
+  function formatVarianceActionHtml(meta) {
+    if (!meta || meta.kind !== "less") return "";
+    return (
+      '<p class="pa-konto-diff-action">' +
+      '<button type="button" class="btn ghost xs pa-konto-log-buy">Kjøpt noe</button>' +
+      "</p>"
+    );
   }
 
   function formatUpdatedAt(iso) {
@@ -1145,6 +1163,8 @@
               : varMeta.kind === "more"
                 ? "is-more"
                 : "is-less";
+          const actionHtml =
+            row.oppgitt != null ? formatVarianceActionHtml(varMeta) : "";
           diffHtml =
             '<div class="pa-konto-compare">' +
             '<div class="pa-konto-compare-row"><span>Forventet</span><strong>' +
@@ -1159,7 +1179,9 @@
             (row.oppgitt != null
               ? formatVarianceText(varMeta)
               : "Oppgi saldo for differanse") +
-            "</p></div>";
+            "</p>" +
+            actionHtml +
+            "</div>";
         }
         const etterLine =
           row.etterLonn != null
@@ -1232,6 +1254,9 @@
           "</strong></div>" +
           (diffTxt
             ? '<p class="pa-konto-diff ' + diffClass + '">' + diffTxt + "</p>"
+            : "") +
+          (rec.hasDifferanse && rec.hasOppgitt
+            ? formatVarianceActionHtml(v)
             : "") +
           "</div>";
       } else {
@@ -5358,6 +5383,12 @@
 
     const fabBuy = $("#fabBuy");
     if (fabBuy) fabBuy.addEventListener("click", function () { openExpense(null); });
+    document.body.addEventListener("click", function (e) {
+      const btn = e.target && e.target.closest && e.target.closest(".pa-konto-log-buy");
+      if (!btn) return;
+      e.preventDefault();
+      openExpense(null);
+    });
     const btnPlanSpend = $("#btnPlanSpend");
     if (btnPlanSpend) {
       btnPlanSpend.addEventListener("click", function () { openPlannedSpend(null); });

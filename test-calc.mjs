@@ -1572,6 +1572,90 @@ console.log("\n25. På konto nå: expected vs oppgitt variance");
   assert(noPrev.byPerson.p1.forventet == null, "no prev → no forventet");
   assert(noPrev.byPerson.p1.differanse == null, "no prev → no diff");
   assertEq(noPrev.byPerson.p1.oppgitt, 11500, "oppgitt still set");
+
+  // autoSpendExtra defaults to 0 → same as two-arg form
+  assertEq(Calc.expectedBrukFromPrev(10000, 1000, 0), 11000, "expected +0 auto");
+  assertEq(Calc.expectedBrukFromPrev(10000, 1000, 3000), 8000, "expected −autoFast");
+}
+
+// --- På konto: auto Fast in forventet + forgotten variable ---
+console.log("\n26. På konto nå: auto Fast + glemt variabelt kjøp");
+{
+  const people = Calc.defaultPeople();
+  // Fast auto rent 3000 (felles 50/50) + variabel Mat (not logged)
+  const cats = [
+    {
+      id: "cHus",
+      name: "Husleie",
+      type: "fast",
+      owner: "felles",
+      archived: false,
+      autoSpend: true
+    },
+    {
+      id: "cMat",
+      name: "Mat",
+      type: "variabel",
+      owner: "felles",
+      archived: false
+    }
+  ];
+  // prev p1 10000. This month: no logged income/expense.
+  // Fast husleie plan felles 3000 → autoExtra p1 = 1500, p2 = 1500
+  // Bank after fixed bill + forgotten mat 500 (p1 own): p1 bank = 10000-1500-500 = 8000
+  // Old (wrong) forventet ignored auto → 10000; new forventet = 10000 - 1500 = 8500
+  // Diff = 8000 - 8500 = -500 → points to forgotten 500 variable
+  const m = {
+    balances: {
+      p1: { bruk: 8000, spare: null },
+      p2: { bruk: 8500, spare: null }
+    },
+    budgets: {
+      cHus: { felles: 3000 },
+      cMat: { felles: 0 }
+    },
+    plannedIncome: {
+      p1: { lønn: 30000, ekstra: null },
+      p2: { lønn: 20000, ekstra: null }
+    },
+    incomes: [],
+    savings: [],
+    expenses: []
+  };
+  const prevBalances = {
+    p1: { bruk: 10000, spare: null },
+    p2: { bruk: 10000, spare: null }
+  };
+
+  const rec = Calc.reconcilePaKonto(m, people, cats, 8, prevBalances);
+  assertEq(rec.byPerson.p1.autoSpendExtra, 1500, "p1 auto Fast share");
+  assertEq(rec.byPerson.p1.tilOvers, 0, "p1 logged tilOvers 0");
+  assertEq(rec.byPerson.p1.forventet, 8500, "p1 forventet = prev − autoFast");
+  assertEq(rec.byPerson.p1.differanse, -500, "p1 gap = forgotten variable");
+  assertEq(rec.byPerson.p1.variance.kind, "less", "p1 less → glemt kjøp");
+  // p2: bank matches expected after auto Fast only
+  assertEq(rec.byPerson.p2.autoSpendExtra, 1500, "p2 auto Fast share");
+  assertEq(rec.byPerson.p2.forventet, 8500, "p2 forventet after auto");
+  assertEq(rec.byPerson.p2.differanse, 0, "p2 no forgotten log");
+  assertEq(rec.byPerson.p2.variance.kind, "ok", "p2 ser riktig ut");
+
+  // If Fast were logged fully, autoExtra=0 and forventet stays at prev+tilOvers
+  const mLogged = {
+    ...m,
+    expenses: [
+      { id: "eHus", owner: "felles", categoryId: "cHus", amount: 3000 }
+    ],
+    balances: {
+      p1: { bruk: 8500, spare: null },
+      p2: { bruk: 8500, spare: null }
+    }
+  };
+  const recL = Calc.reconcilePaKonto(mLogged, people, cats, 8, prevBalances);
+  assertEq(recL.byPerson.p1.autoSpendExtra, 0, "logged Fast → no autoExtra");
+  // tilOvers p1 = 0 - 1500 (felles share) = -1500 → forventet 8500
+  assertEq(recL.byPerson.p1.tilOvers, -1500, "p1 tilOvers after logged Fast");
+  assertEq(recL.byPerson.p1.forventet, 8500, "logged Fast same forventet");
+  assertEq(recL.byPerson.p1.differanse, 0, "bank matches when only Fast left");
 }
 
 
