@@ -1,0 +1,23 @@
+{
+  "months": 120,
+  "assertsOk": 1534,
+  "assertsFail": 0,
+  "failures": [],
+  "metrics": {
+    "minTrygg": 126495.15,
+    "maxTrygg": 137730.57,
+    "avgTrygg": 135241.34,
+    "monthsWithPlanned": 14,
+    "monthsWithSpareGoal": 12,
+    "crossOwnerFastMonths": 12,
+    "buffer": 2000,
+    "fastTotal": 16999,
+    "varTotal": 13000
+  },
+  "notes": [
+    "Trygg nå = bruk − futureReserve − buffer (Fast allerede i bank).",
+    "Hvis hele budsjettet = bruk − remainingBudgetAll − future − buffer (ingen autoSpendExtra).",
+    "På konto forventet trekker fortsatt autoSpendExtra for ulogget Fast; logget Fast (også under person) nuller auto.",
+    "copyBalancesFrom er no-op — saldo bæres ikke til ny måned."
+  ]
+}

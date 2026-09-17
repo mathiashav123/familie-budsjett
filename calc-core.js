@@ -1121,17 +1121,26 @@
     return sum;
   }
 
+  /**
+   * Per-person Fast auto leftover. Uses category-level autoSpendExtra (total
+   * planned − total logged across ALL owners) so logging Fast under a person
+   * against a felles-budget still clears autoExtra (no double-count in
+   * På konto forventet / plan-mode). Attribute by budget weight:
+   * ownPlanned + fellesShare(fellesPlanned).
+   */
   function autoSpendExtraForPerson(m, personId, people, categories, monthIndex) {
     var sum = 0;
     (categories || []).forEach(function (cat) {
       if (!cat || cat.archived || !categoryAutoSpends(cat)) return;
-      var ownPlanned = budgetForOwner(m, cat.id, personId, monthIndex);
-      var ownLogged = actualForCategoryOwner(m, cat.id, cat.name, personId);
-      sum += Math.max(0, (ownPlanned || 0) - (ownLogged || 0));
-      var fellesPlanned = budgetForOwner(m, cat.id, "felles", monthIndex);
-      var fellesLogged = actualForCategoryOwner(m, cat.id, cat.name, "felles");
-      var extraF = Math.max(0, (fellesPlanned || 0) - (fellesLogged || 0));
-      if (extraF) sum += fellesShare(cat, personId, people, extraF);
+      var catExtra = autoSpendExtraForCategory(m, cat, monthIndex);
+      if (!(catExtra > 0)) return;
+      var totalPlanned = budgetFor(m, cat.id, monthIndex) || 0;
+      if (!(totalPlanned > 0)) return;
+      var ownPlanned = budgetForOwner(m, cat.id, personId, monthIndex) || 0;
+      var fellesPlanned = budgetForOwner(m, cat.id, "felles", monthIndex) || 0;
+      var weight =
+        ownPlanned + fellesShare(cat, personId, people, fellesPlanned);
+      sum += catExtra * (weight / totalPlanned);
     });
     return sum;
   }
