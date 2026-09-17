@@ -1,7 +1,7 @@
 /**
  * 10-year (120 months) virtual carry-pot simulation using Mathias live export.
- * Asserts: pot rolls without monthly På konto; bil once; good→higher; bad→lower;
- * mix of confirm vs skip. Writes SIM-10Y-CARRY-RAPPORT.md
+ * Asserts: pot rolls without monthly På konto; bil once; spend lowers pot;
+ * no planInn stacking; mix of confirm vs skip. Writes SIM-10Y-CARRY-RAPPORT.md
  */
 import { createRequire } from "module";
 import { readFileSync, writeFileSync, existsSync } from "fs";
@@ -289,22 +289,24 @@ for (let i = 0; i < MONTHS; i++) {
   prevPot = potNow;
 }
 
-// Post-pass: verify carry direction across skip-pairs
+// Post-pass: verify carry identity across skip-pairs (no planInn invent)
 let goodHigher = 0;
 let badLower = 0;
+let carryMatches = 0;
 for (let i = 1; i < potSeries.length - 1; i++) {
   const a = potSeries[i];
   const b = potSeries[i + 1];
-  // Look at month i spending → month i+1 seed (if i+1 not bank-confirmed overwrite from elsewhere)
   if (a.confirmed) continue;
   if (b.confirmed) continue;
-  // Recompute: if a underspent relative to mid factor, b.pot should be >= a pot trend
+  // Virtual end ≈ start − variable (no planInn). Next seed ≈ that end (no new plans).
+  const expected = a.pot - a.varSpend;
+  if (Math.abs(b.pot - expected) < 1.5) carryMatches++;
   if (a.varFactor < 0.75) {
-    // underspend month — ending should lift next
-    if (b.pot > a.pot - 5000) goodHigher++;
+    // underspend → next closer to start than overspend would be
+    if (b.pot > a.pot - a.varSpend - 1 && b.pot <= a.pot + 1) goodHigher++;
   }
   if (a.varFactor > 1.3) {
-    if (b.pot < a.pot + 5000) badLower++;
+    if (b.pot < a.pot - 1) badLower++;
   }
 }
 
@@ -348,30 +350,36 @@ assert(maxPot > minPot, "pot varies over 10y");
   ];
   const end = Calc.computeCarryEndBrukForPerson(micro["2026-10"], "p1", people, {
     categories,
-    monthIndex: 9
+    monthIndex: 9,
+    monthKey: "2026-10",
+    plannedSpends: []
   });
+  nearly(end, 68223, "micro: end = 71223-3000 (no planInn)");
   Calc.ensureSuggestedBalances(micro, "2026-11", people, {
     plannedSpends: [],
     categories
   });
-  assert(micro["2026-11"].balances.p1.bruk > 71223, "micro: good oct → higher nov");
-  nearly(micro["2026-11"].balances.p1.bruk, end, "micro: nov = oct ending pot");
+  nearly(micro["2026-11"].balances.p1.bruk, 68223, "micro: nov = oct ending pot");
+  nearly(micro["2026-11"].balances.p1.bruk, end, "micro: nov matches end");
 
   // bad
   micro["2026-10"].expenses[0].amount = 100000;
   delete micro["2026-11"];
   delete micro["2026-10"].carryPot;
-  // clear nov and re-roll
   const endBad = Calc.computeCarryEndBrukForPerson(micro["2026-10"], "p1", people, {
     categories,
-    monthIndex: 9
+    monthIndex: 9,
+    monthKey: "2026-10",
+    plannedSpends: []
   });
   assert(endBad < 71223, "micro: bad oct ending < start");
+  nearly(endBad, -28777, "micro: bad = 71223-100000");
   Calc.ensureSuggestedBalances(micro, "2026-11", people, {
     plannedSpends: [],
     categories
   });
   assert(micro["2026-11"].balances.p1.bruk < 71223, "micro: bad → lower nov");
+  nearly(micro["2026-11"].balances.p1.bruk, -28777, "micro: nov after 100k spend");
 }
 
 const summary = {
@@ -387,6 +395,7 @@ const summary = {
   trygg: { min: minTrygg, avg: avgTrygg, max: maxTrygg },
   goodHigher,
   badLower,
+  carryMatches,
   assertions: { ok, fail },
   failures
 };
@@ -412,9 +421,10 @@ const md = `# Sim 10 år – Virtuell carry-pot (rapport til Mathias)
 **Trygg å bruke** drives av en **virtuell carry-pot** som ruller automatisk:
 
 \`\`\`
-pot_neste = pot + månedlig_netto − variabelt_forbruk − planlagt (én gang)
+end = start − variabelt_logget − planlagt(én gang hvis ikke i start) + logget_inntekt(kun hvis finnes)
 \`\`\`
 
+- **Ikke** automatisk planlagt lønn inn i pot (unngår eksplosiv vekst uten bank).
 - Start: sist kjente bank **eller** envelope etter planlagt (f.eks. 231 223 − 160 000 bil = **71 223**).
 - Hopper du over På konto, ruller pot likevel (kan bli negativ).
 - Bekrefter/retter du bank, **nullstilles** pot til oppgitt saldo (override).
@@ -456,16 +466,17 @@ pot_neste = pot + månedlig_netto − variabelt_forbruk − planlagt (én gang)
 1. Oct pot = 231 223 − 160 000 = 71 223 (bil én gang)
 2. Oct futureReserve = 0 (ikke dobbelt)
 3. Aldri \`needsSaldo\`-blokk / «Sett på konto» som Trygg-verdi
-4. God måned (lav variabel) → høyere pot neste måned
-5. Dårlig måned (høy variabel) → lavere/negativ pot neste
+4. Lav variabel → neste pot ≈ start − lite forbruk (ikke lønns-stack)
+5. Høy variabel → neste pot lavere/negativ
 6. Bank-bekreftelse overstyrer virtuell pot
+7. Sep→Nov-hopp trekker Oct bil én gang
 
 ## Formel (kort)
 
 | Situasjon | Pot |
 |-----------|-----|
-| Ny måned uten bank | \`forrige_sluttpot − planlagt_denne_mnd\` |
-| Virtuell månedslutt | \`start + (inntekt) − Fast auto − sparing − logget forbruk\` |
+| Ny måned uten bank | \`forrige_sluttpot − planlagt (etter prev … gjennom ny)\` |
+| Virtuell månedslutt | \`start − logget forbruk − planlagt(hvis ikke i start) + logget inntekt\` |
 | Etter «Rett saldo» | \`oppgitt bank\` (sannhet) |
 
 ## UX

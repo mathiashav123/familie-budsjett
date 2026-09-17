@@ -462,18 +462,55 @@
   /**
    * Open plannedSpends with monthKey === target attributed to one person:
    * own amount full; felles split equally across active people.
+   * opts.skipReflected: ignore items already reflectedInBalance (carry-end).
    */
-  function openPlannedSpendDeductionForPerson(plannedSpends, monthKey, personId, people) {
+  function openPlannedSpendDeductionForPerson(plannedSpends, monthKey, personId, people, opts) {
     var mk = String(monthKey || "");
     if (!mk || !personId) return 0;
+    opts = opts || {};
     var active = activePeople(people);
     var n = Math.max(1, active.length);
     var sum = 0;
     plannedSpendsForMonth(plannedSpends, mk).forEach(function (item) {
       if (!item || item.done || !(item.amount > 0)) return;
+      if (opts.skipReflected && item.reflectedInBalance) return;
       if (item.owner === personId) sum += Number(item.amount) || 0;
       else if (item.owner === "felles") sum += (Number(item.amount) || 0) / n;
     });
+    return sum;
+  }
+
+  /**
+   * Sum open planned deductions for monthKeys after fromExclusive through
+   * toInclusive (inclusive). Used when jumping e.g. Sep→Nov so Oct bil
+   * is subtracted once even if Oct was never seeded.
+   */
+  function openPlannedSpendDeductionForPersonRange(
+    plannedSpends,
+    fromExclusiveKey,
+    toInclusiveKey,
+    personId,
+    people,
+    opts
+  ) {
+    var from = String(fromExclusiveKey || "");
+    var to = String(toInclusiveKey || "");
+    if (!from || !to || !personId) return 0;
+    if (to <= from) return 0;
+    var sum = 0;
+    var mk = shiftMonthKey(from, 1);
+    var guard = 0;
+    while (mk && mk <= to && guard < 48) {
+      sum += openPlannedSpendDeductionForPerson(
+        plannedSpends,
+        mk,
+        personId,
+        people,
+        opts
+      );
+      mk = shiftMonthKey(mk, 1);
+      guard++;
+    }
     return sum;
   }
 
@@ -495,20 +532,22 @@
 
   /**
    * Seed suggested starting bruk for a new month that has no confirmed saldo.
-   * Formula: nearest prev with balancesUpdatedAt:
-   *   suggestedBruk = prev.confirmedBruk − openPlannedSpends(newMonth)
+   * Formula: nearest prev with carry source (bank or virtual pot):
+   *   suggestedBruk = prevEndBruk − openPlannedSpends(after prev … through newMonth)
+   * Jumping Sep→Nov subtracts Oct bil once even if Oct was never opened.
    * Runs even when open planned = 0 (rolling carry of leftover / deficit).
    * Marks suggested:true + when=after_salary. Does not write balancesUpdatedAt
    * (user must Bekreft). Never re-seeds over confirmed or existing non-suggested bruk.
    */
 
   /**
-   * Virtual carry pot: tracks unused/overspent envelope across months without
-   * requiring På konto confirm. På konto is a correction tool that resets the pot.
+   * Virtual carry pot: tracks leftover trygg across months without requiring
+   * På konto confirm. På konto is a correction tool that resets the pot.
    *
-   * pot_next = pot + monthly_net_effect − variable_spending − planned(once)
-   * monthly_net_effect ≈ (logged|planned income) − Fast auto − sparing
-   * variable_spending = logged expenses attributed to person (own + felles share)
+   * Without bank confirm (virtual roll):
+   *   end = startSuggestedBruk − variable_logged − same-month_planned(if not reflected)
+   *        + logged_income (only if any)
+   * Do NOT add full planned lønn/ekstra — that invents huge growth without bank.
    *
    * Confirmed bank (balancesUpdatedAt) is truth → ending pot = bruk (no invent).
    */
@@ -560,40 +599,38 @@
     if (m.balancesUpdatedAt) return start;
 
     var categories = opts.categories || [];
-    var monthIndex =
-      opts.monthIndex != null
-        ? opts.monthIndex
-        : opts.monthKey
-          ? monthIndexFromKey(opts.monthKey)
-          : 0;
-
-    var planLonn = plannedIncomeFor(m, personId, "lønn") || 0;
-    var planEkstra = plannedIncomeFor(m, personId, "ekstra") || 0;
-    var planInn = planLonn + planEkstra;
-    var planSparing = 0;
-    if (typeof plannedSparingFor === "function") {
-      planSparing = plannedSparingFor(m, personId) || 0;
-    } else if (m.plannedIncome && m.plannedIncome[personId]) {
-      var ps = Number(m.plannedIncome[personId].sparing);
-      if (Number.isFinite(ps) && ps > 0) planSparing = ps;
-    }
-
     var parts = personCashflowParts(m, personId, people, categories, {});
     var loggedInn = (parts.lønn || 0) + (parts.ekstra || 0);
-    var income = loggedInn > 0 ? loggedInn : planInn;
-    var sparing = (parts.sparing || 0) > 0 ? parts.sparing : planSparing;
+    var loggedSparing = parts.sparing || 0;
     var variableSpending = parts.utgifter || 0; // logged expenses (var + any logged fast)
-    var autoFast = autoSpendExtraForPerson(
-      m,
-      personId,
-      people,
-      categories,
-      monthIndex
-    );
 
-    // pot + monthly_net_effect − variable_spending
-    // monthly_net = income − Fast auto − sparing
-    return start + income - autoFast - sparing - variableSpending;
+    // Same-month planned once if not already in start (seeded/reflected)
+    var plannedDeduct = 0;
+    if (opts.monthKey) {
+      plannedDeduct = openPlannedSpendDeductionForPerson(
+        opts.plannedSpends || [],
+        opts.monthKey,
+        personId,
+        people,
+        { skipReflected: true }
+      );
+      // Seed already baked plans into start → do not subtract again
+      if (
+        bal.suggestedAfterPlans ||
+        bal.suggested ||
+        m.balancesSuggested ||
+        monthHasPlanSeededBalances(m)
+      ) {
+        plannedDeduct = 0;
+      }
+    }
+
+    // Virtual roll: leftover trygg — no automatic planInn / Fast auto stacking
+    // end = start − variable − (same-month planned if needed) + logged income only
+    var end = start - variableSpending - plannedDeduct;
+    if (loggedInn > 0) end += loggedInn;
+    if (loggedSparing > 0) end -= loggedSparing;
+    return end;
   }
 
   /** Household / per-person ending pots for a month (additive carryPot field). */
@@ -726,13 +763,16 @@
           base = computeCarryEndBrukForPerson(prev, p.id, people, {
             categories: cats,
             monthIndex: prevMonthIndex,
-            monthKey: prevKey
+            monthKey: prevKey,
+            plannedSpends: plannedSpends || []
           });
         }
       }
       if (base == null) return;
-      var deduct = openPlannedSpendDeductionForPerson(
+      // After prev … through new month (e.g. Sep→Nov subtracts Oct bil)
+      var deduct = openPlannedSpendDeductionForPersonRange(
         plannedSpends || [],
+        prevKey,
         key,
         p.id,
         people
@@ -3733,6 +3773,7 @@
     findNearestPreviousWithCarrySource: findNearestPreviousWithCarrySource,
     monthHasCarrySource: monthHasCarrySource,
     openPlannedSpendDeductionForPerson: openPlannedSpendDeductionForPerson,
+    openPlannedSpendDeductionForPersonRange: openPlannedSpendDeductionForPersonRange,
     computeSuggestedBrukFromPrev: computeSuggestedBrukFromPrev,
     clearSuggestedBalanceFlag: clearSuggestedBalanceFlag,
     markPlannedSpendsReflectedInBalance: markPlannedSpendsReflectedInBalance,

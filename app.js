@@ -326,13 +326,46 @@
     }
     const m = state.months[key];
     ensureMonthShape(m);
+    // Refresh ending carry pot on previous month before seeding this one
+    const prevKey =
+      typeof Calc.shiftMonthKey === "function"
+        ? Calc.shiftMonthKey(key, -1)
+        : prevMonthKey(state.view.year, state.view.month);
+    if (
+      prevKey &&
+      state.months[prevKey] &&
+      typeof Calc.refreshMonthCarryPot === "function"
+    ) {
+      Calc.refreshMonthCarryPot(state.months, prevKey, state.people, {
+        categories: state.categories,
+        monthIndex: monthIndexFromKeySafe(prevKey),
+        monthKey: prevKey,
+        plannedSpends: state.plannedSpends || []
+      });
+    }
     const result = Calc.ensureMonthExpected(state.months, key, state.people, {
       copyExpectedToNewMonths: state.settings.copyExpectedToNewMonths !== false,
       categories: state.categories,
       plannedSpends: state.plannedSpends || []
     });
-    if (created || (result && (result.copied || result.suggestedBalances))) save();
+    // Always persist when suggested balances were seeded (carry / jump)
+    if (
+      created ||
+      (result &&
+        (result.copied || result.suggestedBalances || result.seeded))
+    ) {
+      save();
+    }
     return m;
+  }
+
+  function monthIndexFromKeySafe(key) {
+    if (typeof Calc.monthIndexFromKey === "function") {
+      return Calc.monthIndexFromKey(key);
+    }
+    const parts = String(key || "").split("-");
+    const mo = parseInt(parts[1], 10);
+    return Number.isFinite(mo) ? mo - 1 : 0;
   }
 
   function ensureMonthShape(m) {
@@ -2070,10 +2103,10 @@
           ? Number(bal.bruk)
           : 0;
       hasBrukForHint = !!(pc.hasBrukBalance);
+      // På konto optional — never blank Trygg; plan fallback when no bruk/seed
       needsSaldo = !!(
         pc.needsSaldoForSafeToSpend ||
-        mode === "awaiting_saldo" ||
-        ((c && c.useSaldoInSafeToSpend !== false) && !hasBrukForHint)
+        mode === "awaiting_saldo"
       );
     } else {
       amount = c && typeof c.safeToSpend === "number" ? c.safeToSpend : null;
@@ -2110,8 +2143,7 @@
       hasBrukForHint = !!(c && c.hasBrukBalances);
       needsSaldo = !!(
         (c && c.needsSaldoForSafeToSpend) ||
-        mode === "awaiting_saldo" ||
-        ((c && c.useSaldoInSafeToSpend !== false) && !hasBrukForHint)
+        mode === "awaiting_saldo"
       );
     }
 
@@ -2187,11 +2219,19 @@
       if (!show) {
         valEl.textContent = "—";
         valEl.className = "safe-spend-value";
-      } else if (needsSaldo) {
-        valEl.textContent = "—";
-        valEl.className = "safe-spend-value";
       } else {
-        const amt = typeof amount === "number" ? amount : 0;
+        // Always show a number after seed / plan fallback — never blank future months
+        let amt =
+          typeof amount === "number"
+            ? amount
+            : typeof planHead === "number"
+              ? planHead
+              : typeof raw === "number"
+                ? raw
+                : 0;
+        if (needsSaldo && typeof planHead === "number") {
+          amt = planHead;
+        }
         const rawN = typeof raw === "number" ? raw : amt;
         valEl.textContent = formatNOK(amt);
         valEl.className =
@@ -2259,7 +2299,7 @@
       } else if (needsSaldo) {
         hintEl.classList.remove("is-saldo-short");
         hintEl.textContent =
-          "Trygg ruller automatisk. På konto er valgfritt — rett bare hvis noe er feil." +
+          "Viser plan-basert Trygg (kan være negativ) — seed/pot mangler. På konto er valgfritt for å rette." +
           fromPrevHint;
       } else if (fromSaldo) {
         const amt = typeof amount === "number" ? amount : 0;

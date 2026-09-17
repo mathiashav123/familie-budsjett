@@ -8,19 +8,20 @@
   "confirmCount": 29,
   "skipCount": 90,
   "pot": {
-    "min": 71223,
-    "avg": 629974.555,
-    "max": 1234671
+    "min": -1774156,
+    "avg": -865904.3583333333,
+    "max": 231223
   },
   "trygg": {
-    "min": 71223,
-    "avg": 628641.2216666668,
-    "max": 1234671
+    "min": -1774156,
+    "avg": -867237.6916666667,
+    "max": 71223
   },
   "goodHigher": 35,
-  "badLower": 16,
+  "badLower": 20,
+  "carryMatches": 63,
   "assertions": {
-    "ok": 706,
+    "ok": 709,
     "fail": 0
   },
   "failures": []
