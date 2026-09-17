@@ -87,7 +87,7 @@
       </div>
 
       <div id="planSafeMini" class="plan-safe-mini" hidden>
-        <span class="plan-safe-label">Trygg å bruke</span>
+        <span class="plan-safe-label">Trygg å bruke nå</span>
         <strong id="planSafeMiniValue">—</strong>
       </div>
 
@@ -171,13 +171,14 @@
     <div id="panelOversikt" class="tab-panel" role="tabpanel" aria-labelledby="tabOversikt">
       <section class="card safe-spend-card compact-card" id="safeSpendCard" aria-labelledby="safeSpendTitle">
         <div class="card-head safe-spend-head">
-          <h2 id="safeSpendTitle">Trygg å bruke</h2>
+          <h2 id="safeSpendTitle">Trygg å bruke nå</h2>
           <span class="pill blue" id="healthPill" hidden></span>
         </div>
         <p class="safe-spend-value" id="safeSpendValue">—</p>
+        <p class="safe-spend-secondary" id="safeSpendSecondary" hidden></p>
         <div class="safe-spend-breakdown" id="safeSpendBreakdown" hidden></div>
         <p class="meta-line" id="safeSpendReserve" hidden>Reservert til planlagte utlegg: —</p>
-        <p class="safe-spend-hint" id="safeSpendHint">Sett brukssaldo for mer treffsikkert tall. Ellers: forventet inn minus brukt minus faste igjen.</p>
+        <p class="safe-spend-hint" id="safeSpendHint">Sett brukssaldo for mer treffsikkert tall. Fast holdes av automatisk; variabelt telles når du logger kjøp.</p>
         <div class="health-meter" id="healthMeter" hidden>
           <div class="health-meter-track">
             <div class="health-meter-fill" id="healthMeterFill"></div>
@@ -1016,7 +1017,7 @@
           <input type="checkbox" id="setUseSaldoSafe" checked />
           <span>Bruk saldo i trygg-å-bruke</span>
         </label>
-        <p class="hint compact">Når på (anbefalt): trygg-å-bruke = sum bruk − gjenstående budsjett − buffer. Slå av for gammel plan-formel. Enkelt å fjerne senere.</p>
+        <p class="hint compact">Når på (anbefalt): <strong>Trygg å bruke nå</strong> = bruk − Fast auto − planlagte utlegg − buffer (ikke ubrukt variabelt). Under: «Hvis hele budsjettet brukes» med gammel konservativ formel. Slå av for plan-formel.</p>
         <label class="field setting-buffer">
           <span>Buffer som skal stå igjen på bruk</span>
           <div class="input-affix">

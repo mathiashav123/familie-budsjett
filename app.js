@@ -550,22 +550,30 @@
 
 
   /**
-   * Compact saldo-mode breakdown under Trygg å bruke (samlet + per person).
-   * Explains why bank saldo ≠ trygg å bruke.
+   * Dual saldo-mode breakdown under Trygg å bruke (samlet + per person).
+   * Primary: nå (Fast auto + planlagte + buffer). Secondary: hvis hele budsjettet brukes.
    */
   function formatSafeSpendBreakdownHtml(bd) {
     if (!bd) return "";
     const rows = [];
+    const nowAmt =
+      typeof bd.safeToSpendNow === "number" ? bd.safeToSpendNow : bd.safeToSpend;
+    const ifUsed =
+      typeof bd.safeToSpendIfBudgetUsed === "number"
+        ? bd.safeToSpendIfBudgetUsed
+        : null;
     rows.push(
       '<div class="safe-spend-breakdown-row"><span>På konto (bruk)</span><strong>' +
         formatNOK(bd.bruk) +
         "</strong></div>"
     );
-    rows.push(
-      '<div class="safe-spend-breakdown-row is-minus"><span>− Rest av budsjett (igjen)</span><strong>' +
-        formatNOK(bd.restBudget) +
-        "</strong></div>"
-    );
+    if ((bd.autoSpendExtra || 0) > 0.5) {
+      rows.push(
+        '<div class="safe-spend-breakdown-row is-minus"><span>− Fast (auto)</span><strong>' +
+          formatNOK(bd.autoSpendExtra) +
+          "</strong></div>"
+      );
+    }
     if ((bd.futureReserve || 0) > 0.5) {
       rows.push(
         '<div class="safe-spend-breakdown-row is-minus"><span>− Planlagte utlegg (reservert)</span><strong>' +
@@ -581,10 +589,29 @@
       );
     }
     rows.push(
-      '<div class="safe-spend-breakdown-row is-eq"><span>= Trygg å bruke</span><strong>' +
-        formatNOK(bd.safeToSpend) +
+      '<div class="safe-spend-breakdown-row is-eq"><span>= Trygg å bruke nå</span><strong>' +
+        formatNOK(nowAmt) +
         "</strong></div>"
     );
+    if (ifUsed != null) {
+      const remVar =
+        typeof bd.remainingVariableBudgets === "number"
+          ? bd.remainingVariableBudgets
+          : typeof bd.remainingBudgetAll === "number"
+            ? bd.remainingBudgetAll
+            : 0;
+      rows.push(
+        '<div class="safe-spend-breakdown-row is-secondary"><span>Hvis hele budsjettet brukes' +
+          (remVar > 0.5
+            ? ' <em class="opt">(− ' +
+              formatNOK(remVar) +
+              " variabelt igjen)</em>"
+            : "") +
+          "</span><strong>" +
+          formatNOK(ifUsed) +
+          "</strong></div>"
+      );
+    }
     return (
       '<div class="safe-spend-breakdown-rows" role="group" aria-label="Slik er Trygg å bruke regnet">' +
       rows.join("") +
@@ -1939,6 +1966,7 @@
     const valEl = $("#safeSpendValue");
     const hintEl = $("#safeSpendHint");
     const titleEl = $("#safeSpendTitle");
+    const secondaryEl = $("#safeSpendSecondary");
     const mini = $("#planSafeMini");
     const miniVal = $("#planSafeMiniValue");
     const miniLabel = mini && mini.querySelector(".plan-safe-label");
@@ -1948,8 +1976,11 @@
     const whoName = isPerson ? nameOf(view) : "";
 
     // Pick household or per-person Trygg å bruke (same tabs as Inn/Ut)
-    let amount, raw, mode, remAll, remFast, buf, planHead, brukForHint, hasBrukForHint;
+    let amount, raw, mode, remAll, remFast, remVar, buf, planHead, brukForHint, hasBrukForHint;
     let futureR = 0;
+    let autoX = 0;
+    let ifBudgetUsed = null;
+    let ifBudgetUsedRaw = null;
     if (isPerson && pc) {
       amount = typeof pc.safeToSpend === "number" ? pc.safeToSpend : 0;
       raw = typeof pc.safeToSpendRaw === "number" ? pc.safeToSpendRaw : 0;
@@ -1960,14 +1991,25 @@
         typeof pc.remainingFastBudgets === "number"
           ? pc.remainingFastBudgets
           : 0;
+      remVar =
+        typeof pc.remainingVariableBudgets === "number"
+          ? pc.remainingVariableBudgets
+          : Math.max(0, remAll - remFast);
       buf =
         typeof pc.spendBufferShare === "number" ? pc.spendBufferShare : 0;
       planHead =
         typeof pc.safeToSpendPlan === "number" ? pc.safeToSpendPlan : 0;
       futureR =
         typeof pc.futureReserve === "number" ? pc.futureReserve : 0;
-      var autoX =
+      autoX =
         typeof pc.autoSpendExtra === "number" ? pc.autoSpendExtra : 0;
+      if (typeof pc.safeToSpendIfBudgetUsed === "number") {
+        ifBudgetUsed = pc.safeToSpendIfBudgetUsed;
+        ifBudgetUsedRaw =
+          typeof pc.safeToSpendIfBudgetUsedRaw === "number"
+            ? pc.safeToSpendIfBudgetUsedRaw
+            : pc.safeToSpendSaldoRaw;
+      }
       const bal = c.balanceByPerson && c.balanceByPerson[view];
       brukForHint =
         bal && bal.bruk != null && Number.isFinite(Number(bal.bruk))
@@ -1986,13 +2028,24 @@
         c && typeof c.remainingFastBudgets === "number"
           ? c.remainingFastBudgets
           : 0;
+      remVar =
+        c && typeof c.remainingVariableBudgets === "number"
+          ? c.remainingVariableBudgets
+          : Math.max(0, remAll - remFast);
       buf = c && typeof c.spendBuffer === "number" ? c.spendBuffer : 0;
       futureR =
         c && typeof c.futureReserve === "number" ? c.futureReserve : 0;
-      var autoX =
+      autoX =
         c && typeof c.autoSpendExtra === "number" ? c.autoSpendExtra : 0;
       planHead =
         c && typeof c.safeToSpendPlan === "number" ? c.safeToSpendPlan : 0;
+      if (c && typeof c.safeToSpendIfBudgetUsed === "number") {
+        ifBudgetUsed = c.safeToSpendIfBudgetUsed;
+        ifBudgetUsedRaw =
+          typeof c.safeToSpendIfBudgetUsedRaw === "number"
+            ? c.safeToSpendIfBudgetUsedRaw
+            : c.safeToSpendSaldoRaw;
+      }
       brukForHint =
         c && typeof c.totalBruk === "number" ? c.totalBruk : 0;
       hasBrukForHint = !!(c && c.hasBrukBalances);
@@ -2009,7 +2062,7 @@
     );
 
     const baseTitle = fromSaldo
-      ? "Trygg å bruke (fra saldo)"
+      ? "Trygg å bruke nå"
       : "Trygg å bruke";
     const titled = isPerson && whoName
       ? baseTitle + " · " + whoName
@@ -2042,12 +2095,24 @@
       }
     }
 
+    if (secondaryEl) {
+      if (show && fromSaldo && ifBudgetUsed != null) {
+        secondaryEl.hidden = false;
+        secondaryEl.textContent =
+          "Hvis hele budsjettet brukes: " + formatNOK(ifBudgetUsed);
+      } else {
+        secondaryEl.hidden = true;
+        secondaryEl.textContent = "";
+      }
+    }
+
     const breakEl = $("#safeSpendBreakdown");
     if (breakEl) {
       if (show && fromSaldo && hasBrukForHint && typeof Calc.safeToSpendSaldoBreakdown === "function") {
         const bd = Calc.safeToSpendSaldoBreakdown({
           bruk: brukForHint,
           remainingBudgetAll: remAll,
+          remainingVariableBudgets: remVar,
           autoSpendExtra: typeof autoX === "number" ? autoX : 0,
           futureReserve: futureR,
           spendBuffer: buf
@@ -2065,12 +2130,16 @@
       if (!show) {
         hintEl.classList.remove("is-saldo-short");
         hintEl.textContent = wantSaldo
-          ? "Sett brukssaldo for mer treffsikkert tall – eller plan-formel: forventet inn minus brukt minus faste igjen."
+          ? "Sett brukssaldo for mer treffsikkert tall. Fast holdes av automatisk; variabelt telles når du logger kjøp."
           : "Det du trygt kan bruke nå: forventet inntekt minus det du har brukt, minus faste utgifter som gjenstår.";
       } else if (fromSaldo) {
+        const conservativeTight =
+          ifBudgetUsed != null &&
+          ifBudgetUsed <= 0 &&
+          (ifBudgetUsedRaw == null || ifBudgetUsedRaw < 0 || remAll > brukForHint);
         const saldoShort =
           amount <= 0 &&
-          (planHead > 0 || (remAll > 0 && remAll > brukForHint));
+          (planHead > 0 || conservativeTight || (remAll > 0 && remAll > brukForHint));
         hintEl.classList.toggle(
           "is-saldo-short",
           !!saldoShort || (amount <= 0 && raw < 0)
@@ -2081,20 +2150,27 @@
           hintEl.textContent =
             "Saldo på bruk" +
             whose +
-            " dekker ikke gjenstående budsjett" +
-            (buf > 0 ? " + buffer" : "") +
+            " dekker ikke Fast auto" +
+            (futureR > 0 ? ", planlagte utlegg" : "") +
+            (buf > 0 ? " og buffer" : "") +
             (planHead > 0
               ? " (plan-modus ville vist ca. " + formatNOK(planHead) + ")"
               : "") +
             ". Oppdater saldo eller plan.";
         } else if (amount <= 0) {
           hintEl.textContent =
-            "Ingen fri margin på bruk akkurat nå (gjenstående budsjett" +
+            "Ingen fri margin på bruk akkurat nå (Fast auto" +
+            (futureR > 0 ? ", planlagte utlegg" : "") +
             (buf > 0 ? " og buffer" : "") +
             " er dekket først).";
         } else {
           hintEl.textContent =
-            "På konto er ikke det samme som trygg å bruke — appen holder av budsjett som gjenstår.";
+            "Trygg å bruke nå holder av Fast (auto), planlagte utlegg" +
+            (buf > 0 ? " og buffer" : "") +
+            " — ikke ubrukt variabelt budsjett. Variabelt telles når du logger via Kjøpt noe." +
+            (ifBudgetUsed != null && remVar > 0.5
+              ? " Hvis hele budsjettet brukes: " + formatNOK(ifBudgetUsed) + "."
+              : "");
         }
       } else {
         hintEl.classList.remove("is-saldo-short");

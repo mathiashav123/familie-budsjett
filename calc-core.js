@@ -1449,13 +1449,30 @@
       planInn - effectiveUtgifter - remainingFastBudgets - futureReserve;
     var safeToSpendPlan = Math.max(0, safeToSpendPlanRaw);
 
-    // Saldo-based: totalBruk − remainingAll − autoSpendExtra − futureReserve − buffer
-    // (remainingAll uses effectiveActual so Fast rem=0; re-add autoSpendExtra to keep commitment)
-    var safeToSpendSaldoRaw = null;
+    // Variable remaining (Fast rem≈0 when auto on; not subtracted from "nå")
+    var remainingVariableBudgets = Math.max(
+      0,
+      remainingBudgetAll - remainingFastBudgets
+    );
+
+    // Dual saldo formulas (Fast not double-counted: remAll uses effectiveActual):
+    // Primary "nå": bruk − autoSpendExtra − futureReserve − buffer
+    //   (do NOT subtract remaining variable category budgets)
+    // Secondary "hvis hele budsjettet brukes": bruk − remAll − autoSpendExtra − future − buffer
+    var safeToSpendNowRaw = null;
+    var safeToSpendNow = null;
+    var safeToSpendSaldoRaw = null; // conservative / if-budget-used
     var safeToSpendSaldo = null;
     if (hasBruk) {
+      safeToSpendNowRaw =
+        totalBruk - autoSpendExtra - futureReserve - spendBuffer;
+      safeToSpendNow = Math.max(0, safeToSpendNowRaw);
       safeToSpendSaldoRaw =
-        totalBruk - remainingBudgetAll - autoSpendExtra - futureReserve - spendBuffer;
+        totalBruk -
+        remainingBudgetAll -
+        autoSpendExtra -
+        futureReserve -
+        spendBuffer;
       safeToSpendSaldo = Math.max(0, safeToSpendSaldoRaw);
     }
 
@@ -1464,8 +1481,8 @@
     var safeToSpend = safeToSpendPlan;
     if (useSaldo && hasBruk) {
       safeToSpendMode = "saldo";
-      safeToSpendRaw = safeToSpendSaldoRaw;
-      safeToSpend = safeToSpendSaldo;
+      safeToSpendRaw = safeToSpendNowRaw;
+      safeToSpend = safeToSpendNow;
     }
 
     // Per-person Trygg å bruke (same mode rules; buffer split equally by people count)
@@ -1513,9 +1530,14 @@
         (cp.planInn || 0) - (cp.utgifter || 0) - autoExtraP - remFastP - futureP;
       var planSafeP = Math.max(0, planRawP);
 
-      var saldoRawP = null;
+      var remVarP = Math.max(0, remAllP - remFastP);
+      var nowRawP = null;
+      var nowSafeP = null;
+      var saldoRawP = null; // conservative / if-budget-used
       var saldoSafeP = null;
       if (hasPersonBruk) {
+        nowRawP = brukN - autoExtraP - futureP - bufferShareEach;
+        nowSafeP = Math.max(0, nowRawP);
         saldoRawP = brukN - remAllP - autoExtraP - futureP - bufferShareEach;
         saldoSafeP = Math.max(0, saldoRawP);
       }
@@ -1525,12 +1547,13 @@
       var safeP = planSafeP;
       if (useSaldo && hasPersonBruk) {
         modeP = "saldo";
-        rawP = saldoRawP;
-        safeP = saldoSafeP;
+        rawP = nowRawP;
+        safeP = nowSafeP;
       }
 
       cp.remainingBudgetAll = remAllP;
       cp.remainingFastBudgets = remFastP;
+      cp.remainingVariableBudgets = remVarP;
       cp.autoSpendExtra = autoExtraP;
       cp.futureReserve = futureP;
       cp.spendBufferShare = bufferShareEach;
@@ -1538,8 +1561,12 @@
       cp.safeToSpendMode = modeP;
       cp.safeToSpendPlanRaw = planRawP;
       cp.safeToSpendPlan = planSafeP;
+      cp.safeToSpendNowRaw = nowRawP;
+      cp.safeToSpendNow = nowSafeP;
       cp.safeToSpendSaldoRaw = saldoRawP;
       cp.safeToSpendSaldo = saldoSafeP;
+      cp.safeToSpendIfBudgetUsedRaw = saldoRawP;
+      cp.safeToSpendIfBudgetUsed = saldoSafeP;
       cp.safeToSpendRaw = rawP;
       cp.safeToSpend = safeP;
     });
@@ -1580,6 +1607,7 @@
       netActual: netActual,
       remainingFastBudgets: remainingFastBudgets,
       remainingBudgetAll: remainingBudgetAll,
+      remainingVariableBudgets: remainingVariableBudgets,
       autoSpendExtra: autoSpendExtra,
       effectiveUtgifter: effectiveUtgifter,
       futureReserve: futureReserve,
@@ -1589,8 +1617,12 @@
       safeToSpendMode: safeToSpendMode,
       safeToSpendPlanRaw: safeToSpendPlanRaw,
       safeToSpendPlan: safeToSpendPlan,
+      safeToSpendNowRaw: safeToSpendNowRaw,
+      safeToSpendNow: safeToSpendNow,
       safeToSpendSaldoRaw: safeToSpendSaldoRaw,
       safeToSpendSaldo: safeToSpendSaldo,
+      safeToSpendIfBudgetUsedRaw: safeToSpendSaldoRaw,
+      safeToSpendIfBudgetUsed: safeToSpendSaldo,
       safeToSpendRaw: safeToSpendRaw,
       safeToSpend: safeToSpend,
       etterLonn: etterLonn,
@@ -2890,10 +2922,14 @@
 
 
   /**
-   * Compact saldo-mode Trygg å bruke parts for UI transparency.
-   * restBudget = remainingBudgetAll + autoSpendExtra (Fast auto still reserved).
-   * Identity: bruk − restBudget − futureReserve − spendBuffer = raw
-   * safeToSpend = max(0, raw)
+   * Dual saldo-mode Trygg å bruke parts for UI transparency.
+   * Primary "nå": bruk − autoSpendExtra − futureReserve − spendBuffer
+   *   (do NOT subtract remaining variable budgets).
+   * Secondary "hvis hele budsjettet brukes":
+   *   bruk − remainingBudgetAll − autoSpendExtra − futureReserve − spendBuffer
+   *   (Fast not double-counted: remAll uses effectiveActual so Fast rem≈0).
+   * restBudget = remainingBudgetAll + autoSpendExtra (legacy conservative identity).
+   * safeToSpend / raw follow primary "nå".
    */
   function safeToSpendSaldoBreakdown(parts) {
     var src = parts && typeof parts === "object" ? parts : {};
@@ -2901,6 +2937,8 @@
     if (!Number.isFinite(bruk)) bruk = 0;
     var rem = Number(src.remainingBudgetAll);
     if (!Number.isFinite(rem)) rem = 0;
+    var remVar = Number(src.remainingVariableBudgets);
+    if (!Number.isFinite(remVar)) remVar = rem;
     var auto = Number(src.autoSpendExtra);
     if (!Number.isFinite(auto)) auto = 0;
     var future = Number(src.futureReserve);
@@ -2908,20 +2946,31 @@
     var buffer = Number(src.spendBuffer);
     if (!Number.isFinite(buffer)) buffer = 0;
     if (rem < 0) rem = 0;
+    if (remVar < 0) remVar = 0;
     if (auto < 0) auto = 0;
     if (future < 0) future = 0;
     if (buffer < 0) buffer = 0;
     var restBudget = rem + auto;
-    var raw = bruk - restBudget - future - buffer;
+    var nowRaw = bruk - auto - future - buffer;
+    var ifUsedRaw = bruk - rem - auto - future - buffer;
     return {
       bruk: bruk,
       remainingBudgetAll: rem,
+      remainingVariableBudgets: remVar,
       autoSpendExtra: auto,
       restBudget: restBudget,
       futureReserve: future,
       spendBuffer: buffer,
-      raw: raw,
-      safeToSpend: Math.max(0, raw)
+      raw: nowRaw,
+      safeToSpend: Math.max(0, nowRaw),
+      safeToSpendNowRaw: nowRaw,
+      safeToSpendNow: Math.max(0, nowRaw),
+      safeToSpendIfBudgetUsedRaw: ifUsedRaw,
+      safeToSpendIfBudgetUsed: Math.max(0, ifUsedRaw),
+      // Legacy aliases for conservative line
+      conservativeRaw: ifUsedRaw,
+      safeToSpendSaldoRaw: ifUsedRaw,
+      safeToSpendSaldo: Math.max(0, ifUsedRaw)
     };
   }
 
