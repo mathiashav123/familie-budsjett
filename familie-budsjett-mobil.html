@@ -5404,7 +5404,7 @@ button.cat-group-header {
           <input type="checkbox" id="setUseSaldoSafe" checked />
           <span>Bruk saldo i trygg-å-bruke</span>
         </label>
-        <p class="hint compact">Når på (anbefalt): <strong>Trygg å bruke nå</strong> = bruk − Fast auto − planlagte utlegg − buffer (ikke ubrukt variabelt). Under: «Hvis hele budsjettet brukes» med gammel konservativ formel. Slå av for plan-formel.</p>
+        <p class="hint compact">Når på (anbefalt): <strong>Trygg å bruke nå</strong> = bruk − planlagte utlegg − buffer (faste allerede i banksaldo — ikke trukket på nytt). Under: «Hvis hele budsjettet brukes» = bruk − gjenstående budsjett − planlagte − buffer. Slå av for plan-formel (som fortsatt trekker Fast auto).</p>
         <label class="field setting-buffer">
           <span>Buffer som skal stå igjen på bruk</span>
           <div class="input-affix">
@@ -6905,24 +6905,21 @@ window.FAMILIE_BUDGET_SUPABASE = {
       remainingBudgetAll - remainingFastBudgets
     );
 
-    // Dual saldo formulas (Fast not double-counted: remAll uses effectiveActual):
-    // Primary "nå": bruk − autoSpendExtra − futureReserve − buffer
-    //   (do NOT subtract remaining variable category budgets)
-    // Secondary "hvis hele budsjettet brukes": bruk − remAll − autoSpendExtra − future − buffer
+    // Dual saldo formulas — bank saldo already reflects paid Fast (På konto nå).
+    // Do NOT re-subtract autoSpendExtra (would double-count fixed bills).
+    // Primary "nå": bruk − futureReserve − buffer
+    // Secondary "hvis hele budsjettet brukes": bruk − remAll − future − buffer
+    //   (remAll uses effectiveActual so Fast rem≈0; still no autoSpendExtra)
+    // Plan mode still uses autoSpendExtra via safeToSpendPlanRaw above.
     var safeToSpendNowRaw = null;
     var safeToSpendNow = null;
     var safeToSpendSaldoRaw = null; // conservative / if-budget-used
     var safeToSpendSaldo = null;
     if (hasBruk) {
-      safeToSpendNowRaw =
-        totalBruk - autoSpendExtra - futureReserve - spendBuffer;
+      safeToSpendNowRaw = totalBruk - futureReserve - spendBuffer;
       safeToSpendNow = Math.max(0, safeToSpendNowRaw);
       safeToSpendSaldoRaw =
-        totalBruk -
-        remainingBudgetAll -
-        autoSpendExtra -
-        futureReserve -
-        spendBuffer;
+        totalBruk - remainingBudgetAll - futureReserve - spendBuffer;
       safeToSpendSaldo = Math.max(0, safeToSpendSaldoRaw);
     }
 
@@ -6986,9 +6983,10 @@ window.FAMILIE_BUDGET_SUPABASE = {
       var saldoRawP = null; // conservative / if-budget-used
       var saldoSafeP = null;
       if (hasPersonBruk) {
-        nowRawP = brukN - autoExtraP - futureP - bufferShareEach;
+        // Saldo: never re-subtract autoExtra (Fast already in bank balance)
+        nowRawP = brukN - futureP - bufferShareEach;
         nowSafeP = Math.max(0, nowRawP);
-        saldoRawP = brukN - remAllP - autoExtraP - futureP - bufferShareEach;
+        saldoRawP = brukN - remAllP - futureP - bufferShareEach;
         saldoSafeP = Math.max(0, saldoRawP);
       }
 
@@ -8373,12 +8371,14 @@ window.FAMILIE_BUDGET_SUPABASE = {
 
   /**
    * Dual saldo-mode Trygg å bruke parts for UI transparency.
-   * Primary "nå": bruk − autoSpendExtra − futureReserve − spendBuffer
+   * På konto nå already reflects paid Fast — do NOT re-subtract autoSpendExtra.
+   * Primary "nå": bruk − futureReserve − spendBuffer
    *   (do NOT subtract remaining variable budgets).
    * Secondary "hvis hele budsjettet brukes":
-   *   bruk − remainingBudgetAll − autoSpendExtra − futureReserve − spendBuffer
-   *   (Fast not double-counted: remAll uses effectiveActual so Fast rem≈0).
-   * restBudget = remainingBudgetAll + autoSpendExtra (legacy conservative identity).
+   *   bruk − remainingBudgetAll − futureReserve − spendBuffer
+   *   (remAll uses effectiveActual so Fast rem≈0; still no autoSpendExtra).
+   * restBudget = remainingBudgetAll (variable rem; Fast already in bank).
+   * autoSpendExtra is returned for transparency / cashflow paths only.
    * safeToSpend / raw follow primary "nå".
    */
   function safeToSpendSaldoBreakdown(parts) {
@@ -8400,9 +8400,9 @@ window.FAMILIE_BUDGET_SUPABASE = {
     if (auto < 0) auto = 0;
     if (future < 0) future = 0;
     if (buffer < 0) buffer = 0;
-    var restBudget = rem + auto;
-    var nowRaw = bruk - auto - future - buffer;
-    var ifUsedRaw = bruk - rem - auto - future - buffer;
+    var restBudget = rem;
+    var nowRaw = bruk - future - buffer;
+    var ifUsedRaw = bruk - rem - future - buffer;
     return {
       bruk: bruk,
       remainingBudgetAll: rem,
@@ -10393,7 +10393,8 @@ window.FAMILIE_BUDGET_SUPABASE = {
 
   /**
    * Dual saldo-mode breakdown under Trygg å bruke (samlet + per person).
-   * Primary: nå (Fast auto + planlagte + buffer). Secondary: hvis hele budsjettet brukes.
+   * Primary: nå (planlagte + buffer). Fast already in bank — not re-subtracted.
+   * Secondary: hvis hele budsjettet brukes.
    */
   function formatSafeSpendBreakdownHtml(bd) {
     if (!bd) return "";
@@ -10409,13 +10410,6 @@ window.FAMILIE_BUDGET_SUPABASE = {
         formatNOK(bd.bruk) +
         "</strong></div>"
     );
-    if ((bd.autoSpendExtra || 0) > 0.5) {
-      rows.push(
-        '<div class="safe-spend-breakdown-row is-minus"><span>− Fast (auto)</span><strong>' +
-          formatNOK(bd.autoSpendExtra) +
-          "</strong></div>"
-      );
-    }
     if ((bd.futureReserve || 0) > 0.5) {
       rows.push(
         '<div class="safe-spend-breakdown-row is-minus"><span>− Planlagte utlegg (reservert)</span><strong>' +
@@ -10454,9 +10448,14 @@ window.FAMILIE_BUDGET_SUPABASE = {
           "</strong></div>"
       );
     }
+    const fastNote =
+      (bd.autoSpendExtra || 0) > 0.5
+        ? '<p class="hint compact safe-spend-breakdown-hint">Faste utgifter er allerede i banksaldo (På konto nå) — ikke trukket på nytt her. Fast auto brukes fortsatt til kategori-igjen og forventet cashflow.</p>'
+        : '<p class="hint compact safe-spend-breakdown-hint">Faste utgifter er allerede i banksaldo — ikke trukket på nytt i Trygg å bruke.</p>';
     return (
       '<div class="safe-spend-breakdown-rows" role="group" aria-label="Slik er Trygg å bruke regnet">' +
       rows.join("") +
+      fastNote +
       "</div>"
     );
   }
@@ -11972,7 +11971,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
       if (!show) {
         hintEl.classList.remove("is-saldo-short");
         hintEl.textContent = wantSaldo
-          ? "Sett brukssaldo for mer treffsikkert tall. Fast holdes av automatisk; variabelt telles når du logger kjøp."
+          ? "Sett brukssaldo (På konto nå) for mer treffsikkert tall. Faste er allerede i banksaldo — ikke trukket på nytt. Variabelt telles når du logger kjøp."
           : "Det du trygt kan bruke nå: forventet inntekt minus det du har brukt, minus faste utgifter som gjenstår.";
       } else if (fromSaldo) {
         const conservativeTight =
@@ -11992,24 +11991,31 @@ window.FAMILIE_BUDGET_SUPABASE = {
           hintEl.textContent =
             "Saldo på bruk" +
             whose +
-            " dekker ikke Fast auto" +
-            (futureR > 0 ? ", planlagte utlegg" : "") +
-            (buf > 0 ? " og buffer" : "") +
+            " dekker ikke" +
+            (futureR > 0 ? " planlagte utlegg" : "") +
+            (futureR > 0 && buf > 0 ? " og" : "") +
+            (buf > 0 ? " buffer" : "") +
+            (futureR <= 0 && buf <= 0 ? " reserve/buffer" : "") +
             (planHead > 0
               ? " (plan-modus ville vist ca. " + formatNOK(planHead) + ")"
               : "") +
-            ". Oppdater saldo eller plan.";
+            ". Oppdater saldo eller plan. Faste er allerede i banksaldo.";
         } else if (amount <= 0) {
           hintEl.textContent =
-            "Ingen fri margin på bruk akkurat nå (Fast auto" +
-            (futureR > 0 ? ", planlagte utlegg" : "") +
-            (buf > 0 ? " og buffer" : "") +
-            " er dekket først).";
+            "Ingen fri margin på bruk akkurat nå" +
+            (futureR > 0 || buf > 0
+              ? " (" +
+                (futureR > 0 ? "planlagte utlegg" : "") +
+                (futureR > 0 && buf > 0 ? " og " : "") +
+                (buf > 0 ? "buffer" : "") +
+                " er dekket først)"
+              : "") +
+            ". Faste er allerede i banksaldo.";
         } else {
           hintEl.textContent =
-            "Trygg å bruke nå holder av Fast (auto), planlagte utlegg" +
+            "Trygg å bruke nå = banksaldo minus planlagte utlegg" +
             (buf > 0 ? " og buffer" : "") +
-            " — ikke ubrukt variabelt budsjett. Variabelt telles når du logger via Kjøpt noe." +
+            ". Faste er allerede trukket i På konto nå — ikke på nytt. Variabelt telles når du logger via Kjøpt noe." +
             (ifBudgetUsed != null && remVar > 0.5
               ? " Hvis hele budsjettet brukes: " + formatNOK(ifBudgetUsed) + "."
               : "");

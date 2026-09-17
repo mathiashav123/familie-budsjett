@@ -455,10 +455,11 @@ console.log("\n10. safeToSpend uses bruk (not spare); spare ignored");
       { id: "e2", owner: "felles", categoryId: "cMat", amount: 1000 }
     ]
   };
-  // Auto-spend: remFast=0, autoSpendExtra=6000, remAll (variabel only)=4000
-  // Primary nå: 70000 - 6000 = 64000 (NOT subtracting rem variable)
-  // Conservative if-used: 70000 - 4000 - 6000 = 60000
-  // plan = 50000 - (5000+6000) - 0 = 39000
+  // Auto-spend still computed (category bars / cashflow), but saldo Trygg does NOT re-subtract it
+  // remFast=0, autoSpendExtra=6000, remAll (variabel only)=4000
+  // Primary nå: 70000 (NOT subtracting Fast auto — already in bank)
+  // Conservative if-used: 70000 - 4000 = 66000
+  // plan = 50000 - (5000+6000) - 0 = 39000 (still uses autoSpendExtra)
   const cHighSpare = Calc.calcFamily(base, people, cats);
   const noSpare = JSON.parse(JSON.stringify(base));
   noSpare.balances.p1.spare = null;
@@ -469,19 +470,19 @@ console.log("\n10. safeToSpend uses bruk (not spare); spare ignored");
   assertEq(cHighSpare.remainingBudgetAll, 4000, "remainingBudgetAll variabel only");
   assertEq(cHighSpare.remainingVariableBudgets, 4000, "remainingVariable 4000");
   assertEq(cHighSpare.safeToSpendMode, "saldo", "mode saldo when bruk set");
-  assertEq(cHighSpare.safeToSpend, 64000, "safeToSpend nå from saldo");
-  assertEq(cHighSpare.safeToSpendNow, 64000, "safeToSpendNow alias");
-  assertEq(cHighSpare.safeToSpendIfBudgetUsed, 60000, "conservative if budget used");
-  assertEq(cHighSpare.safeToSpendSaldo, 60000, "safeToSpendSaldo = if-used");
+  assertEq(cHighSpare.safeToSpend, 70000, "safeToSpend nå from saldo (no Fast re-sub)");
+  assertEq(cHighSpare.safeToSpendNow, 70000, "safeToSpendNow alias");
+  assertEq(cHighSpare.safeToSpendIfBudgetUsed, 66000, "conservative if budget used");
+  assertEq(cHighSpare.safeToSpendSaldo, 66000, "safeToSpendSaldo = if-used");
   assertEq(cHighSpare.safeToSpendPlan, 39000, "plan formula still available");
-  assertEq(cNoSpare.safeToSpend, 64000, "spare does not affect safeToSpend");
+  assertEq(cNoSpare.safeToSpend, 70000, "spare does not affect safeToSpend");
   assertEq(cHighSpare.safeToSpend, cNoSpare.safeToSpend, "spare ignored");
   const moreBruk = JSON.parse(JSON.stringify(base));
   moreBruk.balances.p1.bruk = 1;
   const cBruk = Calc.calcFamily(moreBruk, people, cats);
-  // totalBruk = 1+20000=20001; nå = 20001-6000 = 14001; if-used = 20001-4000-6000 = 10001
-  assertEq(cBruk.safeToSpend, 14001, "bruk balance affects nå safeToSpend");
-  assertEq(cBruk.safeToSpendIfBudgetUsed, 10001, "bruk balance affects if-used");
+  // totalBruk = 1+20000=20001; nå = 20001; if-used = 20001-4000 = 16001
+  assertEq(cBruk.safeToSpend, 20001, "bruk balance affects nå safeToSpend");
+  assertEq(cBruk.safeToSpendIfBudgetUsed, 16001, "bruk balance affects if-used");
   // Toggle OFF → plan formula
   const cOff = Calc.calcFamily(base, people, cats, { useSaldoInSafeToSpend: false });
   assertEq(cOff.safeToSpendMode, "plan", "mode plan when toggle off");
@@ -887,17 +888,17 @@ console.log("\n14. Saldo safeToSpend, buffer, etterLonn, fallback without bruk")
       { id: "e2", owner: "felles", categoryId: "cMat", amount: 1000 }
     ]
   };
-  // Auto-spend: remAll variabel=3000, autoSpendExtra=6000; buffer 3000
-  // nå = 15000 - 6000 - 3000 = 6000; if-used = 15000 - 3000 - 6000 - 3000 = 3000
+  // Auto-spend computed but NOT re-subtracted in saldo: remAll var=3000, auto=6000; buffer 3000
+  // nå = 15000 - 3000 = 12000; if-used = 15000 - 3000 - 3000 = 9000
   const c = Calc.calcFamily(m, people, cats, { spendBuffer: 3000 });
   assertEq(c.totalBruk, 15000, "totalBruk");
   assertEq(c.remainingBudgetAll, 3000, "remainingBudgetAll variabel");
   assertEq(c.autoSpendExtra, 6000, "autoSpendExtra");
   assertEq(c.spendBuffer, 3000, "buffer applied");
   assertEq(c.safeToSpendMode, "saldo", "saldo mode");
-  assertEq(c.safeToSpend, 6000, "nå safe with buffer");
-  assertEq(c.safeToSpendRaw, 6000, "nå raw with buffer");
-  assertEq(c.safeToSpendIfBudgetUsed, 3000, "if-used with buffer");
+  assertEq(c.safeToSpend, 12000, "nå safe with buffer (no Fast re-sub)");
+  assertEq(c.safeToSpendRaw, 12000, "nå raw with buffer");
+  assertEq(c.safeToSpendIfBudgetUsed, 9000, "if-used with buffer");
   // etterLonn = 15000 + 50000 - 12000 = 53000
   assertEq(c.planInn, 50000, "planInn");
   assertEq(c.plannedTotal, 12000, "planUt");
@@ -955,18 +956,18 @@ console.log("\n15. Per-person safeToSpend (saldo + plan + felles % + equal buffe
     ]
   };
   const c = Calc.calcFamily(m, people, cats, { spendBuffer: 2000 });
-  // Auto-spend: Lån rem→0 (autoExtra 6000). remAll = Mat 2800 + MatP1 1500 = 4300
-  // nå = 30000 - 6000 - 2000 = 22000; if-used = 30000 - 4300 - 6000 - 2000 = 17700
+  // Auto still 6000 for cashflow; remAll = Mat 2800 + MatP1 1500 = 4300
+  // Saldo nå = 30000 - 2000 = 28000; if-used = 30000 - 4300 - 2000 = 23700 (no auto re-sub)
   assertEq(c.safeToSpendMode, "saldo", "household saldo");
   assertEq(c.remainingBudgetAll, 4300, "household remAll");
   assertEq(c.autoSpendExtra, 6000, "household autoSpendExtra");
-  assertEq(c.safeToSpend, 22000, "household nå safe");
-  assertEq(c.safeToSpendIfBudgetUsed, 17700, "household if-used");
+  assertEq(c.safeToSpend, 28000, "household nå safe (no Fast re-sub)");
+  assertEq(c.safeToSpendIfBudgetUsed, 23700, "household if-used");
 
   const m1 = c.byPerson.p1;
   const m2 = c.byPerson.p2;
   // p1 remAll without Lån: MatP1 1500 + Mat felles 3000*50% = 3000
-  // p1 autoExtra = Lån 6000*60% = 3600
+  // p1 autoExtra = Lån 6000*60% = 3600 (kept for plan/cashflow)
   assertEq(Math.round(m1.remainingBudgetAll * 100) / 100, 3000, "p1 remAll");
   assertEq(Math.round(m1.autoSpendExtra * 100) / 100, 3600, "p1 autoSpendExtra");
   // p2 remAll: Mat 1500; autoExtra 2400
@@ -975,13 +976,13 @@ console.log("\n15. Per-person safeToSpend (saldo + plan + felles % + equal buffe
   // buffer share = 1000 each
   assertEq(m1.spendBufferShare, 1000, "p1 buffer share");
   assertEq(m2.spendBufferShare, 1000, "p2 buffer share");
-  // p1 nå: 20000 - 3600 - 1000 = 15400; if-used: 20000 - 3000 - 3600 - 1000 = 12400
+  // p1 nå: 20000 - 1000 = 19000; if-used: 20000 - 3000 - 1000 = 16000
   assertEq(m1.safeToSpendMode, "saldo", "p1 saldo mode");
-  assertEq(Math.round(m1.safeToSpend * 100) / 100, 15400, "p1 nå safe");
-  assertEq(Math.round(m1.safeToSpendIfBudgetUsed * 100) / 100, 12400, "p1 if-used");
-  // p2 nå: 10000 - 2400 - 1000 = 6600; if-used: 10000 - 1500 - 2400 - 1000 = 5100
-  assertEq(Math.round(m2.safeToSpend * 100) / 100, 6600, "p2 nå safe");
-  assertEq(Math.round(m2.safeToSpendIfBudgetUsed * 100) / 100, 5100, "p2 if-used");
+  assertEq(Math.round(m1.safeToSpend * 100) / 100, 19000, "p1 nå safe");
+  assertEq(Math.round(m1.safeToSpendIfBudgetUsed * 100) / 100, 16000, "p1 if-used");
+  // p2 nå: 10000 - 1000 = 9000; if-used: 10000 - 1500 - 1000 = 7500
+  assertEq(Math.round(m2.safeToSpend * 100) / 100, 9000, "p2 nå safe");
+  assertEq(Math.round(m2.safeToSpendIfBudgetUsed * 100) / 100, 7500, "p2 if-used");
   // Spare never counted — huge spare does not change
   assert(m1.safeToSpend < 50000, "spare not in p1 safe");
 
@@ -2050,8 +2051,8 @@ console.log("\n28. På konto nå: forventet breakdown + Fast partial log");
 console.log("\n29. safeToSpendSaldoBreakdown dual (nå vs if-used)");
 {
   assert(typeof Calc.safeToSpendSaldoBreakdown === "function", "helper exported");
-  // Example: 71k bruk, rem var 12k, Fast auto 3k, future 7k
-  // nå = 71k - 3k - 7k = 61k; if-used = 71k - 12k - 3k - 7k = 49k
+  // Example: 71k bruk, rem var 12k, Fast auto 3k (NOT re-subtracted), future 7k
+  // nå = 71k - 7k = 64k; if-used = 71k - 12k - 7k = 52k
   const bd = Calc.safeToSpendSaldoBreakdown({
     bruk: 71000,
     remainingBudgetAll: 12000,
@@ -2061,22 +2062,23 @@ console.log("\n29. safeToSpendSaldoBreakdown dual (nå vs if-used)");
     spendBuffer: 0
   });
   assertEq(bd.bruk, 71000, "bruk 71000");
-  assertEq(bd.restBudget, 15000, "restBudget = rem + auto (legacy)");
+  assertEq(bd.restBudget, 12000, "restBudget = rem only (Fast in bank)");
+  assertEq(bd.autoSpendExtra, 3000, "auto kept for transparency");
   assertEq(bd.futureReserve, 7000, "futureReserve");
   assertEq(bd.spendBuffer, 0, "buffer 0");
-  assertEq(bd.safeToSpendNow, 61000, "nå 61000");
-  assertEq(bd.safeToSpend, 61000, "primary safe = nå");
-  assertEq(bd.raw, 61000, "raw = nå");
-  assertEq(bd.safeToSpendIfBudgetUsed, 49000, "if-used 49000");
+  assertEq(bd.safeToSpendNow, 64000, "nå 64000");
+  assertEq(bd.safeToSpend, 64000, "primary safe = nå");
+  assertEq(bd.raw, 64000, "raw = nå");
+  assertEq(bd.safeToSpendIfBudgetUsed, 52000, "if-used 52000");
   assertEq(
-    bd.bruk - bd.autoSpendExtra - bd.futureReserve - bd.spendBuffer,
+    bd.bruk - bd.futureReserve - bd.spendBuffer,
     bd.safeToSpendNowRaw,
-    "nå identity holds"
+    "nå identity holds (no auto)"
   );
   assertEq(
-    bd.bruk - bd.remainingBudgetAll - bd.autoSpendExtra - bd.futureReserve - bd.spendBuffer,
+    bd.bruk - bd.remainingBudgetAll - bd.futureReserve - bd.spendBuffer,
     bd.safeToSpendIfBudgetUsedRaw,
-    "if-used identity holds"
+    "if-used identity holds (no auto)"
   );
 
   // Buffer + clamp on nå (auto 0, future+buffer > bruk)
@@ -2118,14 +2120,14 @@ console.log("\n29. safeToSpendSaldoBreakdown dual (nå vs if-used)");
     monthKey: "2026-09",
     plannedSpends: planned
   }, 8);
-  // autoSpendExtra = 6000 (Hus), remAll = 10000 (Mat), future = 7000
-  // nå = 71000 - 6000 - 7000 = 58000; if-used = 71000 - 10000 - 6000 - 7000 = 48000
+  // autoSpendExtra = 6000 (Hus, for cashflow), remAll = 10000 (Mat), future = 7000
+  // nå = 71000 - 7000 = 64000; if-used = 71000 - 10000 - 7000 = 54000 (no Fast re-sub)
   assertEq(c.totalBruk, 71000, "samlet bruk 71000");
   assertEq(c.autoSpendExtra, 6000, "auto Fast 6000");
   assertEq(c.remainingBudgetAll, 10000, "rem var 10000");
   assertEq(c.futureReserve, 7000, "future 7000");
-  assertEq(c.safeToSpend, 58000, "calcFamily nå");
-  assertEq(c.safeToSpendIfBudgetUsed, 48000, "calcFamily if-used");
+  assertEq(c.safeToSpend, 64000, "calcFamily nå");
+  assertEq(c.safeToSpendIfBudgetUsed, 54000, "calcFamily if-used");
   const bdFam = Calc.safeToSpendSaldoBreakdown({
     bruk: c.totalBruk,
     remainingBudgetAll: c.remainingBudgetAll,
@@ -2156,12 +2158,12 @@ console.log("\n30. Dual Trygg — variable rem excluded from nå, included in if
     expenses: []
   };
   const c = Calc.calcFamily(m, people, cats, { spendBuffer: 1000 });
-  // auto=5000, remVar=8000, buffer=1000, future=0
+  // auto=5000 (cashflow only), remVar=8000, buffer=1000, future=0
   assertEq(c.autoSpendExtra, 5000, "auto 5000");
   assertEq(c.remainingVariableBudgets, 8000, "var rem 8000");
-  assertEq(c.safeToSpendNow, 24000, "nå = 30000-5000-1000");
-  assertEq(c.safeToSpend, 24000, "primary = nå");
-  assertEq(c.safeToSpendIfBudgetUsed, 16000, "if-used = 30000-8000-5000-1000");
+  assertEq(c.safeToSpendNow, 29000, "nå = 30000-1000 (no Fast re-sub)");
+  assertEq(c.safeToSpend, 29000, "primary = nå");
+  assertEq(c.safeToSpendIfBudgetUsed, 21000, "if-used = 30000-8000-1000");
   // Difference between nå and if-used equals remaining variable
   assertEq(
     c.safeToSpendNowRaw - c.safeToSpendIfBudgetUsedRaw,
@@ -2172,9 +2174,54 @@ console.log("\n30. Dual Trygg — variable rem excluded from nå, included in if
   const p1 = c.byPerson.p1;
   assertEq(Math.round(p1.autoSpendExtra * 100) / 100, 2500, "p1 auto half");
   assertEq(Math.round(p1.remainingVariableBudgets * 100) / 100, 4000, "p1 var half");
-  // p1 nå = 20000 - 2500 - 500 = 17000
-  assertEq(Math.round(p1.safeToSpend * 100) / 100, 17000, "p1 nå");
-  assertEq(Math.round(p1.safeToSpendIfBudgetUsed * 100) / 100, 13000, "p1 if-used");
+  // p1 nå = 20000 - 500 = 19500; if-used = 20000 - 4000 - 500 = 15500
+  assertEq(Math.round(p1.safeToSpend * 100) / 100, 19500, "p1 nå");
+  assertEq(Math.round(p1.safeToSpendIfBudgetUsed * 100) / 100, 15500, "p1 if-used");
+}
+
+// --- Explicit no double-count: bank after Fast vs saldo Trygg ---
+console.log("\n31. Saldo Trygg does not double-count Fast already in bank");
+{
+  const people = Calc.defaultPeople();
+  const cats = [
+    { id: "cRent", name: "Husleie", type: "fast", owner: "felles", archived: false, autoSpend: true },
+    { id: "cMat", name: "Mat", type: "variabel", owner: "felles", archived: false }
+  ];
+  // Scenario: fixed 12000 already left bank; Mathias enters På konto = 50000 after that.
+  // Logged Fast = 0 so autoSpendExtra = 12000 (still for category bars / forventet).
+  const m = {
+    balances: { p1: { bruk: 30000 }, p2: { bruk: 20000 } },
+    budgets: { cRent: { felles: 12000 }, cMat: { felles: 5000 } },
+    plannedIncome: { p1: { lønn: 25000 }, p2: { lønn: 20000 } },
+    incomes: [],
+    savings: [],
+    expenses: []
+  };
+  const c = Calc.calcFamily(m, people, cats, { spendBuffer: 0 });
+  assertEq(c.autoSpendExtra, 12000, "auto still 12000 for cashflow");
+  assertEq(c.remainingFastBudgets, 0, "Fast rem ~0 via effectiveActual");
+  assertEq(c.remainingBudgetAll, 5000, "only variable rem");
+  // Must NOT be 50000-12000=38000 (old double-count)
+  assertEq(c.safeToSpend, 50000, "nå = bruk only (Fast already in bank)");
+  assertEq(c.safeToSpendIfBudgetUsed, 45000, "if-used = bruk - var rem");
+  assertEq(
+    c.safeToSpendNowRaw,
+    c.totalBruk - c.futureReserve - c.spendBuffer,
+    "nå identity excludes auto"
+  );
+  assertEq(
+    c.safeToSpendIfBudgetUsedRaw,
+    c.totalBruk - c.remainingBudgetAll - c.futureReserve - c.spendBuffer,
+    "if-used identity excludes auto"
+  );
+  // Plan mode still accounts for Fast via autoSpendExtra
+  const cPlan = Calc.calcFamily(m, people, cats, { useSaldoInSafeToSpend: false });
+  assertEq(cPlan.safeToSpendMode, "plan", "plan mode");
+  assert(
+    cPlan.safeToSpend < c.safeToSpend,
+    "plan still subtracts Fast (lower than saldo)"
+  );
+  assertEq(cPlan.autoSpendExtra, 12000, "plan keeps auto");
 }
 
 
