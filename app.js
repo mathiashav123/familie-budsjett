@@ -496,6 +496,56 @@
     }
   }
 
+  function parkPaKontoCalc() {
+    const panel = $("#paKontoCalc");
+    const host = $("#paKontoCalcHost");
+    if (panel && host && panel.parentNode !== host) {
+      host.appendChild(panel);
+    }
+  }
+
+  function prevMonthBalances() {
+    const key = prevMonthKey(state.view.year, state.view.month);
+    const pm = state.months && state.months[key];
+    if (!pm || !pm.balances) return null;
+    return pm.balances;
+  }
+
+  function reconcileCurrent(m) {
+    return Calc.reconcilePaKonto(
+      m,
+      state.people,
+      state.categories,
+      state.view.month,
+      prevMonthBalances()
+    );
+  }
+
+  function formatVarianceText(meta) {
+    if (!meta) return "";
+    if (meta.kind === "ok") return "I tråd med forventet";
+    if (meta.kind === "more") {
+      return formatNOK(meta.abs) + " mer enn forventet";
+    }
+    return formatNOK(meta.abs) + " mindre enn forventet";
+  }
+
+  function formatUpdatedAt(iso) {
+    if (!iso) return "";
+    try {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return "";
+      return d.toLocaleString("nb-NO", {
+        day: "numeric",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    } catch (e) {
+      return "";
+    }
+  }
+
   function renderHeaderEyebrow() {
     const el = $("#headerEyebrow");
     if (!el) return;
@@ -1054,46 +1104,154 @@
     const grid = $("#kontoerGrid");
     if (!grid) return;
     ensureMonthShape(m);
+    parkPaKontoCalc();
     const focused = document.activeElement;
     const focusKey =
       focused && focused.getAttribute && focused.getAttribute("data-bal");
 
     const people = activePeopleList();
+    const rec = reconcileCurrent(m);
+
     grid.innerHTML = people
       .map(function (person) {
         const bal = (m.balances && m.balances[person.id]) || {};
+        const row = (rec.byPerson && rec.byPerson[person.id]) || {};
         const bc =
           (c.balanceByPerson && c.balanceByPerson[person.id]) || {
             bruk: null,
             spare: null,
             sum: 0
           };
+        const brukKey = person.id + "-bruk";
+        const spareKey = person.id + "-spare";
+        const varMeta = row.variance;
+        let diffHtml = "";
+        if (row.forventet == null && row.oppgitt == null) {
+          diffHtml =
+            '<p class="pa-konto-diff is-muted">Oppgi brukssaldo for å sammenligne</p>';
+        } else if (row.forventet == null) {
+          diffHtml =
+            '<div class="pa-konto-compare">' +
+            '<div class="pa-konto-compare-row"><span>Forventet</span><strong>—</strong></div>' +
+            '<div class="pa-konto-compare-row"><span>Oppgitt nå</span><strong>' +
+            formatNOK(row.oppgitt) +
+            "</strong></div>" +
+            '<p class="pa-konto-diff is-muted">Mangler forrige måneds bruk for forventet</p>' +
+            "</div>";
+        } else {
+          const diffClass =
+            !varMeta || varMeta.kind === "ok"
+              ? "is-ok"
+              : varMeta.kind === "more"
+                ? "is-more"
+                : "is-less";
+          diffHtml =
+            '<div class="pa-konto-compare">' +
+            '<div class="pa-konto-compare-row"><span>Forventet</span><strong>' +
+            formatNOK(row.forventet) +
+            "</strong></div>" +
+            '<div class="pa-konto-compare-row"><span>Oppgitt nå</span><strong>' +
+            (row.oppgitt != null ? formatNOK(row.oppgitt) : "—") +
+            "</strong></div>" +
+            '<p class="pa-konto-diff ' +
+            diffClass +
+            '">' +
+            (row.oppgitt != null
+              ? formatVarianceText(varMeta)
+              : "Oppgi saldo for differanse") +
+            "</p></div>";
+        }
+        const etterLine =
+          row.etterLonn != null
+            ? '<p class="pa-konto-etter">Etter lønn (plan): <strong>' +
+              formatNOK(row.etterLonn) +
+              "</strong></p>"
+            : "";
         return (
-          '<div class="kontoer-person" data-bal-person="' +
+          '<div class="kontoer-person pa-konto-person" data-bal-person="' +
           escapeAttr(person.id) +
           '"><h3>' +
           escapeHtml(person.name) +
           "</h3>" +
-          '<div class="kontoer-fields">' +
-          '<label class="field"><span>Bruk</span><div class="input-affix">' +
-          '<input type="text" inputmode="decimal" data-bal="' +
-          escapeAttr(person.id) +
-          '-bruk" placeholder="0" autocomplete="off" value="' +
+          '<label class="field pa-konto-bruk-field"><div class="field-label-row"><span>Bruk <em class="opt">(på konto nå)</em></span>' +
+          '<button type="button" class="btn ghost xs calc-toggle" data-calc-panel="paKontoCalc" data-calc-for="' +
+          escapeAttr(brukKey) +
+          '" aria-expanded="false" aria-controls="paKontoCalc">Kalkulator</button></div>' +
+          '<div class="input-affix pa-konto-bruk-input">' +
+          '<input type="text" inputmode="decimal" class="pa-konto-bruk amount-expr" data-bal="' +
+          escapeAttr(brukKey) +
+          '" data-calc-input-key="' +
+          escapeAttr(brukKey) +
+          '" placeholder="0" autocomplete="off" value="' +
           escapeAttr(formatPlanInput(bal.bruk)) +
           '" /><span>kr</span></div></label>' +
-          '<label class="field"><span>Spare</span><div class="input-affix spare">' +
+          diffHtml +
+          etterLine +
+          '<details class="pa-konto-spare"><summary>Spare <em class="opt">(valgfritt)</em></summary>' +
+          '<label class="field"><div class="field-label-row"><span>Spare</span>' +
+          '<button type="button" class="btn ghost xs calc-toggle" data-calc-panel="paKontoCalc" data-calc-for="' +
+          escapeAttr(spareKey) +
+          '" aria-expanded="false" aria-controls="paKontoCalc">Kalkulator</button></div>' +
+          '<div class="input-affix spare">' +
           '<input type="text" inputmode="decimal" data-bal="' +
-          escapeAttr(person.id) +
-          '-spare" placeholder="0" autocomplete="off" value="' +
+          escapeAttr(spareKey) +
+          '" data-calc-input-key="' +
+          escapeAttr(spareKey) +
+          '" placeholder="0" autocomplete="off" value="' +
           escapeAttr(formatPlanInput(bal.spare)) +
-          '" /><span>kr</span></div></label>' +
-          "</div>" +
+          '" /><span>kr</span></div></label></details>' +
           '<div class="kontoer-person-sum"><span>Sum</span><strong>' +
           formatNOK(bc.sum) +
           "</strong></div></div>"
         );
       })
       .join("");
+
+    // Samlet husstand variance
+    const samlet = $("#paKontoSamlet");
+    if (samlet) {
+      if (people.length > 1 && (rec.hasOppgitt || rec.hasForventet)) {
+        samlet.hidden = false;
+        const v = rec.totalVariance;
+        const diffClass =
+          !v || v.kind === "ok" ? "is-ok" : v.kind === "more" ? "is-more" : "is-less";
+        const diffTxt =
+          rec.hasDifferanse && rec.hasOppgitt
+            ? formatVarianceText(v)
+            : rec.hasForventet
+              ? "Oppgi saldo for samlet differanse"
+              : "";
+        samlet.innerHTML =
+          "<h3>Samlet</h3>" +
+          '<div class="pa-konto-compare">' +
+          '<div class="pa-konto-compare-row"><span>Forventet</span><strong>' +
+          (rec.totalForventet != null ? formatNOK(rec.totalForventet) : "—") +
+          "</strong></div>" +
+          '<div class="pa-konto-compare-row"><span>Oppgitt nå</span><strong>' +
+          (rec.totalOppgitt != null ? formatNOK(rec.totalOppgitt) : "—") +
+          "</strong></div>" +
+          (diffTxt
+            ? '<p class="pa-konto-diff ' + diffClass + '">' + diffTxt + "</p>"
+            : "") +
+          "</div>";
+      } else {
+        samlet.hidden = true;
+        samlet.innerHTML = "";
+      }
+    }
+
+    const updatedEl = $("#paKontoUpdated");
+    if (updatedEl) {
+      const stamp = m.balancesUpdatedAt;
+      const label = formatUpdatedAt(stamp);
+      if (label) {
+        updatedEl.hidden = false;
+        updatedEl.textContent = "Sist oppdatert " + label;
+      } else {
+        updatedEl.hidden = true;
+        updatedEl.textContent = "";
+      }
+    }
 
     const tb = $("#totalBruk");
     const ts = $("#totalSpare");
@@ -5185,6 +5343,7 @@
       ensureMonthShape(m);
       if (!m.balances[personId]) m.balances[personId] = { bruk: null, spare: null };
       m.balances[personId][field] = parseAmount(el.value);
+      m.balancesUpdatedAt = new Date().toISOString();
       save();
       render();
     }
@@ -5298,8 +5457,13 @@
       expCalc: "expAmount",
       incCalc: "incAmount",
       savCalc: "savAmount",
-      planIncCalc: null // dynamic via data-calc-for / panel.dataset.calcFor
+      planIncCalc: null, // dynamic via data-calc-for / panel.dataset.calcFor
+      paKontoCalc: null
     };
+
+    function isDynamicCalcPanel(panelId) {
+      return panelId === "planIncCalc" || panelId === "paKontoCalc";
+    }
 
     function getCalcDisplay(panel) {
       return panel ? panel.querySelector("[data-calc-display]") : null;
@@ -5328,11 +5492,15 @@
       for (let i = 0; i < nodes.length; i++) {
         if (nodes[i].getAttribute("data-plan-inc") === key) return nodes[i];
       }
+      const balNodes = document.querySelectorAll("input[data-bal]");
+      for (let i = 0; i < balNodes.length; i++) {
+        if (balNodes[i].getAttribute("data-bal") === key) return balNodes[i];
+      }
       return null;
     }
 
     function resolveCalcTargetInput(panelId) {
-      if (panelId === "planIncCalc") {
+      if (isDynamicCalcPanel(panelId)) {
         const panel = document.getElementById(panelId);
         return findPlanIncInput(panel && panel.dataset.calcFor);
       }
@@ -5358,6 +5526,10 @@
           delete panel.dataset.calcFor;
           parkPlanIncCalc();
         }
+        if (panelId === "paKontoCalc") {
+          delete panel.dataset.calcFor;
+          parkPaKontoCalc();
+        }
       }
       $$('.calc-toggle[data-calc-panel="' + (panelId || "") + '"]').forEach(function (b) {
         b.setAttribute("aria-expanded", "false");
@@ -5370,7 +5542,7 @@
       Object.keys(CALC_TARGET).forEach(function (id) {
         if (id !== panelId) closeCalcPanel(id);
       });
-      if (panelId === "planIncCalc") {
+      if (isDynamicCalcPanel(panelId)) {
         if (!calcFor) return;
         panel.dataset.calcFor = calcFor;
         const esc = calcFor.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
@@ -5378,12 +5550,18 @@
         if (!inpPlace) {
           inpPlace = document.querySelector('[data-plan-inc="' + esc + '"]');
         }
+        if (!inpPlace) {
+          inpPlace = document.querySelector('input[data-bal="' + esc + '"]');
+        }
         const field =
           (inpPlace && inpPlace.closest(".cat-line-amt-wrap")) ||
           (inpPlace && inpPlace.closest(".field")) ||
-          (inpPlace && inpPlace.closest(".cat-line-row"));
+          (inpPlace && inpPlace.closest(".cat-line-row")) ||
+          (inpPlace && inpPlace.closest(".pa-konto-person"));
         if (field && field.parentNode) {
           field.parentNode.insertBefore(panel, field.nextSibling);
+        } else if (panelId === "paKontoCalc") {
+          parkPaKontoCalc();
         } else {
           parkPlanIncCalc();
         }
@@ -5392,14 +5570,14 @@
       const inp = resolveCalcTargetInput(panelId);
       const seed = inp && inp.value ? String(inp.value).trim() : "";
       setCalcExpr(panel, seed);
-      if (panelId === "planIncCalc") syncCalcToggleState(panelId, calcFor);
+      if (isDynamicCalcPanel(panelId)) syncCalcToggleState(panelId, calcFor);
       else syncCalcToggleState(panelId, null);
     }
 
     function toggleCalcPanel(panelId, calcFor) {
       const panel = document.getElementById(panelId);
       if (!panel) return;
-      if (panelId === "planIncCalc") {
+      if (isDynamicCalcPanel(panelId)) {
         if (!panel.hidden && panel.dataset.calcFor === calcFor) {
           closeCalcPanel(panelId);
           return;
@@ -5453,7 +5631,7 @@
       if (inp) {
         inp.value = formatAmountInput(n);
         $$(".amount-chip").forEach(function (c) { c.classList.remove("is-active"); });
-        if (panelId === "planIncCalc") {
+        if (isDynamicCalcPanel(panelId)) {
           closeCalcPanel(panelId);
           try {
             inp.dispatchEvent(new Event("change", { bubbles: true }));

@@ -1500,6 +1500,81 @@ console.log("\n25. Fast auto-spend max-rule + opt-out + yearly once + plannedSpe
 }
 
 
+
+// --- På konto nå reconciliation ---
+console.log("\n25. På konto nå: expected vs oppgitt variance");
+{
+  const people = Calc.defaultPeople();
+  const cats = [
+    { id: "cMat", name: "Mat", type: "variabel", owner: "felles", archived: false }
+  ];
+  // prev ending: p1 10000, p2 8000
+  // this month: p1 inn 2000, ut own 500, felles 1000 → share 500 → tilOvers = 2000-0-1000 = 1000
+  // p2: inn 0, ut felles share 500 → tilOvers = -500
+  const m = {
+    balances: {
+      p1: { bruk: 11500, spare: null },
+      p2: { bruk: 7000, spare: 1000 }
+    },
+    budgets: { cMat: 0 },
+    plannedIncome: {
+      p1: { lønn: 30000, ekstra: null },
+      p2: { lønn: 20000, ekstra: null }
+    },
+    incomes: [
+      { id: "i1", person: "p1", type: "lønn", amount: 2000 }
+    ],
+    savings: [],
+    expenses: [
+      { id: "e1", owner: "p1", categoryId: "cMat", amount: 500 },
+      { id: "e2", owner: "felles", categoryId: "cMat", amount: 1000 }
+    ]
+  };
+  const prevBalances = {
+    p1: { bruk: 10000, spare: null },
+    p2: { bruk: 8000, spare: null }
+  };
+
+  assertEq(Calc.parseBalanceAmount(""), null, "parse empty");
+  assertEq(Calc.parseBalanceAmount("1200"), 1200, "parse number");
+  assertEq(Calc.balanceVariance(11500, 11000), 500, "variance +");
+  assertEq(Calc.balanceVariance(null, 100), null, "variance null");
+  assertEq(Calc.expectedBrukFromPrev(10000, 1000), 11000, "expected from prev");
+  assertEq(Calc.etterLonnFromBruk(10000, 50000, 12000), 48000, "etterLonn helper");
+
+  const ok = Calc.varianceMeta(0.2);
+  assertEq(ok.kind, "ok", "near-zero is ok");
+  const more = Calc.varianceMeta(500);
+  assertEq(more.kind, "more", "more kind");
+  assertEq(more.abs, 500, "more abs");
+  const less = Calc.varianceMeta(-300);
+  assertEq(less.kind, "less", "less kind");
+  assertEq(less.abs, 300, "less abs");
+
+  // p1 tilOvers: 2000 - 0 - (500+500) = 1000 → forventet 11000; oppgitt 11500 → +500
+  // p2 tilOvers: 0 - 0 - 500 = -500 → forventet 7500; oppgitt 7000 → -500
+  const rec = Calc.reconcilePaKonto(m, people, cats, 8, prevBalances);
+  assertEq(rec.byPerson.p1.forventet, 11000, "p1 forventet");
+  assertEq(rec.byPerson.p1.oppgitt, 11500, "p1 oppgitt");
+  assertEq(rec.byPerson.p1.differanse, 500, "p1 diff");
+  assertEq(rec.byPerson.p1.variance.kind, "more", "p1 more");
+  assertEq(rec.byPerson.p2.forventet, 7500, "p2 forventet");
+  assertEq(rec.byPerson.p2.differanse, -500, "p2 diff");
+  assertEq(rec.byPerson.p2.variance.kind, "less", "p2 less");
+  assertEq(rec.totalOppgitt, 18500, "samlet oppgitt");
+  assertEq(rec.totalForventet, 18500, "samlet forventet");
+  assertEq(rec.totalDifferanse, 0, "samlet diff nets to 0");
+  assertEq(rec.totalVariance.kind, "ok", "samlet ok");
+  // etterLonn p1 = 11500 + 30000 - planUt(felles mat 0) = 41500
+  assertEq(rec.byPerson.p1.etterLonn, 41500, "p1 etterLonn");
+
+  const noPrev = Calc.reconcilePaKonto(m, people, cats, 8, null);
+  assert(noPrev.byPerson.p1.forventet == null, "no prev → no forventet");
+  assert(noPrev.byPerson.p1.differanse == null, "no prev → no diff");
+  assertEq(noPrev.byPerson.p1.oppgitt, 11500, "oppgitt still set");
+}
+
+
 console.log("\n=== Results:", passed, "passed,", failed, "failed ===\n");
 if (failed) {
   console.error("FAILURES:");

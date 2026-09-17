@@ -187,6 +187,73 @@
       </section>
 
       
+      <section class="card compact-card pa-konto-card" id="paKontoCard" aria-labelledby="kontoerTitle">
+        <div class="card-head">
+          <h2 id="kontoerTitle">På konto nå</h2>
+        </div>
+        <p class="hint compact pa-konto-lead">Skriv inn det du ser i banken. Oppdater når du sjekker — ingen bankinnlogging.</p>
+        <div id="kontoerGrid" class="kontoer-grid pa-konto-grid"></div>
+        <div class="pa-konto-samlet" id="paKontoSamlet" aria-label="Samlet husstand" hidden></div>
+        <div class="kontoer-totals" id="kontoerTotals" aria-label="Totalt husstand">
+          <div class="kontoer-total-row">
+            <span>Totalt bruk</span>
+            <strong id="totalBruk">—</strong>
+          </div>
+          <div class="kontoer-total-row">
+            <span>Totalt spare</span>
+            <strong id="totalSpare">—</strong>
+          </div>
+          <div class="kontoer-total-row is-grand">
+            <span>Totalt alt</span>
+            <strong id="totalAlt">—</strong>
+          </div>
+        </div>
+        <div class="saldo-hero" id="saldoHeroCard" aria-label="Saldo og etter lønn">
+          <div class="saldo-hero-row">
+            <span class="saldo-hero-label">Nå på bruk</span>
+            <strong class="saldo-hero-value" id="saldoNowBruk">—</strong>
+          </div>
+          <div class="saldo-hero-row is-emphasis">
+            <span class="saldo-hero-label">Etter lønn <em class="opt">(plan)</em></span>
+            <strong class="saldo-hero-value" id="saldoEtterLonn">—</strong>
+          </div>
+          <p class="hint compact saldo-hero-hint">Etter lønn = bruk + forventet inn − forventet ut. Spare er utenfor trygg-å-bruke.</p>
+        </div>
+        <div class="stat big blue" id="statForventetWrap" hidden>
+          <span class="label">Forventet på konto etter</span>
+          <span class="value" id="statForventet">—</span>
+        </div>
+        <p class="meta-line" id="paKontoUpdated" hidden></p>
+        <p class="hint compact" id="kontoerHint">Forventet = forrige måneds bruk + inn − ut − sparing denne måneden. Differanse viser avvik mot det du oppgir. Spare er utenfor «Trygg å bruke».</p>
+        <div id="paKontoCalcHost" class="plan-inc-calc-host">
+          <div class="amount-calc" id="paKontoCalc" hidden>
+            <div class="amount-calc-display" data-calc-display aria-live="polite">0</div>
+            <div class="amount-calc-pad" role="group" aria-label="Kalkulator for saldo">
+              <button type="button" class="calc-key" data-calc-key="7">7</button>
+              <button type="button" class="calc-key" data-calc-key="8">8</button>
+              <button type="button" class="calc-key" data-calc-key="9">9</button>
+              <button type="button" class="calc-key calc-op" data-calc-key="÷">÷</button>
+              <button type="button" class="calc-key" data-calc-key="4">4</button>
+              <button type="button" class="calc-key" data-calc-key="5">5</button>
+              <button type="button" class="calc-key" data-calc-key="6">6</button>
+              <button type="button" class="calc-key calc-op" data-calc-key="×">×</button>
+              <button type="button" class="calc-key" data-calc-key="1">1</button>
+              <button type="button" class="calc-key" data-calc-key="2">2</button>
+              <button type="button" class="calc-key" data-calc-key="3">3</button>
+              <button type="button" class="calc-key calc-op" data-calc-key="−">−</button>
+              <button type="button" class="calc-key" data-calc-key="0">0</button>
+              <button type="button" class="calc-key" data-calc-key=",">,</button>
+              <button type="button" class="calc-key" data-calc-key="⌫" aria-label="Slett">⌫</button>
+              <button type="button" class="calc-key calc-op" data-calc-key="+">+</button>
+              <button type="button" class="calc-key calc-eq" data-calc-key="=">=</button>
+              <button type="button" class="calc-key calc-c" data-calc-key="C">C</button>
+              <button type="button" class="btn primary calc-use" data-calc-use>Bruk</button>
+            </div>
+            <p class="hint compact amount-calc-hint">Eller skriv direkte i feltet, f.eks. 12000+500</p>
+          </div>
+        </div>
+      </section>
+
       <section class="card compact-card" id="plannedSpendsCard" aria-labelledby="plannedSpendsTitle">
         <div class="card-head">
           <h2 id="plannedSpendsTitle">Planlagte utlegg</h2>
@@ -255,42 +322,6 @@
         <p class="meta-line" id="vsPrevMonth" hidden></p>
       </section>
 
-      <section class="card compact-card" aria-labelledby="kontoerTitle">
-        <div class="card-head">
-          <h2 id="kontoerTitle">Kontoer</h2>
-        </div>
-        <div id="kontoerGrid" class="kontoer-grid"></div>
-        <div class="kontoer-totals" id="kontoerTotals" aria-label="Totalt husstand">
-          <div class="kontoer-total-row">
-            <span>Totalt bruk</span>
-            <strong id="totalBruk">—</strong>
-          </div>
-          <div class="kontoer-total-row">
-            <span>Totalt spare</span>
-            <strong id="totalSpare">—</strong>
-          </div>
-          <div class="kontoer-total-row is-grand">
-            <span>Totalt alt</span>
-            <strong id="totalAlt">—</strong>
-          </div>
-        </div>
-        <div class="saldo-hero" id="saldoHeroCard" aria-label="Saldo og etter lønn">
-          <div class="saldo-hero-row">
-            <span class="saldo-hero-label">Nå på bruk</span>
-            <strong class="saldo-hero-value" id="saldoNowBruk">—</strong>
-          </div>
-          <div class="saldo-hero-row is-emphasis">
-            <span class="saldo-hero-label">Etter lønn <em class="opt">(plan)</em></span>
-            <strong class="saldo-hero-value" id="saldoEtterLonn">—</strong>
-          </div>
-          <p class="hint compact saldo-hero-hint">Etter lønn = bruk + forventet inn − forventet ut. Spare er utenfor trygg-å-bruke.</p>
-        </div>
-        <div class="stat big blue" id="statForventetWrap" hidden>
-          <span class="label">Forventet på konto etter</span>
-          <span class="value" id="statForventet">—</span>
-        </div>
-        <p class="hint compact" id="kontoerHint">Bruk = før lønn (eller oppdatert saldo). Sparekonto er utenfor «Trygg å bruke».</p>
-      </section>
 
       <div class="person-grid" id="personGrid"></div>
 
