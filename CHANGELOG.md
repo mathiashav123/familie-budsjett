@@ -1,5 +1,23 @@
 # Endringslogg – Familiebudsjett
 
+## 2026-09-17 — Trygg-rull: Mathias-regelen i klartekst + Fremover-anker
+
+### Hva
+- Bekreftet at personlig projeksjon allerede gjør `pot += planInn − Fast − variabelt − planlagt` (person-skop etter 583e027).
+- Oversikt for tomme fremtidige måneder viser fortsatt rullende pot (ikke fryst seed 71223).
+- Fremover ankrer nå fra siste bekreftede på konto (f.eks. Sep 231223), så Oct-seed ikke hopper over månedsnetto.
+- UI-setning: «Neste mnd = på konto + (lønn − utgifter)».
+
+### Tall (live export, Mathias)
+- Sep bank: 231223
+- Oct pot: 85905,2 (delta −145317,8 inkl. bil 160k)
+- Nov pot: 105229,4 (delta +19324,2)
+
+### Tester / deploy
+- `node test-calc.mjs` — 807 passed, 0 failed
+- `pack-mobil.mjs` + synk host/pages; Pages `main`.
+
+
 ## 2026-09-17 – Fix: personlig Fremover/Oversikt (lønn minus *mine* utgifter)
 
 ### Rotårsak

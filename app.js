@@ -2171,15 +2171,24 @@
     }
     const formulaHint = $("#forwardFormulaHint");
     if (formulaHint) {
-      formulaHint.innerHTML = isPerson
-        ? "Formel (person): start fra din pot/bruk; hver måned <code>pot += din planInn − din Fast − din variabelt − dine planlagte utlegg</code> (lønn minus <em>mine</em> utgifter + felles-andel). Samlet-visning bruker begge lønninger. Bekreftet På konto beholder bank-Trygg."
-        : "Formel: start fra effektiv pot/Trygg (etter planlagte utlegg som bil én gang); hver fremtidig måned <code>pot += planInn − planUtFixed − planUtVariable − openPlannedThatMonth</code> (lønn minus alle utgifter). Person-fane: kun den personens lønn og utgiftsandel. Bekreftet På konto beholder bank-Trygg (Fast allerede i saldo). Tomme måneder gjenbruker siste kjente budsjett.";
+      // Plain Mathias rule (detail in Fremover deltas / code)
+      formulaHint.textContent = isPerson
+        ? "Neste mnd = på konto + (din lønn − dine utgifter). Bil o.l. er engangsutlegg i den måneden."
+        : "Neste mnd = på konto + (lønn − utgifter). Bil o.l. er engangsutlegg i den måneden.";
     }
 
-    // Projection start = effective bruk/pot (post-bank). Prefer totalBruk
-    // (includes calc-time fallback / seed), not Trygg-after-future-reserve.
+    const key = monthKey(state.view.year, state.view.month);
+    const scopePersonId = isPerson ? view : null;
+
+    // Roll from last confirmed på konto (e.g. Sep 231223), not frozen suggested
+    // seed (Oct/Nov both 71223). Same anchor as Oversikt projection.
+    let fromKey = key;
     let startPot = null;
-    if (isPerson && c && c.balanceByPerson && c.balanceByPerson[view]) {
+    const anchor = findFollowBudgetAnchor(key, scopePersonId);
+    if (anchor && anchor.anchorKey != null && Number.isFinite(anchor.startPot)) {
+      fromKey = anchor.anchorKey;
+      startPot = anchor.startPot;
+    } else if (isPerson && c && c.balanceByPerson && c.balanceByPerson[view]) {
       const b = c.balanceByPerson[view].bruk;
       if (b != null && Number.isFinite(Number(b))) startPot = Number(b);
     } else if (c && typeof c.totalBruk === "number" && c.hasBrukBalances) {
@@ -2187,11 +2196,10 @@
     }
     if (startPot == null && harNa != null) startPot = harNa;
 
-    const key = monthKey(state.view.year, state.view.month);
     // Ensure near-term months have expected budgets; multi-year roll
     // reuses last known expected virtually (no 144-month persist).
     if (typeof Calc.shiftMonthKey === "function") {
-      let k = key;
+      let k = fromKey;
       for (let i = 0; i < 12; i++) {
         k = Calc.shiftMonthKey(k, 1);
         if (!k) break;
@@ -2210,7 +2218,14 @@
         : "Hvis du følger budsjettet";
     }
 
-    const HORIZON = 156; // 13y so Dec/Nov of year+12 always in range
+    let HORIZON = 156; // 13y so Dec/Nov of year+12 always in range
+    if (
+      fromKey !== key &&
+      typeof Calc.monthsBetweenKeys === "function"
+    ) {
+      const dist = Calc.monthsBetweenKeys(fromKey, key);
+      if (dist != null && dist > 0) HORIZON = Math.min(240, 156 + dist);
+    }
     let projection = null;
     if (
       typeof Calc.projectPotFollowBudget === "function" &&
@@ -2219,16 +2234,38 @@
     ) {
       projection = Calc.projectPotFollowBudget({
         months: state.months,
-        fromKey: key,
+        fromKey: fromKey,
         people: state.people,
         categories: state.categories,
         plannedSpends: state.plannedSpends || [],
         startPot: startPot,
         horizon: HORIZON,
-        personId: isPerson ? view : null
+        personId: scopePersonId
       });
     }
+    // Suggested empty months: show projected pot as «har nå» (not flat seed).
+    if (
+      projection &&
+      projection.potByKey &&
+      Number.isFinite(projection.potByKey[key])
+    ) {
+      const viewM = state.months[key];
+      const anySuggested =
+        viewM &&
+        !viewM.balancesUpdatedAt &&
+        (viewM.balancesSuggested ||
+          (viewM.balances &&
+            Object.keys(viewM.balances).some(function (pid) {
+              return viewM.balances[pid] && viewM.balances[pid].suggested;
+            })));
+      if (anySuggested) {
+        harNa = projection.potByKey[key];
+        forwardSetValue(harEl, harNa);
+      }
+    }
     state._forwardProjection = projection;
+    state._forwardViewKey = key;
+    state._forwardAnchorKey = fromKey;
 
     const showN = 6; // cards: next 6 months
     const clearMilestones = function () {
@@ -2249,8 +2286,16 @@
 
     // Show cumulative pot + monthly delta (planInn − Fast − variabelt − planlagt)
     // so a flat surplus/deficit is explained, not mistaken for a stuck duplicate.
+    // When anchored before the viewed month, skip months ≤ view.
     // Year markers when year flips.
-    const near = projection.months.slice(0, showN);
+    const viewKeyFwd = state._forwardViewKey || key;
+    const forwardRows = projection.months.filter(function (row) {
+      return row && row.monthKey && row.monthKey > viewKeyFwd;
+    });
+    const near = (forwardRows.length ? forwardRows : projection.months).slice(
+      0,
+      showN
+    );
     let prevYear = null;
     monthsEl.innerHTML = near
       .map(function (row, idx) {
@@ -2413,26 +2458,20 @@
    * months so Oct ≠ Nov ≠ Dec ≠ Nov 2038 when plan net (inn − Fast − var − planlagt) rolls.
    * Never overrides a month with confirmed På konto (bank already includes Fast).
    */
-  function projectedPotForViewKey(viewKey) {
-    if (!viewKey || typeof Calc.projectPotFollowBudget !== "function") return null;
-    if (typeof Calc.shiftMonthKey !== "function") return null;
-    const innUtView = (state.settings && state.settings.innUtView) || "samlet";
-    const scopePersonId =
-      innUtView && innUtView !== "samlet" && innUtView !== "felles"
-        ? innUtView
-        : null;
-    // Anchor: prefer nearest CONFIRMED bank month; else nearest suggested/carry.
-    // Personal Oversikt/Trygg uses that person's bruk only — never household sum.
+  /**
+   * Nearest confirmed (else suggested) bruk anchor at or before fromKey.
+   * Person scope: that person's bruk only — never household sum.
+   * Mathias rule: Neste mnd = på konto + (lønn − utgifter), from last confirmed
+   * på konto / effective bruk (e.g. Sep 231223) — not a frozen seed copy.
+   */
+  function findFollowBudgetAnchor(fromKey, scopePersonId) {
+    if (!fromKey || typeof Calc.shiftMonthKey !== "function") return null;
     let anchorKey = null;
     let startPot = null;
     let fallbackKey = null;
     let fallbackPot = null;
-    let k = viewKey;
-    for (let i = 0; i < 240; i++) {
-      k = Calc.shiftMonthKey(k, -1);
-      if (!k) break;
-      const mm = state.months[k];
-      if (!mm) continue;
+
+    function brukTotal(mm) {
       let total = 0;
       let any = false;
       activePeopleList().forEach(function (p) {
@@ -2448,15 +2487,31 @@
           any = true;
         }
       });
-      if (!any) continue;
+      return any ? total : null;
+    }
+
+    const viewM = state.months[fromKey];
+    if (viewM && viewM.balancesUpdatedAt) {
+      const t = brukTotal(viewM);
+      if (t != null) return { anchorKey: fromKey, startPot: t };
+    }
+
+    let k = fromKey;
+    for (let i = 0; i < 240; i++) {
+      k = Calc.shiftMonthKey(k, -1);
+      if (!k) break;
+      const mm = state.months[k];
+      if (!mm) continue;
+      const t = brukTotal(mm);
+      if (t == null) continue;
       if (mm.balancesUpdatedAt) {
         anchorKey = k;
-        startPot = total;
+        startPot = t;
         break;
       }
       if (!fallbackKey) {
         fallbackKey = k;
-        fallbackPot = total;
+        fallbackPot = t;
       }
     }
     if (!anchorKey && fallbackKey) {
@@ -2464,6 +2519,24 @@
       startPot = fallbackPot;
     }
     if (!anchorKey || startPot == null) return null;
+    return { anchorKey: anchorKey, startPot: startPot };
+  }
+
+  function projectedPotForViewKey(viewKey) {
+    if (!viewKey || typeof Calc.projectPotFollowBudget !== "function") return null;
+    if (typeof Calc.shiftMonthKey !== "function") return null;
+    const innUtView = (state.settings && state.settings.innUtView) || "samlet";
+    const scopePersonId =
+      innUtView && innUtView !== "samlet" && innUtView !== "felles"
+        ? innUtView
+        : null;
+    // Anchor: prefer nearest CONFIRMED bank month; else nearest suggested/carry.
+    // Personal Oversikt/Trygg uses that person's bruk only — never household sum.
+    const anchor = findFollowBudgetAnchor(viewKey, scopePersonId);
+    if (!anchor || !anchor.anchorKey || anchor.startPot == null) return null;
+    if (anchor.anchorKey === viewKey) return null;
+    const anchorKey = anchor.anchorKey;
+    const startPot = anchor.startPot;
     const dist =
       typeof Calc.monthsBetweenKeys === "function"
         ? Calc.monthsBetweenKeys(anchorKey, viewKey)
@@ -2797,15 +2870,11 @@
       } else if (mode === "projection" && projectionOverride) {
         hintEl.classList.remove("is-saldo-short");
         hintEl.textContent =
-          "Projeksjon hvis budsjettet følges (fra " +
+          "Neste mnd = på konto + (lønn − utgifter)" +
+          (isPerson && whoName ? " · " + whoName : "") +
+          ". Fra " +
           projectionOverride.anchorKey +
-          "). " +
-          (isPerson && whoName
-            ? "Personlig: " +
-              whoName +
-              "s lønn minus egne utgifter (+ felles-andel). "
-            : "Samlet husholdning: begge lønninger minus alle utgifter. ") +
-          "Bekreftet På konto beholder bank-Trygg. Se Fremover for detaljer.";
+          ". Se Fremover for detaljer.";
       } else if (needsSaldo) {
         hintEl.classList.remove("is-saldo-short");
         hintEl.textContent =
