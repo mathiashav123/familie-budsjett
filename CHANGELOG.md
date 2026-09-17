@@ -1,5 +1,32 @@
 # Endringslogg – Familiebudsjett
 
+## 2026-09-17 – Fix: Fremover/Oversikt trekker Fast i pot-projeksjon
+
+### Rotårsak
+`projectPotFollowBudget` gjorde `pot += planInn − planUtVariable − planned` og **hoppet over Fast**. Med ~76k planInn og ~12.6k variabelt ble månedsdelta **+63 542** → Nov 2038 ≈ **9,34 M** — fantasi for ~40k-lønnshusholdning.
+
+### Fix
+1. **Formel:** `pot += planInn − planUtFixed − planUtVariable − plannedThatMonth` (lønn minus *alle* planlagte utgifter).
+2. Ny helper `plannedFixedBudgetTotal`; rader eksponerer `planUtFixed` + `delta`.
+3. **Oversikt:** bekreftet På konto beholder bank-Trygg (Fast allerede i saldo — ikke dobbelt). Tomme fremtidige måneder bruker realistisk rull.
+4. UI-hint/Fremover-formel + tester §37–§40 oppdatert.
+
+### Tall (live export, start Sep bruk 231 223)
+
+| | Gammel delta | Ny delta |
+| --- | ---: | ---: |
+| Steady (etter bil) | +63 542 | **+32 219** |
+
+| Måned | Gammel pot | Ny pot |
+| --- | ---: | ---: |
+| 2026-09 (bank/Trygg) | 71 223 | 71 223 (uendret) |
+| 2026-10 | 130 123 | **98 800** |
+| 2026-11 | 193 665 | **131 019** |
+| 2038-11 | 9 343 713 | **4 750 647** |
+
+### Deploy
+- `pack-mobil.mjs` + synk host/pages; Pages `main`.
+
 ## 2026-09-17 – Fix: nære tomme måneder ruller projisert pot (Oct ≠ Nov ≠ Dec)
 
 ### Rotårsak
