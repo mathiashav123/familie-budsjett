@@ -1150,9 +1150,7 @@
         // Heal incomplete carry (missing Sep plan cats) from prior template
         // before adopting — else a thin Dec poisons 10y Fremover.
         if (template) {
-          var wasStaleProj = isStaleIncompleteExpected(m, template);
           fillMissingExpectedFrom(template, m, people, miEarly);
-          if (wasStaleProj) realignPlannedIncomeFrom(template, m, people);
         }
         template = m;
       } else if (template) {
@@ -3071,10 +3069,12 @@
 
   /**
    * True when target looks like a stale incomplete carry of source:
-   * - no expenses logged
+   * - no expenses/incomes logged
    * - every set budget value in target equals source
-   * - source has at least one budget or plannedIncome field target lacks / differs
-   * Customized amounts (e.g. Mat 999 vs source 5000) → false.
+   * - source has at least one budget slot target lacks
+   * Customized budget amounts → false.
+   * Planned-income differences alone are NOT stale (user edits stick;
+   * null PI is filled additively via fillMissingExpectedFrom).
    */
   function isStaleIncompleteExpected(targetMonth, sourceMonth) {
     if (!targetMonth || !sourceMonth) return false;
@@ -3143,31 +3143,15 @@
         }
       }
     }
-    // Or planned income differs / incomplete while budgets are subset match
-    var spi = sourceMonth.plannedIncome || {};
-    var tpi = targetMonth.plannedIncome || {};
-    var pids = Object.keys(spi);
-    for (var p = 0; p < pids.length; p++) {
-      var pid = pids[p];
-      if (!spi[pid]) continue;
-      if (!tpi[pid]) return true;
-      for (var fi = 0; fi < PLANNED_INCOME_FIELDS.length; fi++) {
-        var f = PLANNED_INCOME_FIELDS[fi];
-        var sPv = spi[pid][f];
-        var tPv = tpi[pid][f];
-        if (sPv != null && sPv !== "") {
-          if (tPv == null || tPv === "" || Number(tPv) !== Number(sPv)) {
-            return true;
-          }
-        }
-      }
-    }
+    // Planned income alone never marks stale: null PI is filled additively;
+    // non-empty PI differences are user edits and must stick. Stale = missing
+    // budget slots only (subset mirror of source).
     return false;
   }
 
   /**
-   * When target is a stale incomplete copy of source, realign plannedIncome
-   * (overwrite) from source. Budgets still only filled additively elsewhere.
+   * Overwrite plannedIncome from source → target (explicit rebase helpers).
+   * Heal paths no longer call this — user planInn edits must stick.
    */
   function realignPlannedIncomeFrom(sourceMonth, targetMonth, people) {
     if (!sourceMonth || !targetMonth) return false;
@@ -3193,9 +3177,10 @@
 
   /**
    * Heal an already-seeded month from nearest previous expected:
-   * additive missing budgets/lines/null PI; if stale incomplete subset,
-   * also realign plannedIncome to previous (fixes e.g. Oct lønn 40000 vs Sep).
-   * Never copies expenses.
+   * additive missing budgets/lines/null plannedIncome only.
+   * Never overwrites non-empty planInn or existing budget amounts.
+   * Never copies expenses. Use rebaseForwardMonthsFrom / rebasePlanFromKey
+   * for explicit full baseline overwrite.
    */
   function healMonthExpectedFromPrevious(months, key, people, opts) {
     opts = opts || {};
@@ -3221,12 +3206,9 @@
       var reb = rebaseExpectedFrom(src, m, people, mi);
       return { healed: reb, sourceKey: reb ? srcKey : null };
     }
-    // Snapshot before fill — after additive fill, subset may become complete
-    var wasStale = isStaleIncompleteExpected(m, src);
+    // Additive only: missing budgets/lines/null PI. Never overwrite non-empty
+    // plannedIncome or existing budget amounts (Oct edits must stick).
     var changed = fillMissingExpectedFrom(src, m, people, mi);
-    if (wasStale) {
-      if (realignPlannedIncomeFrom(src, m, people)) changed = true;
-    }
     return { healed: changed, sourceKey: changed ? srcKey : null };
   }
 
@@ -3313,10 +3295,15 @@
 
   /**
    * Propagate one budget slot (catId+owner) to all later months.
-   * Overwrites existing amounts so forward months mirror the new baseline.
+   * opts.onlyIfMatches — when provided, only update months whose slot is
+   * missing or still equals that previous value (dirty months skipped).
+   * Without onlyIfMatches: overwrite (explicit rebase tools).
    * Never touches expenses. Returns list of month keys updated.
    */
-  function propagateBudgetSlotForward(months, fromKey, catId, ownerId, amount) {
+  function propagateBudgetSlotForward(months, fromKey, catId, ownerId, amount, opts) {
+    opts = opts || {};
+    var filter = Object.prototype.hasOwnProperty.call(opts, "onlyIfMatches");
+    var matchVal = opts.onlyIfMatches;
     if (!months || !fromKey || !catId || !ownerId) return [];
     var keys = Object.keys(months).sort();
     var updated = [];
@@ -3326,10 +3313,15 @@
       var m = months[key];
       if (!m) continue;
       if (!monthHasExpected(m)) continue;
+      var missing = ownerBudgetSlotMissing(m, catId, ownerId);
       var prev = budgetForOwnerRaw(m, catId, ownerId);
+      if (filter && !missing) {
+        if (matchVal == null || matchVal === "") continue;
+        if (Number(prev) !== Number(matchVal)) continue;
+      }
       setBudgetForOwnerRaw(m, catId, ownerId, amount);
       var next = budgetForOwnerRaw(m, catId, ownerId);
-      if (Number(prev) !== Number(next) || !isBudgetValueSet(prev)) {
+      if (Number(prev) !== Number(next) || missing || !isBudgetValueSet(prev)) {
         updated.push(key);
       }
     }
@@ -3337,9 +3329,15 @@
   }
 
   /**
-   * Propagate one plannedIncome field to later months (overwrite).
+   * Propagate one plannedIncome field to later months.
+   * opts.onlyIfMatches — when provided, only update months whose field is
+   * empty/null or still equals that previous value (dirty months skipped).
+   * Without onlyIfMatches: overwrite (explicit rebase tools).
    */
-  function propagatePlannedIncomeForward(months, fromKey, personId, field, value, people) {
+  function propagatePlannedIncomeForward(months, fromKey, personId, field, value, people, opts) {
+    opts = opts || {};
+    var filter = Object.prototype.hasOwnProperty.call(opts, "onlyIfMatches");
+    var matchVal = opts.onlyIfMatches;
     if (!months || !fromKey || !personId || !field) return [];
     var keys = Object.keys(months).sort();
     var updated = [];
@@ -3353,7 +3351,13 @@
       if (!m.plannedIncome[personId]) {
         m.plannedIncome[personId] = emptyPlannedIncomeBlock();
       }
-      if (m.plannedIncome[personId][field] !== value) {
+      var cur = m.plannedIncome[personId][field];
+      var curEmpty = cur == null || cur === "";
+      if (filter && !curEmpty) {
+        var matchEmpty = matchVal == null || matchVal === "";
+        if (matchEmpty || Number(cur) !== Number(matchVal)) continue;
+      }
+      if (cur !== value) {
         m.plannedIncome[personId][field] = value;
         updated.push(key);
       }

@@ -7260,11 +7260,15 @@
       const m = getMonth();
       ensureMonthShape(m);
       if (!m.plannedIncome[person]) m.plannedIncome[person] = Calc.emptyPlannedIncomeBlock ? Calc.emptyPlannedIncomeBlock() : { lønn: null, ekstra: null, sparing: null };
+      const prevVal = m.plannedIncome[person][type];
       const v = parseAmount(input.value);
       m.plannedIncome[person][type] = v;
+      // Forward defaults: only months still matching old value (dirty Oct sticks).
       if (state.settings.copyExpectedToNewMonths !== false && Calc.propagatePlannedIncomeForward) {
         const fromKey = monthKey(state.view.year, state.view.month);
-        Calc.propagatePlannedIncomeForward(state.months, fromKey, person, type, v, state.people);
+        Calc.propagatePlannedIncomeForward(state.months, fromKey, person, type, v, state.people, {
+          onlyIfMatches: prevVal
+        });
       }
       save();
       render();
@@ -7304,12 +7308,15 @@
       const id = input.getAttribute("data-budget");
       const owner = input.getAttribute("data-budget-owner") || "felles";
       const m = getMonth();
+      const prevBudget = budgetForOwner(m, id, owner);
       const v = parseAmount(input.value);
       setBudgetForOwner(m, id, owner, v);
-      // Keep forward months' plan in sync when carry is on (rebase slot).
+      // Forward defaults: only months still matching old value (dirty months stick).
       if (state.settings.copyExpectedToNewMonths !== false && Calc.propagateBudgetSlotForward) {
         const fromKey = monthKey(state.view.year, state.view.month);
-        Calc.propagateBudgetSlotForward(state.months, fromKey, id, owner, v);
+        Calc.propagateBudgetSlotForward(state.months, fromKey, id, owner, v, {
+          onlyIfMatches: prevBudget
+        });
       }
       save();
       render();
