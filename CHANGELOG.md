@@ -1,5 +1,13 @@
 # Endringslogg – Familiebudsjett
 
+## 17. september 2026 (UTC+2) – Fix: Trygg å bruke = 0 uten saldo (oktober)
+
+- **Bug:** Ny måned uten bekreftet bruk falt tilbake til plan-modus. Med stort planlagt utlegg (f.eks. «Ny bil» 160k) ble `planInn − futureReserve` negativt → `Math.max(0)` = **0** — skummelt og misvisende.
+- **Calc:** Når saldo-modus er på og måneden mangler bruk: `safeToSpendMode = "awaiting_saldo"`, `safeToSpend = null` (plan-tall beholdes i `safeToSpendPlan*`). Flagg `needsSaldoForSafeToSpend`.
+- **UI (nb):** Viser **«Sett på konto nå»** (ikke 0). Hint: «Trygg å bruke for denne måneden mangler saldo — bekreft På konto nå.» Valgfritt: «Fra forrige: ca. X etter planlagte utlegg» (`prevBruk − reserve`, uten å skrive saldo).
+- **Uendret:** September med saldo (f.eks. 231223 − 160000 = **71223**). Plan-toggle av bruker fortsatt plan-formel.
+- Hjelper `estimateSafeFromPrevBruk`. Tester §33. Additiv lagring.
+
 ## 17. september 2026 (UTC+2) – Fix: På konto Fast-lekkasje + saldo-sim
 
 - **Bug:** Fast budsjettert som felles men logget på én person → `autoSpendExtraForPerson` ble ikke nullstilt. **På konto forventet** trakk Fast på nytt (falsk differanse). Plan-modus per person samme lekkasje.

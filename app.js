@@ -2002,9 +2002,10 @@
     let autoX = 0;
     let ifBudgetUsed = null;
     let ifBudgetUsedRaw = null;
+    let needsSaldo = false;
     if (isPerson && pc) {
-      amount = typeof pc.safeToSpend === "number" ? pc.safeToSpend : 0;
-      raw = typeof pc.safeToSpendRaw === "number" ? pc.safeToSpendRaw : 0;
+      amount = typeof pc.safeToSpend === "number" ? pc.safeToSpend : null;
+      raw = typeof pc.safeToSpendRaw === "number" ? pc.safeToSpendRaw : null;
       mode = pc.safeToSpendMode || "plan";
       remAll =
         typeof pc.remainingBudgetAll === "number" ? pc.remainingBudgetAll : 0;
@@ -2037,9 +2038,14 @@
           ? Number(bal.bruk)
           : 0;
       hasBrukForHint = !!(pc.hasBrukBalance);
+      needsSaldo = !!(
+        pc.needsSaldoForSafeToSpend ||
+        mode === "awaiting_saldo" ||
+        ((c && c.useSaldoInSafeToSpend !== false) && !hasBrukForHint)
+      );
     } else {
-      amount = c && typeof c.safeToSpend === "number" ? c.safeToSpend : 0;
-      raw = c && typeof c.safeToSpendRaw === "number" ? c.safeToSpendRaw : 0;
+      amount = c && typeof c.safeToSpend === "number" ? c.safeToSpend : null;
+      raw = c && typeof c.safeToSpendRaw === "number" ? c.safeToSpendRaw : null;
       mode = (c && c.safeToSpendMode) || "plan";
       remAll =
         c && typeof c.remainingBudgetAll === "number"
@@ -2070,17 +2076,26 @@
       brukForHint =
         c && typeof c.totalBruk === "number" ? c.totalBruk : 0;
       hasBrukForHint = !!(c && c.hasBrukBalances);
+      needsSaldo = !!(
+        (c && c.needsSaldoForSafeToSpend) ||
+        mode === "awaiting_saldo" ||
+        ((c && c.useSaldoInSafeToSpend !== false) && !hasBrukForHint)
+      );
     }
 
     const fromSaldo = mode === "saldo";
-    const show = !!(
+    const showBase = !!(
       c &&
       (c.hasPlannedIncome ||
         c.hasBudgets ||
         c.samletUtgifter > 0 ||
         c.hasBrukBalances ||
+        futureR > 0 ||
         (pc && (pc.planInn > 0 || pc.utgifter > 0 || pc.hasBrukBalance)))
     );
+    // Only surface awaiting-saldo CTA when the month otherwise has content
+    // (or reserved planned spends) — avoid blank months shouting «Sett på konto».
+    const show = showBase;
 
     const baseTitle = fromSaldo
       ? "Trygg å bruke nå"
@@ -2092,17 +2107,71 @@
     if (titleEl) titleEl.textContent = titled;
     if (miniLabel) miniLabel.textContent = titled;
 
+    // Optional: estimate from previous month bruk − planned this month
+    let fromPrevEstimate = null;
+    let fromPrevHint = "";
+    if (needsSaldo && show) {
+      const prevBal = prevMonthBalances();
+      let prevBruk = null;
+      if (prevBal) {
+        if (isPerson) {
+          const b = prevBal[view];
+          if (b && b.bruk != null && b.bruk !== "" && Number.isFinite(Number(b.bruk))) {
+            prevBruk = Number(b.bruk);
+          }
+        } else {
+          let sum = 0;
+          let any = false;
+          Object.keys(prevBal).forEach(function (pid) {
+            const b = prevBal[pid];
+            if (b && b.bruk != null && b.bruk !== "" && Number.isFinite(Number(b.bruk))) {
+              sum += Number(b.bruk);
+              any = true;
+            }
+          });
+          if (any) prevBruk = sum;
+        }
+      }
+      // Planned spends in/after this viewed month (same reserve as Trygg)
+      const plannedForEst = futureR > 0 ? futureR : 0;
+      if (
+        prevBruk != null &&
+        plannedForEst > 0 &&
+        typeof Calc.estimateSafeFromPrevBruk === "function"
+      ) {
+        fromPrevEstimate = Calc.estimateSafeFromPrevBruk(prevBruk, plannedForEst);
+      } else if (prevBruk != null && plannedForEst > 0) {
+        fromPrevEstimate = prevBruk - plannedForEst;
+      }
+      if (fromPrevEstimate != null && Number.isFinite(fromPrevEstimate)) {
+        fromPrevHint =
+          " Fra forrige: ca. " +
+          formatNOK(fromPrevEstimate) +
+          " etter planlagte utlegg.";
+      }
+    }
+
     if (valEl) {
-      valEl.textContent = show ? formatNOK(amount) : "—";
-      valEl.className =
-        "safe-spend-value" +
-        (amount <= 0 && raw < 0
-          ? " is-over"
-          : amount <= 0
-            ? " is-zero"
-            : amount < 2000
-              ? " is-tight"
-              : "");
+      if (!show) {
+        valEl.textContent = "—";
+        valEl.className = "safe-spend-value";
+      } else if (needsSaldo) {
+        valEl.textContent = "Sett på konto nå";
+        valEl.className = "safe-spend-value is-needs-saldo";
+      } else {
+        const amt = typeof amount === "number" ? amount : 0;
+        const rawN = typeof raw === "number" ? raw : 0;
+        valEl.textContent = formatNOK(amt);
+        valEl.className =
+          "safe-spend-value" +
+          (amt <= 0 && rawN < 0
+            ? " is-over"
+            : amt <= 0
+              ? " is-zero"
+              : amt < 2000
+                ? " is-tight"
+                : "");
+      }
     }
     const reserveEl = $("#safeSpendReserve");
     if (reserveEl) {
@@ -2153,21 +2222,28 @@
         hintEl.textContent = wantSaldo
           ? "Sett brukssaldo (På konto nå) for mer treffsikkert tall. Faste er allerede i banksaldo — ikke trukket på nytt. Variabelt telles når du logger kjøp."
           : "Det du trygt kan bruke nå: forventet inntekt minus det du har brukt, minus faste utgifter som gjenstår.";
+      } else if (needsSaldo) {
+        hintEl.classList.remove("is-saldo-short");
+        hintEl.textContent =
+          "Trygg å bruke for denne måneden mangler saldo — bekreft På konto nå." +
+          fromPrevHint;
       } else if (fromSaldo) {
+        const amt = typeof amount === "number" ? amount : 0;
+        const rawN = typeof raw === "number" ? raw : 0;
         const conservativeTight =
           ifBudgetUsed != null &&
           ifBudgetUsed <= 0 &&
           (ifBudgetUsedRaw == null || ifBudgetUsedRaw < 0 || remAll > brukForHint);
         const saldoShort =
-          amount <= 0 &&
+          amt <= 0 &&
           (planHead > 0 || conservativeTight || (remAll > 0 && remAll > brukForHint));
         hintEl.classList.toggle(
           "is-saldo-short",
-          !!saldoShort || (amount <= 0 && raw < 0)
+          !!saldoShort || (amt <= 0 && rawN < 0)
         );
         const whose =
           isPerson && whoName ? " for " + whoName : "";
-        if (amount <= 0 && (raw < 0 || saldoShort)) {
+        if (amt <= 0 && (rawN < 0 || saldoShort)) {
           hintEl.textContent =
             "Saldo på bruk" +
             whose +
@@ -2180,7 +2256,7 @@
               ? " (plan-modus ville vist ca. " + formatNOK(planHead) + ")"
               : "") +
             ". Oppdater saldo eller plan. Faste er allerede i banksaldo.";
-        } else if (amount <= 0) {
+        } else if (amt <= 0) {
           hintEl.textContent =
             "Ingen fri margin på bruk akkurat nå" +
             (futureR > 0 || buf > 0
@@ -2202,17 +2278,19 @@
         }
       } else {
         hintEl.classList.remove("is-saldo-short");
+        const amt = typeof amount === "number" ? amount : 0;
+        const rawN = typeof raw === "number" ? raw : 0;
         let base;
-        if (amount <= 0 && raw < 0) {
+        if (amt <= 0 && rawN < 0) {
           base =
             "Du har brukt mer enn forventet hittil. Juster plan eller hold igjen litt – det ordner seg.";
-        } else if (amount <= 0) {
+        } else if (amt <= 0) {
           base =
             "Ingen fri buffer akkurat nå (faste utgifter er dekket først).";
         } else {
           base =
             "Du kan bruke ca. " +
-            formatNOK(amount) +
+            formatNOK(amt) +
             " uten å røre faste utgifter" +
             (remFast > 0 ? " (" + formatNOK(remFast) + " faste igjen)" : "") +
             ".";
@@ -2232,7 +2310,11 @@
     if (mini && miniVal) {
       if (show) {
         mini.hidden = false;
-        miniVal.textContent = formatNOK(amount);
+        if (needsSaldo) {
+          miniVal.textContent = "—";
+        } else {
+          miniVal.textContent = formatNOK(typeof amount === "number" ? amount : 0);
+        }
       } else {
         mini.hidden = true;
       }
