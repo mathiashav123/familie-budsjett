@@ -551,7 +551,8 @@
 
   /**
    * Dual saldo-mode breakdown under Trygg å bruke (samlet + per person).
-   * Primary: nå (Fast auto + planlagte + buffer). Secondary: hvis hele budsjettet brukes.
+   * Primary: nå (planlagte + buffer). Fast already in bank — not re-subtracted.
+   * Secondary: hvis hele budsjettet brukes.
    */
   function formatSafeSpendBreakdownHtml(bd) {
     if (!bd) return "";
@@ -567,13 +568,6 @@
         formatNOK(bd.bruk) +
         "</strong></div>"
     );
-    if ((bd.autoSpendExtra || 0) > 0.5) {
-      rows.push(
-        '<div class="safe-spend-breakdown-row is-minus"><span>− Fast (auto)</span><strong>' +
-          formatNOK(bd.autoSpendExtra) +
-          "</strong></div>"
-      );
-    }
     if ((bd.futureReserve || 0) > 0.5) {
       rows.push(
         '<div class="safe-spend-breakdown-row is-minus"><span>− Planlagte utlegg (reservert)</span><strong>' +
@@ -612,9 +606,14 @@
           "</strong></div>"
       );
     }
+    const fastNote =
+      (bd.autoSpendExtra || 0) > 0.5
+        ? '<p class="hint compact safe-spend-breakdown-hint">Faste utgifter er allerede i banksaldo (På konto nå) — ikke trukket på nytt her. Fast auto brukes fortsatt til kategori-igjen og forventet cashflow.</p>'
+        : '<p class="hint compact safe-spend-breakdown-hint">Faste utgifter er allerede i banksaldo — ikke trukket på nytt i Trygg å bruke.</p>';
     return (
       '<div class="safe-spend-breakdown-rows" role="group" aria-label="Slik er Trygg å bruke regnet">' +
       rows.join("") +
+      fastNote +
       "</div>"
     );
   }
@@ -2130,7 +2129,7 @@
       if (!show) {
         hintEl.classList.remove("is-saldo-short");
         hintEl.textContent = wantSaldo
-          ? "Sett brukssaldo for mer treffsikkert tall. Fast holdes av automatisk; variabelt telles når du logger kjøp."
+          ? "Sett brukssaldo (På konto nå) for mer treffsikkert tall. Faste er allerede i banksaldo — ikke trukket på nytt. Variabelt telles når du logger kjøp."
           : "Det du trygt kan bruke nå: forventet inntekt minus det du har brukt, minus faste utgifter som gjenstår.";
       } else if (fromSaldo) {
         const conservativeTight =
@@ -2150,24 +2149,31 @@
           hintEl.textContent =
             "Saldo på bruk" +
             whose +
-            " dekker ikke Fast auto" +
-            (futureR > 0 ? ", planlagte utlegg" : "") +
-            (buf > 0 ? " og buffer" : "") +
+            " dekker ikke" +
+            (futureR > 0 ? " planlagte utlegg" : "") +
+            (futureR > 0 && buf > 0 ? " og" : "") +
+            (buf > 0 ? " buffer" : "") +
+            (futureR <= 0 && buf <= 0 ? " reserve/buffer" : "") +
             (planHead > 0
               ? " (plan-modus ville vist ca. " + formatNOK(planHead) + ")"
               : "") +
-            ". Oppdater saldo eller plan.";
+            ". Oppdater saldo eller plan. Faste er allerede i banksaldo.";
         } else if (amount <= 0) {
           hintEl.textContent =
-            "Ingen fri margin på bruk akkurat nå (Fast auto" +
-            (futureR > 0 ? ", planlagte utlegg" : "") +
-            (buf > 0 ? " og buffer" : "") +
-            " er dekket først).";
+            "Ingen fri margin på bruk akkurat nå" +
+            (futureR > 0 || buf > 0
+              ? " (" +
+                (futureR > 0 ? "planlagte utlegg" : "") +
+                (futureR > 0 && buf > 0 ? " og " : "") +
+                (buf > 0 ? "buffer" : "") +
+                " er dekket først)"
+              : "") +
+            ". Faste er allerede i banksaldo.";
         } else {
           hintEl.textContent =
-            "Trygg å bruke nå holder av Fast (auto), planlagte utlegg" +
+            "Trygg å bruke nå = banksaldo minus planlagte utlegg" +
             (buf > 0 ? " og buffer" : "") +
-            " — ikke ubrukt variabelt budsjett. Variabelt telles når du logger via Kjøpt noe." +
+            ". Faste er allerede trukket i På konto nå — ikke på nytt. Variabelt telles når du logger via Kjøpt noe." +
             (ifBudgetUsed != null && remVar > 0.5
               ? " Hvis hele budsjettet brukes: " + formatNOK(ifBudgetUsed) + "."
               : "");

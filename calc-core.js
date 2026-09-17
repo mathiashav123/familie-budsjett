@@ -1455,24 +1455,21 @@
       remainingBudgetAll - remainingFastBudgets
     );
 
-    // Dual saldo formulas (Fast not double-counted: remAll uses effectiveActual):
-    // Primary "nå": bruk − autoSpendExtra − futureReserve − buffer
-    //   (do NOT subtract remaining variable category budgets)
-    // Secondary "hvis hele budsjettet brukes": bruk − remAll − autoSpendExtra − future − buffer
+    // Dual saldo formulas — bank saldo already reflects paid Fast (På konto nå).
+    // Do NOT re-subtract autoSpendExtra (would double-count fixed bills).
+    // Primary "nå": bruk − futureReserve − buffer
+    // Secondary "hvis hele budsjettet brukes": bruk − remAll − future − buffer
+    //   (remAll uses effectiveActual so Fast rem≈0; still no autoSpendExtra)
+    // Plan mode still uses autoSpendExtra via safeToSpendPlanRaw above.
     var safeToSpendNowRaw = null;
     var safeToSpendNow = null;
     var safeToSpendSaldoRaw = null; // conservative / if-budget-used
     var safeToSpendSaldo = null;
     if (hasBruk) {
-      safeToSpendNowRaw =
-        totalBruk - autoSpendExtra - futureReserve - spendBuffer;
+      safeToSpendNowRaw = totalBruk - futureReserve - spendBuffer;
       safeToSpendNow = Math.max(0, safeToSpendNowRaw);
       safeToSpendSaldoRaw =
-        totalBruk -
-        remainingBudgetAll -
-        autoSpendExtra -
-        futureReserve -
-        spendBuffer;
+        totalBruk - remainingBudgetAll - futureReserve - spendBuffer;
       safeToSpendSaldo = Math.max(0, safeToSpendSaldoRaw);
     }
 
@@ -1536,9 +1533,10 @@
       var saldoRawP = null; // conservative / if-budget-used
       var saldoSafeP = null;
       if (hasPersonBruk) {
-        nowRawP = brukN - autoExtraP - futureP - bufferShareEach;
+        // Saldo: never re-subtract autoExtra (Fast already in bank balance)
+        nowRawP = brukN - futureP - bufferShareEach;
         nowSafeP = Math.max(0, nowRawP);
-        saldoRawP = brukN - remAllP - autoExtraP - futureP - bufferShareEach;
+        saldoRawP = brukN - remAllP - futureP - bufferShareEach;
         saldoSafeP = Math.max(0, saldoRawP);
       }
 
@@ -2923,12 +2921,14 @@
 
   /**
    * Dual saldo-mode Trygg å bruke parts for UI transparency.
-   * Primary "nå": bruk − autoSpendExtra − futureReserve − spendBuffer
+   * På konto nå already reflects paid Fast — do NOT re-subtract autoSpendExtra.
+   * Primary "nå": bruk − futureReserve − spendBuffer
    *   (do NOT subtract remaining variable budgets).
    * Secondary "hvis hele budsjettet brukes":
-   *   bruk − remainingBudgetAll − autoSpendExtra − futureReserve − spendBuffer
-   *   (Fast not double-counted: remAll uses effectiveActual so Fast rem≈0).
-   * restBudget = remainingBudgetAll + autoSpendExtra (legacy conservative identity).
+   *   bruk − remainingBudgetAll − futureReserve − spendBuffer
+   *   (remAll uses effectiveActual so Fast rem≈0; still no autoSpendExtra).
+   * restBudget = remainingBudgetAll (variable rem; Fast already in bank).
+   * autoSpendExtra is returned for transparency / cashflow paths only.
    * safeToSpend / raw follow primary "nå".
    */
   function safeToSpendSaldoBreakdown(parts) {
@@ -2950,9 +2950,9 @@
     if (auto < 0) auto = 0;
     if (future < 0) future = 0;
     if (buffer < 0) buffer = 0;
-    var restBudget = rem + auto;
-    var nowRaw = bruk - auto - future - buffer;
-    var ifUsedRaw = bruk - rem - auto - future - buffer;
+    var restBudget = rem;
+    var nowRaw = bruk - future - buffer;
+    var ifUsedRaw = bruk - rem - future - buffer;
     return {
       bruk: bruk,
       remainingBudgetAll: rem,

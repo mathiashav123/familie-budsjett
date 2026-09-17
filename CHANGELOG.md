@@ -1,5 +1,18 @@
 # Endringslogg – Familiebudsjett
 
+## 17. september 2026 (UTC+2) – Fix: Fast ikke dobbelttelt i Trygg (saldo)
+
+- **Bug:** Når «På konto nå» oppgis *etter* at faste regninger har gått fra banken, trakk saldo-modus også `autoSpendExtra` (Fast) — Fast ble trukket to ganger.
+- **Saldo-formler (samlet + per person):**
+  - Trygg nå: `bruk − futureReserve − buffer`
+  - Hvis hele budsjettet brukes: `bruk − remainingBudgetAll − futureReserve − buffer`
+  - Trekker **ikke** `autoSpendExtra` på nytt (Fast allerede i banksaldo).
+- **Plan-modus** uendret: fortsatt `planInn − effectiveUtgifter − remainingFast − futureReserve` (bruker Fast auto).
+- **Beholdt Fast auto** for kategori-igjen (effectiveActual) og **På konto forventet**-reconcile (`prev.bruk + tilOvers − autoSpendExtra`).
+- Breakdown UI: ingen «− Fast (auto)»-linje under Trygg; hint: «Faste er allerede i banksaldo — ikke trukket på nytt».
+- Tester: ingen dobbelttelling (scenario bank etter Fast) + oppdaterte saldo-identiteter.
+- Additiv (`familie-budsjett-v1`).
+
 ## 17. september 2026 (UTC+2) – Dual Trygg å bruke (nå + hvis hele budsjettet)
 
 - **Primært tall «Trygg å bruke nå»** (saldo-modus, samlet + per person): `bruk − Fast autoSpendExtra − futureReserve − buffer`. Trekker **ikke** fra gjenstående variable kategori-budsjetter.
