@@ -1,6 +1,24 @@
 # Endringslogg – Familiebudsjett
 
 
+## 2026-09-18 — Fix: okt lønn/ekstra redigerbar (ikke overwrite fra Sep)
+
+### Problem
+Etter Sep-baseline/heal ble okt (og senere) planInn «låst» i praksis: `isStaleIncompleteExpected` behandlet planInn-avvik som stale når budsjettene fortsatt matchet Sep, og `healMonthExpectedFromPrevious` / `ensureMonthExpected` kjørte `realignPlannedIncomeFrom` ved hver navigering/lagring → okt-lønn/ekstra ble tilbakestilt til Sep. `propagateBudgetSlotForward` / `propagatePlannedIncomeForward` overskrev også dirty fremover-måneder.
+
+### Fix
+- Heal fyller **kun manglende** budsjett/linjer/null planInn via `fillMissingExpectedFrom` — **ingen** overwrite av satte planInn-felt.
+- PlanInn-only-diff er ikke stale; eksplisitt rebase (`rebaseForwardMonthsFrom` / `settings.rebasePlanFromKey`) overskriver fortsatt ved behov.
+- Propagate med `onlyIfMatches`: oppdaterer bare måneder som fortsatt har gammel verdi (eller mangler felt). App sender forrige verdi ved redigering.
+- Okt (og alle måneder) planInn + budsjett forblir fritt redigerbare; Sep-kopiering fremover er default for rene måneder.
+
+### Zeekr (parent, grovt)
+Med leftover Mathias ~14,5k/mnd: bil ≈ 6000 lån + 1600 forsikring + 280 TFA + 1050 lading/service ≈ **~9k/mnd** ekstra (+160k engangs) → leftover **~5–6k/mnd** før ferie — stramt, men greit om Andrea deler husstand.
+
+### Tester / deploy
+- `node test-calc.mjs` → 849 passed (inkl. okt planInn sticky + dirty propagate)
+- Pages `main` + mobil bundle
+
 ## 2026-09-18 — Sep plan budsjett hevet + rebase fremover
 
 - **Plan (Sep 2026):** Mat p1/p2 2500→4000, Helse 300→700, Hygiene 200→400, Div 1000→1500, Strøm 1500→2000. Bil/Forsikring/Klær/Fond/Abonnement urørt. Ingen nye kat. (billån/bilforsikring/klær/ferie/sparing). Kjøp urørt.

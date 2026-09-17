@@ -3955,8 +3955,8 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
   assertEq(Calc.budgetForOwner(months["2026-10"], "cDiv", "p1"), 1000, "Oct Div from Sep");
   assertEq(Calc.budgetForOwner(months["2026-10"], "cHelse", "p1"), 300, "Oct Helse from Sep");
   assertEq(Calc.budgetForOwner(months["2026-10"], "cBil", "p1"), 800, "Oct Bil PLAN 800 not actual 5143");
-  assertEq(months["2026-10"].plannedIncome.p1.lønn, 40910, "Oct lønn realigned to Sep");
-  assertEq(months["2026-10"].plannedIncome.p1.ekstra, 3732, "Oct ekstra from Sep");
+  assertEq(months["2026-10"].plannedIncome.p1.lønn, 40000, "Oct lønn kept (no overwrite on heal)");
+  assertEq(months["2026-10"].plannedIncome.p1.ekstra, 3732, "Oct null ekstra filled additively from Sep");
   assertEq(months["2026-10"].expenses.length, 0, "Oct expenses stay empty");
   assertEq(months["2026-09"].expenses.length, 1, "Sep actual purchase kept");
   assertEq(months["2026-09"].expenses[0].amount, 5143, "Sep Bil actual untouched");
@@ -3997,8 +3997,13 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
   );
   assertEq(
     migrated.months["2026-10"].plannedIncome.p1.lønn,
-    40910,
-    "migrateState realigns Oct lønn"
+    40000,
+    "migrateState keeps Oct lønn (heal does not overwrite PI)"
+  );
+  assertEq(
+    migrated.months["2026-10"].plannedIncome.p1.ekstra,
+    3732,
+    "migrateState fills null Oct ekstra from Sep"
   );
   assertEq(
     migrated.months["2026-09"].expenses[0].amount,
@@ -4062,9 +4067,90 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
   assertEq(months["2026-09"].expenses.length, 1, "sep expenses untouched by rebase");
   assertEq(months["2026-10"].expenses.length, 0, "oct expenses untouched by rebase");
   months["2026-09"].budgets.mat.p1 = 4200;
-  const u = Calc.propagateBudgetSlotForward(months, "2026-09", "mat", "p1", 4200);
-  assert(u.includes("2026-10"), "propagate updates oct");
-  assertEq(months["2026-11"].budgets.mat.p1, 4200, "propagate updates nov");
+  const u = Calc.propagateBudgetSlotForward(months, "2026-09", "mat", "p1", 4200, {
+    onlyIfMatches: 4000
+  });
+  assert(u.includes("2026-10"), "propagate updates oct matching old");
+  assertEq(months["2026-11"].budgets.mat.p1, 4200, "propagate updates nov matching old");
+  months["2026-10"].budgets.mat.p1 = 999;
+  const u2 = Calc.propagateBudgetSlotForward(months, "2026-09", "mat", "p1", 4300, {
+    onlyIfMatches: 4200
+  });
+  assert(!u2.includes("2026-10"), "dirty oct skipped");
+  assertEq(months["2026-10"].budgets.mat.p1, 999, "dirty oct mat sticks");
+  assert(u2.includes("2026-11"), "nov still matching gets 4300");
+  assertEq(months["2026-11"].budgets.mat.p1, 4300, "nov updated");
+}
+
+// --- Oct planInn edit sticks across heal / ensureMonthExpected ---
+{
+  const people = [
+    { id: "p1", name: "A", archived: false },
+    { id: "p2", name: "B", archived: false }
+  ];
+  const months = {
+    "2026-09": {
+      budgets: { mat: { p1: 4000 }, helse: { p1: 700 } },
+      budgetLines: {},
+      plannedIncome: {
+        p1: { lønn: 40910, ekstra: 3732, sparing: null },
+        p2: { lønn: 31500, ekstra: null, sparing: null }
+      },
+      incomes: [],
+      savings: [],
+      expenses: [{ id: "e1", owner: "p1", amount: 10, categoryId: "mat" }],
+      balances: {}
+    },
+    "2026-10": {
+      budgets: { mat: { p1: 4000 }, helse: { p1: 700 } },
+      budgetLines: {},
+      plannedIncome: {
+        p1: { lønn: 40910, ekstra: 3732, sparing: null },
+        p2: { lønn: 31500, ekstra: null, sparing: null }
+      },
+      incomes: [],
+      savings: [],
+      expenses: [],
+      balances: {}
+    },
+    "2026-11": {
+      budgets: { mat: { p1: 4000 }, helse: { p1: 700 } },
+      budgetLines: {},
+      plannedIncome: {
+        p1: { lønn: 40910, ekstra: 3732, sparing: null },
+        p2: { lønn: 31500, ekstra: null, sparing: null }
+      },
+      incomes: [],
+      savings: [],
+      expenses: [],
+      balances: {}
+    }
+  };
+  months["2026-10"].plannedIncome.p1.lønn = 45000;
+  months["2026-10"].plannedIncome.p1.ekstra = 1000;
+  const r1 = Calc.ensureMonthExpected(months, "2026-10", people, {
+    copyExpectedToNewMonths: true
+  });
+  assertEq(months["2026-10"].plannedIncome.p1.lønn, 45000, "Oct lønn edit sticks after ensure");
+  assertEq(months["2026-10"].plannedIncome.p1.ekstra, 1000, "Oct ekstra edit sticks after ensure");
+  Calc.healAllMonthsExpected(months, people, {});
+  assertEq(months["2026-10"].plannedIncome.p1.lønn, 45000, "Oct lønn sticks after healAll");
+  assertEq(months["2026-10"].plannedIncome.p1.ekstra, 1000, "Oct ekstra sticks after healAll");
+  // Sep edit propagates only to clean Nov, not dirty Oct
+  const up = Calc.propagatePlannedIncomeForward(
+    months,
+    "2026-09",
+    "p1",
+    "lønn",
+    42000,
+    people,
+    { onlyIfMatches: 40910 }
+  );
+  assert(!up.includes("2026-10"), "dirty Oct skipped by PI propagate");
+  assert(up.includes("2026-11"), "clean Nov gets Sep lønn propagate");
+  assertEq(months["2026-10"].plannedIncome.p1.lønn, 45000, "Oct still 45000");
+  assertEq(months["2026-11"].plannedIncome.p1.lønn, 42000, "Nov updated from Sep");
+  assert(!Calc.isStaleIncompleteExpected(months["2026-10"], months["2026-09"]), "PI-only diff not stale");
 }
 
 // --- migrateState one-shot rebasePlanFromKey ---
