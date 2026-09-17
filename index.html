@@ -199,11 +199,36 @@
         <p class="hint compact" id="forwardHarNaHint">Trygg å bruke denne måneden (eller bank hvis du har rettet På konto).</p>
         <h3 class="forward-sub">Hvis du følger budsjettet</h3>
         <div class="forward-months" id="forwardMonths" aria-label="Projeksjon neste måneder"></div>
-        <div class="forward-year-summary" id="forwardYearSummary">
-          <span class="forward-label">Om 12 måneder</span>
-          <strong class="forward-value" id="forwardYearValue">—</strong>
+        <div class="forward-milestones" id="forwardMilestones" aria-label="Milepæler">
+          <div class="forward-year-summary" id="forwardOm1">
+            <span class="forward-label" id="forwardOm1Label">Om 1 år</span>
+            <strong class="forward-value" id="forwardOm1Value">—</strong>
+          </div>
+          <div class="forward-year-summary" id="forwardOm5">
+            <span class="forward-label" id="forwardOm5Label">Om 5 år</span>
+            <strong class="forward-value" id="forwardOm5Value">—</strong>
+          </div>
+          <div class="forward-year-summary" id="forwardOm12">
+            <span class="forward-label" id="forwardOm12Label">Om 12 år</span>
+            <strong class="forward-value" id="forwardOm12Value">—</strong>
+          </div>
         </div>
-        <p class="hint compact" id="forwardFormulaHint">Formel: start fra effektiv pot/bruk; hver måned <code>pot + planInn − variabelt budsjett − planlagte utlegg</code>. Fast trekkes ikke på nytt (allerede i bank/pot).</p>
+        <div class="forward-pick" id="forwardPick">
+          <label class="forward-pick-label" for="forwardPickYear">Se måned</label>
+          <div class="forward-pick-row">
+            <select id="forwardPickMonth" aria-label="Måned"></select>
+            <select id="forwardPickYear" aria-label="År"></select>
+          </div>
+          <div class="forward-year-summary forward-pick-result" id="forwardPickResult">
+            <span class="forward-label" id="forwardPickLabel">—</span>
+            <strong class="forward-value" id="forwardPickValue">—</strong>
+          </div>
+        </div>
+        <details class="forward-years-details" id="forwardYearsDetails">
+          <summary>År for år</summary>
+          <div class="forward-years-list" id="forwardYearsList" aria-label="Projeksjon per år"></div>
+        </details>
+        <p class="hint compact" id="forwardFormulaHint">Formel: start fra effektiv pot/Trygg (etter planlagte utlegg som bil én gang); hver fremtidig måned <code>pot += planInn − planUtVariable − openPlannedThatMonth</code>. Fast trekkes ikke på nytt (allerede i bank/pot). Tomme måneder gjenbruker siste kjente budsjett.</p>
       </section>
 
       
