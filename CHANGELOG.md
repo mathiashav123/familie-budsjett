@@ -1,6 +1,34 @@
 # Endringslogg – Familiebudsjett
 
 
+## 2026-10-01 — Felles faste trukket automatisk + «Saldo før lønn»
+
+### 1. Felles faste vises som trukket automatisk
+**Problem:** Plan → Mathias → «Andel felles» brukte kun loggede kjøp. Lån-andelen viste «Faktisk 0 kr · **11 721 kr igjen**» (= 50 % av 23 441), selv om faste trekk allerede ble talt med i Trygg-beregningen. Inn/Ut «Ut faktisk» og personkort «Andel felles» viste også 0.
+**Fix:** Felles faste (Lån 23 441, Hund Fast 319, Internett 919 (70/30), Alarm 399) telles som betalt for hver persons andel:
+- Kategori-rader: grønn «✓ Trukket»-badge, full grønn bar, «✓ Trukket automatisk · 11 721 kr · 0 kr igjen».
+- Person-seksjon i Plan: «✓ Faste trukket automatisk: 18 968 kr (egne 6 245 + andel felles 12 723)».
+- Inn/Ut person: Ut faktisk 18 968 kr («inkl. … faste trukket automatisk»). Personkort: «✓ Faste trukket automatisk» + «herav andel felles».
+- Trygg-kortet: info-rad «Faste trukket automatisk … ikke trukket på nytt».
+Mathias okt 2026: Lån 11 720,5 + Hund 159,5 + Internett 643,3 (70 %) + Alarm 199,5 = 12 722,8 felles + 6 245 egne = 18 967,8. Andrea: 12 355,2 felles.
+**Trygg uendret 85 597 kr** (ingen dobbel-trekk).
+
+### Bug: «Hvis hele budsjettet brukes» trakk variabelt to ganger
+Rullerende pot (85 597 = 231 223 + 44 642 − 18 967,8 − 11 300 − 160 000) inkluderer allerede variabelt budsjett. Linjen viste 74 297 (−11 300 på nytt). Nå: «Før variabelt budsjett (11 300 kr igjen): 96 897 kr» når potten er et rullerende seed (`potIncludesVariable`).
+
+### Bug: migrateState mistet seed-flagg
+`suggested`/`fromCarryPot`/`suggestedAfterPlans`, `balancesSuggested`, `carryPot` ble droppet ved hver reload. Bevares nå (additivt), og umerkede seeds lik potten re-flagges.
+
+### 2. «Saldo før lønn»
+Nytt valgfritt felt i Trygg-kortet på Oversikt (per person, per måned; Samlet viser ett per person). Lagres som `balances[p].forLonn` (+ `forLonnAsOf`, `forLonnAt`) — rører ikke `bruk`.
+`Trygg = før lønn + lønn/ekstra − faste etter lønn (ubetalt) − kjøp/sparing logget etter tidspunktet − planlagte utlegg − variabelt igjen − buffer`.
+Plan → faste kategori → «Trekkes: Etter lønn / Før lønn (allerede betalt)» (`category.payTiming`). «På konto nå» skrevet senere vinner. Før-lønn-måned er anker for neste måneds pot og Fremover.
+Eksempel Mathias okt: før lønn 231 223 → 231 223 + 44 642 − 18 967,8 − 160 000 − 11 300 = **85 597** (samme som potten). Med Lån merket «Før lønn»: 97 318.
+
+### Tester / deploy
+- `node test-calc.mjs` → 938 passed (89 nye: FB1–FB9), `node test-sync.mjs` → 22 passed
+- Pages `main` + mobil bundle
+
 ## 2026-09-18 — Fix: okt lønn/ekstra redigerbar (ikke overwrite fra Sep)
 
 ### Problem

@@ -142,6 +142,17 @@
     return year + "-" + String(month + 1).padStart(2, "0");
   }
 
+  /** Viewed month is after the calendar month (trekk «trekkes», not «trukket»). */
+  function viewIsFutureMonth() {
+    const d = new Date();
+    return monthKey(state.view.year, state.view.month) > monthKey(d.getFullYear(), d.getMonth());
+  }
+
+  /** «Trukket automatisk» / «Trekkes automatisk» label for Fast auto-trekk. */
+  function autoTrekkLabel() {
+    return viewIsFutureMonth() ? "Trekkes automatisk" : "Trukket automatisk";
+  }
+
   function prevMonthKey(year, month) {
     let y = year, m = month - 1;
     if (m < 0) { m = 11; y -= 1; }
@@ -611,10 +622,27 @@
         ? bd.safeToSpendIfBudgetUsed
         : null;
     rows.push(
-      '<div class="safe-spend-breakdown-row"><span>På konto (bruk)</span><strong>' +
+      '<div class="safe-spend-breakdown-row"><span>' +
+        (bd.potIncludesVariable
+          ? 'Rullerende pot <em class="opt">(forrige + lønn − faste − variabelt budsjett − planlagt)</em>'
+          : "På konto (bruk)") +
+        "</span><strong>" +
         formatNOK(bd.bruk) +
         "</strong></div>"
     );
+    if ((bd.autoTrekkTotal || 0) > 0.5) {
+      rows.push(
+        '<div class="safe-spend-breakdown-row is-info"><span>✓ Faste ' +
+          escapeHtml(autoTrekkLabel().toLowerCase()) +
+          ' <em class="opt">(' +
+          ((bd.autoTrekkFelles || 0) > 0.5
+            ? "inkl. andel felles " + formatNOK(bd.autoTrekkFelles) + "; "
+            : "") +
+          "allerede trukket i saldo/pot — ikke trukket på nytt)</em></span><strong>" +
+          formatNOK(bd.autoTrekkTotal) +
+          "</strong></div>"
+      );
+    }
     if ((bd.futureReserve || 0) > 0.5) {
       rows.push(
         '<div class="safe-spend-breakdown-row is-minus"><span>− Planlagte utlegg (reservert)</span><strong>' +
@@ -636,7 +664,19 @@
         formatNOK(nowAmt) +
         "</strong></div>"
     );
-    if (ifUsed != null) {
+    if (bd.potIncludesVariable) {
+      const remVarPot =
+        typeof bd.remainingVariableBudgets === "number" ? bd.remainingVariableBudgets : 0;
+      if (remVarPot > 0.5) {
+        rows.push(
+          '<div class="safe-spend-breakdown-row is-secondary"><span>Før variabelt budsjett <em class="opt">(' +
+            formatNOK(remVarPot) +
+            " variabelt igjen — allerede trukket i potten)</em></span><strong>" +
+            formatNOK(nowAmt + remVarPot) +
+            "</strong></div>"
+        );
+      }
+    } else if (ifUsed != null) {
       const remAll =
         typeof bd.remainingBudgetAll === "number" ? bd.remainingBudgetAll : 0;
       const remVar =
@@ -687,6 +727,175 @@
       fastNote +
       "</div>"
     );
+  }
+
+  function formatDateNb(iso) {
+    if (!iso) return "";
+    const parts = String(iso).split("-");
+    if (parts.length !== 3) return String(iso);
+    const mons = ["jan", "feb", "mar", "apr", "mai", "jun", "jul", "aug", "sep", "okt", "nov", "des"];
+    return Number(parts[2]) + ". " + (mons[Number(parts[1]) - 1] || parts[1]);
+  }
+
+  /** «Saldo før lønn» breakdown rows (one person). */
+  function formatForLonnBreakdownHtml(bd, nameLabel) {
+    if (!bd) return "";
+    const rows = [];
+    function row(cls, label, amt, title) {
+      rows.push(
+        '<div class="safe-spend-breakdown-row' +
+          (cls ? " " + cls : "") +
+          '"' +
+          (title ? ' title="' + escapeAttr(title) + '"' : "") +
+          "><span>" +
+          label +
+          "</span><strong>" +
+          formatNOK(amt) +
+          "</strong></div>"
+      );
+    }
+    row(
+      "",
+      "Saldo før lønn" +
+        (bd.asOf ? ' <em class="opt">(' + escapeHtml(formatDateNb(bd.asOf)) + ")</em>" : ""),
+      bd.saldoForLonn
+    );
+    row(
+      "is-plus",
+      "+ Lønn" +
+        (bd.ekstra > 0.5 ? " + ekstra" : "") +
+        ' <em class="opt">(' +
+        (bd.innSource === "logged" ? "logget" : "plan") +
+        ")</em>",
+      bd.inn
+    );
+    const etterNames = (bd.fastEtterLonnItems || [])
+      .filter(function (i) { return i.amount > 0.5; })
+      .map(function (i) {
+        return i.name + (i.felles ? " " + i.pct + " %" : "");
+      })
+      .join(", ");
+    row(
+      "is-minus",
+      "− Faste som trekkes etter lønn" +
+        (etterNames ? ' <em class="opt">(' + escapeHtml(etterNames) + ")</em>" : ""),
+      bd.fastEtterLonn
+    );
+    if ((bd.loggedAfter || 0) > 0.5 || (bd.sparingAfter || 0) > 0.5) {
+      row(
+        "is-minus",
+        "− Kjøp/sparing logget etter",
+        (bd.loggedAfter || 0) + (bd.sparingAfter || 0)
+      );
+    }
+    row("is-eq is-sub", "= Etter lønn og faste", bd.etterLonn);
+    if ((bd.plannedReserve || 0) > 0.5) {
+      row(
+        "is-minus",
+        "− Planlagte utlegg" +
+          ((bd.plannedLater || 0) > 0.5 ? ' <em class="opt">(inkl. senere mnd)</em>' : ""),
+        bd.plannedReserve
+      );
+    }
+    if ((bd.remainingVariable || 0) > 0.5) {
+      row("is-minus", "− Variabelt budsjett igjen", bd.remainingVariable);
+    }
+    if ((bd.buffer || 0) > 0.5) row("is-minus", "− Buffer", bd.buffer);
+    rows.push(
+      '<div class="safe-spend-breakdown-row is-eq' +
+        (bd.trygg < 0 ? " is-neg" : "") +
+        '"><span>= Trygg å bruke nå</span><strong>' +
+        formatNOK(bd.trygg) +
+        "</strong></div>"
+    );
+    const forNames = (bd.fastForLonnItems || [])
+      .map(function (i) {
+        return i.name + " " + formatNOK(i.amount);
+      })
+      .join(", ");
+    const note = forNames
+      ? '<p class="mini-help forlonn-note">✓ Trukket før lønn (allerede ute av saldoen, ikke trukket på nytt): ' +
+        escapeHtml(forNames) +
+        ".</p>"
+      : '<p class="mini-help forlonn-note">Ingen faste er merket «Før lønn» — alle faste trekkes etter lønn. Endre under Plan → kategori → «Trekkes».</p>';
+    return (
+      '<div class="safe-spend-breakdown-rows forlonn-breakdown" role="group" aria-label="Slik er Trygg å bruke regnet fra saldo før lønn">' +
+      (nameLabel
+        ? '<div class="safe-spend-breakdown-title">' + escapeHtml(nameLabel) + "</div>"
+        : "") +
+      rows.join("") +
+      note +
+      "</div>"
+    );
+  }
+
+  /** «Saldo før lønn» input(s) in the Trygg card: one per person in scope. */
+  function renderForLonnBox(c, view, show) {
+    const box = $("#forLonnBox");
+    if (!box) return;
+    if (!show && !(c && c.hasForLonn)) {
+      box.hidden = true;
+      box.innerHTML = "";
+      return;
+    }
+    const m = getMonth();
+    const isPerson = view && view !== "samlet";
+    const people = activePeopleList().filter(function (p) {
+      return !isPerson || p.id === view;
+    });
+    if (!people.length) {
+      box.hidden = true;
+      box.innerHTML = "";
+      return;
+    }
+    const monthName = MONTHS[state.view.month] || "";
+    let html =
+      '<div class="forlonn-head"><span class="forlonn-title">Saldo før lønn</span>' +
+      '<span class="forlonn-sub">valgfritt · ' +
+      escapeHtml(monthName.toLowerCase()) +
+      "</span></div>";
+    people.forEach(function (p) {
+      const bal = (m.balances && m.balances[p.id]) || {};
+      const info = Calc.forLonnInfo(bal);
+      const active = Calc.forLonnActiveFor(m, p.id);
+      const val = info ? String(info.amount).replace(".", ",") : "";
+      html +=
+        '<div class="forlonn-row">' +
+        '<label class="forlonn-label" for="forlonn-' +
+        escapeAttr(p.id) +
+        '">' +
+        (isPerson ? "På brukskonto før lønna kom" : escapeHtml(p.name)) +
+        "</label>" +
+        '<div class="forlonn-input-wrap">' +
+        '<input type="text" inputmode="decimal" class="forlonn-input amount-expr" id="forlonn-' +
+        escapeAttr(p.id) +
+        '" data-forlonn="' +
+        escapeAttr(p.id) +
+        '" value="' +
+        escapeAttr(val) +
+        '" placeholder="f.eks. 12 000" autocomplete="off" aria-label="Saldo før lønn ' +
+        escapeAttr(p.name) +
+        '" />' +
+        '<span class="unit">kr</span>' +
+        (info
+          ? '<button type="button" class="btn ghost xs forlonn-clear" data-forlonn-clear="' +
+            escapeAttr(p.id) +
+            '">Fjern</button>'
+          : "") +
+        "</div>" +
+        (info && !active
+          ? '<p class="mini-help forlonn-state">«På konto nå» er oppgitt senere og brukes i stedet (korreksjon).</p>'
+          : info && info.asOf
+            ? '<p class="mini-help forlonn-state">Oppgitt ' +
+              escapeHtml(formatDateNb(info.asOf)) +
+              " — kjøp logget etter dette trekkes fra.</p>"
+            : "") +
+        "</div>";
+    });
+    html +=
+      '<p class="mini-help forlonn-hint">Skriv hva du hadde på brukskonto før lønna kom. Trygg = før lønn + lønn − faste som trekkes etter lønn − planlagte utlegg − variabelt igjen. Merk faste som allerede er betalt med «Før lønn» under Plan.</p>';
+    box.innerHTML = html;
+    box.hidden = false;
   }
 
   /**
@@ -871,9 +1080,36 @@
         planInn = pc.planInn;
         actInn = pc.actualInn;
         planUt = pc.planUt;
-        actUt = pc.utgifter;
+        // Same rule as Samlet: Faktisk ut inkluderer faste trukket automatisk
+        // (egne + felles-andel) — not only logged purchases.
+        actUt =
+          pc.effectiveUtgifter != null ? pc.effectiveUtgifter : pc.utgifter;
         netPlan = pc.netPlan;
         netActual = pc.tilOvers;
+      }
+    }
+    const utNote = $("#utAutoNote");
+    if (utNote) {
+      let autoAmt = 0;
+      let fellesAmt = 0;
+      if (view === "samlet") {
+        autoAmt = c.autoSpendExtra || 0;
+      } else {
+        const pcN = c.byPerson && c.byPerson[view];
+        autoAmt = pcN ? pcN.autoSpendExtra || 0 : 0;
+        fellesAmt = pcN && pcN.autoTrekk ? pcN.autoTrekk.autoFelles || 0 : 0;
+      }
+      if (autoAmt > 0.5) {
+        utNote.hidden = false;
+        utNote.textContent =
+          "inkl. " +
+          formatNOK(autoAmt) +
+          " faste " +
+          autoTrekkLabel().toLowerCase() +
+          (fellesAmt > 0.5 ? " (herav felles-andel " + formatNOK(fellesAmt) + ")" : "");
+      } else {
+        utNote.hidden = true;
+        utNote.textContent = "";
       }
     }
     $("#innPlan").textContent = formatNOK(planInn);
@@ -1796,11 +2032,23 @@
           formatNOK(pc.lønn + pc.ekstra) +
           '</span></div>' +
           '<div class="person-row"><span>Ut</span><span class="amt">' +
-          formatNOK(pc.utgifter) +
+          formatNOK(pc.effectiveUtgifter != null ? pc.effectiveUtgifter : pc.utgifter) +
           '</span></div>' +
           '<div class="person-row muted"><span>Andel felles</span><span class="amt">' +
-          formatNOK(pc.fellesShare || 0) +
+          formatNOK((pc.fellesShare || 0) + ((pc.autoTrekk && pc.autoTrekk.autoFelles) || 0)) +
           '</span></div>' +
+          (pc.autoTrekk && pc.autoTrekk.total > 0.5
+            ? '<div class="person-row auto-trekk-row" title="Faste trekk (egne + andel felles) telles som betalt automatisk"><span>✓ Faste ' +
+              escapeHtml(autoTrekkLabel().toLowerCase()) +
+              '</span><span class="amt">' +
+              formatNOK(pc.autoTrekk.total) +
+              "</span></div>" +
+              (pc.autoTrekk.felles > 0.5
+                ? '<div class="person-row muted auto-trekk-sub"><span>herav andel felles</span><span class="amt">' +
+                  formatNOK(pc.autoTrekk.felles) +
+                  "</span></div>"
+                : "")
+            : "") +
           '<div class="person-row"><span>Sparing</span><span class="amt">' +
           formatNOK(pc.sparing) +
           '</span></div></div>' +
@@ -2489,6 +2737,39 @@
       return any ? total : null;
     }
 
+    // «Saldo før lønn» month = anchor (slutt-pot hvis budsjettet følges).
+    // Household: før-lønn persons use end pot, others their bruk.
+    function forLonnPotAt(k) {
+      const mm = state.months[k];
+      if (!mm || typeof Calc.forLonnEndPotForPerson !== "function") return null;
+      let total = 0;
+      let anyFl = false;
+      activePeopleList().forEach(function (p) {
+        if (scopePersonId && p.id !== scopePersonId) return;
+        const end = Calc.forLonnEndPotForPerson(
+          state.months,
+          k,
+          p.id,
+          state.people,
+          state.categories,
+          state.plannedSpends || []
+        );
+        if (end != null && Number.isFinite(end)) {
+          total += end;
+          anyFl = true;
+        } else {
+          const bal = mm.balances && mm.balances[p.id];
+          if (bal && bal.bruk != null && bal.bruk !== "" && Number.isFinite(Number(bal.bruk))) {
+            total += Number(bal.bruk);
+          }
+        }
+      });
+      return anyFl ? Math.round(total * 100) / 100 : null;
+    }
+
+    const flHere = forLonnPotAt(fromKey);
+    if (flHere != null) return { anchorKey: fromKey, startPot: flHere, fromForLonn: true };
+
     const viewM = state.months[fromKey];
     if (viewM && viewM.balancesUpdatedAt) {
       const t = brukTotal(viewM);
@@ -2501,6 +2782,10 @@
       if (!k) break;
       const mm = state.months[k];
       if (!mm) continue;
+      const flPot = forLonnPotAt(k);
+      if (flPot != null) {
+        return { anchorKey: k, startPot: flPot, fromForLonn: true };
+      }
       const t = brukTotal(mm);
       if (t == null) continue;
       if (mm.balancesUpdatedAt) {
@@ -2676,6 +2961,19 @@
     }
 
     const fromSaldo = mode === "saldo";
+    const flMode = mode === "forLonn";
+    const potInclVar = !!(isPerson ? pc && pc.potIncludesVariable : c && c.potIncludesVariable);
+    const flBreakdowns = [];
+    if (flMode && c && c.byPerson) {
+      if (isPerson) {
+        if (pc && pc.forLonn) flBreakdowns.push({ name: whoName, bd: pc.forLonn });
+      } else {
+        activePeopleList().forEach(function (p) {
+          const pp = c.byPerson[p.id];
+          if (pp && pp.forLonn) flBreakdowns.push({ name: p.name, bd: pp.forLonn });
+        });
+      }
+    }
     const showBase = !!(
       c &&
       (c.hasPlannedIncome ||
@@ -2689,7 +2987,7 @@
     // (or reserved planned spends) — avoid blank months shouting «Sett på konto».
     const show = showBase;
 
-    const baseTitle = fromSaldo
+    const baseTitle = fromSaldo || flMode
       ? "Trygg å bruke nå"
       : "Trygg å bruke";
     const titled = isPerson && whoName
@@ -2777,7 +3075,7 @@
           (viewMonthObj.balancesSuggested ||
             (c && (c.hasSuggestedBalances || c.brukFromDisplayFallback)) ||
             ahead > 12);
-    if (useProj) {
+    if (useProj && !flMode) {
       projectionOverride = projectedPotForViewKey(viewKeyNow);
       if (projectionOverride && Number.isFinite(projectionOverride.pot)) {
         amount = projectionOverride.pot;
@@ -2828,7 +3126,42 @@
     }
 
     if (secondaryEl) {
-      if (show && fromSaldo && ifBudgetUsed != null) {
+      if (show && flMode && flBreakdowns.length) {
+        let remVarFl = 0;
+        let beforeVar = 0;
+        flBreakdowns.forEach(function (x) {
+          remVarFl += x.bd.remainingVariable || 0;
+          beforeVar += x.bd.tryggForVariabel || 0;
+        });
+        if (!isPerson && typeof amount === "number") {
+          beforeVar = amount + remVarFl;
+        }
+        if (remVarFl > 0.5) {
+          secondaryEl.hidden = false;
+          secondaryEl.textContent =
+            "Før variabelt budsjett (" + formatNOK(remVarFl) + " igjen): " + formatNOK(beforeVar);
+          secondaryEl.classList.toggle("is-neg", beforeVar < 0);
+        } else {
+          secondaryEl.hidden = true;
+          secondaryEl.textContent = "";
+          secondaryEl.classList.remove("is-neg");
+        }
+      } else if (show && fromSaldo && potInclVar && mode !== "projection") {
+        const amtPot = typeof amount === "number" ? amount : 0;
+        if (remVar > 0.5) {
+          secondaryEl.hidden = false;
+          secondaryEl.textContent =
+            "Før variabelt budsjett (" +
+            formatNOK(remVar) +
+            " igjen): " +
+            formatNOK(amtPot + remVar);
+          secondaryEl.classList.toggle("is-neg", amtPot + remVar < 0);
+        } else {
+          secondaryEl.hidden = true;
+          secondaryEl.textContent = "";
+          secondaryEl.classList.remove("is-neg");
+        }
+      } else if (show && fromSaldo && ifBudgetUsed != null) {
         secondaryEl.hidden = false;
         secondaryEl.textContent =
           "Hvis hele budsjettet brukes: " + formatNOK(ifBudgetUsed);
@@ -2841,8 +3174,26 @@
     }
 
     const breakEl = $("#safeSpendBreakdown");
+    // Faste trukket automatisk (egne + felles-andel) for scope — shown, not re-subtracted
+    let autoTrekkScope = 0;
+    let autoTrekkFelles = 0;
+    if (c && c.byPerson) {
+      if (isPerson && pc && pc.autoTrekk) {
+        autoTrekkScope = pc.autoTrekk.total || 0;
+        autoTrekkFelles = pc.autoTrekk.felles || 0;
+      } else if (!isPerson) {
+        autoTrekkScope = c.autoTrekkTotal || 0;
+      }
+    }
     if (breakEl) {
-      if (show && fromSaldo && hasBrukForHint && typeof Calc.safeToSpendSaldoBreakdown === "function") {
+      if (show && flMode && flBreakdowns.length) {
+        breakEl.hidden = false;
+        breakEl.innerHTML = flBreakdowns
+          .map(function (x) {
+            return formatForLonnBreakdownHtml(x.bd, flBreakdowns.length > 1 || !isPerson ? x.name : "");
+          })
+          .join("");
+      } else if (show && fromSaldo && hasBrukForHint && typeof Calc.safeToSpendSaldoBreakdown === "function") {
         const bd = Calc.safeToSpendSaldoBreakdown({
           bruk: brukForHint,
           remainingBudgetAll: remAll,
@@ -2851,6 +3202,9 @@
           futureReserve: futureR,
           spendBuffer: buf
         });
+        bd.autoTrekkTotal = autoTrekkScope;
+        bd.autoTrekkFelles = autoTrekkFelles;
+        bd.potIncludesVariable = potInclVar;
         breakEl.hidden = false;
         breakEl.innerHTML = formatSafeSpendBreakdownHtml(bd);
       } else {
@@ -2861,7 +3215,18 @@
 
     if (hintEl) {
       const wantSaldo = !c || c.useSaldoInSafeToSpend !== false;
-      if (!show) {
+      if (show && flMode) {
+        const amtFl = typeof amount === "number" ? amount : 0;
+        hintEl.classList.toggle("is-saldo-short", amtFl < 0);
+        hintEl.textContent =
+          (amtFl < 0
+            ? "Negativ trygg å bruke — du må spare inn eller utsette planlagte utlegg. "
+            : "") +
+          "Regnet fra «Saldo før lønn»" +
+          (isPerson && whoName ? " for " + whoName : "") +
+          ": + lønn − faste som trekkes etter lønn − planlagte utlegg − variabelt igjen. " +
+          "Faste merket «Før lønn» er allerede ute av saldoen. «På konto nå» er fortsatt valgfri korreksjon.";
+      } else if (!show) {
         hintEl.classList.remove("is-saldo-short");
         hintEl.textContent = wantSaldo
           ? "Trygg ruller automatisk (virtuell pot). På konto er valgfritt for å rette hvis noe er feil. Faste allerede i banksaldo — ikke trukket på nytt."
@@ -2930,13 +3295,16 @@
               : "") +
             ". Faste er allerede i banksaldo.";
         } else {
-          hintEl.textContent =
-            "Trygg å bruke nå = banksaldo minus planlagte utlegg" +
-            (buf > 0 ? " og buffer" : "") +
-            ". Faste er allerede trukket i På konto nå — ikke på nytt. Variabelt telles når du logger via Kjøpt noe." +
-            (ifBudgetUsed != null && remVar > 0.5
-              ? " Hvis hele budsjettet brukes: " + formatNOK(ifBudgetUsed) + "."
-              : "");
+          hintEl.textContent = potInclVar
+            ? "Trygg å bruke nå = rullerende pot (forrige + lønn − faste − variabelt budsjett − planlagte utlegg)" +
+              (buf > 0 ? " minus buffer" : "") +
+              ". Faste (egne + andel felles) er trukket automatisk — ikke på nytt. Sett «Saldo før lønn» eller «På konto nå» for å rette."
+            : "Trygg å bruke nå = banksaldo minus planlagte utlegg" +
+              (buf > 0 ? " og buffer" : "") +
+              ". Faste er allerede trukket i På konto nå — ikke på nytt. Variabelt telles når du logger via Kjøpt noe." +
+              (ifBudgetUsed != null && remVar > 0.5
+                ? " Hvis hele budsjettet brukes: " + formatNOK(ifBudgetUsed) + "."
+                : "");
         }
       } else {
         hintEl.classList.remove("is-saldo-short");
@@ -2973,6 +3341,7 @@
         hintEl.textContent = base;
       }
     }
+    renderForLonnBox(c, view, show);
     if (mini && miniVal) {
       if (show) {
         mini.hidden = false;
@@ -3180,16 +3549,28 @@
     return (stats || [])
       .map(function (s) {
         const plannedFull = budgetForOwner(m, s.cat.id, "felles");
-        const actualFull = Calc.actualForCategoryOwner(m, s.cat.id, s.cat.name, "felles");
+        const loggedFull = Calc.actualForCategoryOwner(m, s.cat.id, s.cat.name, "felles");
+        // Felles FAST (auto) counts as trukket for each person's share — same rule
+        // as personal faste trekk (maks av plan og logg).
+        const actualFull = Calc.effectiveActualForCategoryOwner(
+          m,
+          s.cat,
+          "felles",
+          state.view.month
+        );
         if (plannedFull <= 0 && actualFull <= 0) return null;
         const pct = Calc.fellesSharePercent(s.cat, personId, people);
+        if (!(pct > 0)) return null;
         const planned = Calc.fellesShare(s.cat, personId, people, plannedFull);
         const actual = Calc.fellesShare(s.cat, personId, people, actualFull);
+        const logged = Calc.fellesShare(s.cat, personId, people, loggedFull);
         return {
           cat: s.cat,
           ownerId: personId,
           planned: planned,
           actual: actual,
+          loggedActual: logged,
+          autoSpend: Calc.categoryAutoSpends(s.cat),
           remain: planned - actual,
           over: (actual > planned && planned > 0) || (planned === 0 && actual > 0),
           readOnlyShare: true,
@@ -3385,12 +3766,41 @@
             arr.map(function (r) { return renderCatOwnerRow(m, r); }).join("")
           );
         }
+        if (ownerId !== "felles") {
+          const at =
+            c.byPerson && c.byPerson[ownerId] && c.byPerson[ownerId].autoTrekk;
+          if (at && at.total > 0.5) {
+            html +=
+              '<p class="auto-trekk-summary" data-auto-trekk-summary="' +
+              escapeAttr(ownerId) +
+              '">✓ <strong>Faste ' +
+              escapeHtml(autoTrekkLabel().toLowerCase()) +
+              ": " +
+              formatNOK(at.total) +
+              "</strong>" +
+              ' <span class="muted">(egne ' +
+              formatNOK(at.own) +
+              " + andel felles " +
+              formatNOK(at.felles) +
+              ")</span></p>";
+          }
+        }
         html += subLabel("Faste", faste) + subLabel("Variable", variable);
         if (ownerId !== "felles") {
           const shareRows = fellesShareRowsForPerson(m, ownerId, stats);
           if (shareRows.length) {
+            const at2 =
+              c.byPerson && c.byPerson[ownerId] && c.byPerson[ownerId].autoTrekk;
             html +=
-              '<div class="cat-subhead">Andel felles</div>' +
+              '<div class="cat-subhead">Andel felles' +
+              (at2 && at2.felles > 0.5
+                ? ' <span class="cat-subhead-auto">✓ ' +
+                  formatNOK(at2.felles) +
+                  " " +
+                  escapeHtml(autoTrekkLabel().toLowerCase()) +
+                  "</span>"
+                : "") +
+              "</div>" +
               shareRows.map(function (r) { return renderCatOwnerRow(m, r); }).join("");
           }
         }
@@ -3646,10 +4056,19 @@
     const overRatio = planned > 0 ? actual / planned : (actual > 0 ? 2 : 0);
     const isMildOver = isOver && overRatio < 1.15; // <15% over → amber, not red
     const isExact = planned > 0 && actual === planned;
-    const isSoftWarn = !isOver && planned > 0 && pctRaw >= 80;
+    const autoOnEarly = !!(s.autoSpend || (s.cat && Calc.categoryAutoSpends(s.cat)));
+    // Fast auto-trekk: planned counted as paid → «Trukket automatisk», not «Snart full»
+    const loggedEarly = s.loggedActual != null ? s.loggedActual : actual;
+    const isAutoTrukket =
+      autoOnEarly && s.cat && s.cat.type === "fast" && planned > 0 && !isOver &&
+      actual >= planned - 0.005;
+    const isAutoCredit = isAutoTrukket && loggedEarly < planned - 0.005;
+    const isSoftWarn = !isOver && !isAutoTrukket && planned > 0 && pctRaw >= 80;
     const progClass = isOver
       ? (isMildOver ? "warn" : "over")
-      : isSoftWarn || pct >= 80
+      : isAutoTrukket
+        ? "done"
+        : isSoftWarn || pct >= 80
         ? "warn"
         : "";
     const rowClass = isOver
@@ -3665,7 +4084,9 @@
         ? "Sett forventet"
         : remain < 0
           ? formatNOK(Math.abs(remain)) + " over plan"
-          : formatNOK(remain) + " igjen";
+          : isAutoTrukket
+            ? "✓ " + autoTrekkLabel() + " · " + formatNOK(actual) + " · 0 kr igjen"
+            : formatNOK(remain) + " igjen";
 
     const raw = budgetForOwner(m, s.cat.id, s.ownerId);
     const entry = m.budgets && m.budgets[s.cat.id];
@@ -3686,10 +4107,20 @@
     const expanded = expandedCatId === expandKey;
     const isFast = s.cat.type === "fast";
     const autoOn = !!(s.autoSpend || (s.cat && ((Calc.categoryAutoSpends||Calc.categoryAutoSpends))(s.cat)));
+    const paidBefore = isFast && Calc.categoryPaidBeforeSalary(s.cat);
     const fastBadge = isFast
       ? '<span class="badge-fast">Fast</span>' +
-        (autoOn
-          ? '<span class="badge-auto" title="Planlagt beløp telles som brukt automatisk">Auto</span>'
+        (isAutoTrukket
+          ? '<span class="badge-auto badge-trukket" title="Faste trekk telles som betalt automatisk (' +
+            escapeAttr(autoTrekkLabel().toLowerCase()) +
+            ')">✓ ' +
+            escapeHtml(viewIsFutureMonth() ? "Trekkes" : "Trukket") +
+            "</span>"
+          : autoOn
+            ? '<span class="badge-auto" title="Planlagt beløp telles som brukt automatisk">Auto</span>'
+            : "") +
+        (paidBefore
+          ? '<span class="badge-forlonn" title="Trekkes før lønn — allerede ute av «Saldo før lønn»">Før lønn</span>'
           : "")
       : "";
     const warnTag = isOver
@@ -3766,7 +4197,19 @@
           (s.splitPct != null ? " · " + s.splitPct + " %" : "") +
           "</div>" +
           (autoOn
-            ? '<p class="hint compact auto-spend-hint">Fast — telt automatisk (maks av plan og logg). Variabel logges via «Kjøpt noe».</p>'
+            ? '<p class="hint compact auto-spend-hint">' +
+              (isAutoTrukket
+                ? "✓ " +
+                  escapeHtml(autoTrekkLabel()) +
+                  ": <strong>" +
+                  formatNOK(actual) +
+                  "</strong>" +
+                  (s.readOnlyShare && s.splitPct != null
+                    ? " (din andel " + escapeHtml(String(s.splitPct)) + " %)"
+                    : "") +
+                  " — telles som betalt uten at du logger. "
+                : "Fast — telt automatisk (maks av plan og logg). ") +
+              "Variabel logges via «Kjøpt noe».</p>"
             : "") +
           '<div class="cat-detail-row">' +
           "<span>Faktisk (denne)</span><strong>" +
@@ -3784,6 +4227,26 @@
               (s.cat.autoSpend === false ? "" : " checked") +
               ' /> Auto-tell som brukt</label>'
             : "") +
+          (!s.readOnlyShare && isFast
+            ? '<label class="pay-timing-label">Trekkes' +
+              '<select class="pay-timing-select" data-pay-timing="' +
+              escapeAttr(s.cat.id) +
+              '" aria-label="Når trekkes ' +
+              escapeAttr(s.cat.name) +
+              '">' +
+              '<option value="after_salary"' +
+              (paidBefore ? "" : " selected") +
+              ">Etter lønn (standard)</option>" +
+              '<option value="before_salary"' +
+              (paidBefore ? " selected" : "") +
+              ">Før lønn (allerede betalt)</option>" +
+              "</select></label>" +
+              '<p class="mini-help pay-timing-hint">Brukes av «Saldo før lønn»: faste som trekkes etter lønn trekkes fra Trygg; før lønn er allerede ute av saldoen.</p>'
+            : s.readOnlyShare && isFast
+              ? '<p class="mini-help pay-timing-hint">Trekkes ' +
+                (paidBefore ? "før lønn" : "etter lønn") +
+                " (endres under Felles).</p>"
+              : "") +
 
           '<div class="cat-detail-row">' +
           '<span class="cat-remain ' +
@@ -6461,7 +6924,12 @@
       if (field !== "bruk" && field !== "spare") return;
       const m = getMonth();
       ensurePersonBalance(m, personId);
+      const prevFieldVal = m.balances[personId][field];
       m.balances[personId][field] = parseAmount(el.value);
+      if (field === "bruk" && prevFieldVal !== m.balances[personId][field]) {
+        // Correction typed now → newer than any «Saldo før lønn» (most recent wins)
+        m.balances[personId].brukAt = new Date().toISOString();
+      }
       let wasSeeded = false;
       if (typeof Calc.clearSuggestedBalanceFlag === "function") {
         wasSeeded = !!Calc.clearSuggestedBalanceFlag(m, personId);
@@ -6491,7 +6959,10 @@
       const spareEl = document.querySelector(
         'input[data-bal="' + personId + '-spare"]'
       );
-      if (brukEl) m.balances[personId].bruk = parseAmount(brukEl.value);
+      if (brukEl) {
+        m.balances[personId].bruk = parseAmount(brukEl.value);
+        m.balances[personId].brukAt = new Date().toISOString();
+      }
       if (spareEl) m.balances[personId].spare = parseAmount(spareEl.value);
       let wasSeeded = false;
       if (typeof Calc.clearSuggestedBalanceFlag === "function") {
@@ -6541,16 +7012,77 @@
       render();
     }
 
+    /**
+     * «Saldo før lønn» (per person, per måned). Additive fields on
+     * m.balances[pid]: forLonn, forLonnAsOf (dag oppgitt hvis denne mnd), forLonnAt.
+     * Does NOT touch bruk / balancesUpdatedAt (På konto nå stays a correction).
+     */
+    function onForLonnField(el) {
+      if (!el || !el.getAttribute) return;
+      const personId = el.getAttribute("data-forlonn");
+      if (!personId) return;
+      const m = getMonth();
+      const bal = ensurePersonBalance(m, personId);
+      const v = parseAmount(el.value);
+      const prev = Calc.parseBalanceAmount(bal.forLonn);
+      if (v == null) {
+        if (prev == null) return;
+        delete bal.forLonn;
+        delete bal.forLonnAsOf;
+        delete bal.forLonnAt;
+      } else {
+        if (prev != null && Math.abs(prev - v) < 0.005) return;
+        bal.forLonn = v;
+        const d = new Date();
+        const viewKeyFl = monthKey(state.view.year, state.view.month);
+        const calKeyFl = monthKey(d.getFullYear(), d.getMonth());
+        // Current month: snapshot today (kjøp logget etter trekkes fra).
+        // Other months: start of month (alle kjøp i måneden telles etter).
+        bal.forLonnAsOf = viewKeyFl === calKeyFl ? todayISO() : null;
+        bal.forLonnAt = d.toISOString();
+      }
+      save();
+      render();
+      showToast(v == null ? "Saldo før lønn fjernet" : "Saldo før lønn lagret");
+    }
+
+    document.body.addEventListener("click", function (e) {
+      const clr = e.target && e.target.closest && e.target.closest("[data-forlonn-clear]");
+      if (!clr) return;
+      e.preventDefault();
+      const pid = clr.getAttribute("data-forlonn-clear");
+      const inp = document.querySelector('input[data-forlonn="' + pid + '"]');
+      if (inp) {
+        inp.value = "";
+        onForLonnField(inp);
+      }
+    });
+
     document.addEventListener("change", function (e) {
       const t = e.target;
       if (!t || !t.matches) return;
+      if (t.matches("input[data-forlonn]")) {
+        onForLonnField(t);
+        return;
+      }
       if (t.matches("input[data-bal]")) onBalanceField(t);
       else if (t.matches("input[data-bal-when]")) onBalanceWhen(t);
       else if (t.matches("input[data-bal-asof]")) onBalanceAsOf(t);
     });
+    document.addEventListener("keydown", function (e) {
+      const t = e.target;
+      if (e.key === "Enter" && t && t.matches && t.matches("input[data-forlonn]")) {
+        e.preventDefault();
+        onForLonnField(t);
+      }
+    });
     document.addEventListener("blur", function (e) {
       const t = e.target;
       if (!t || !t.matches) return;
+      if (t.matches("input[data-forlonn]")) {
+        onForLonnField(t);
+        return;
+      }
       if (t.matches("input[data-bal]")) onBalanceField(t);
       else if (t.matches("input[data-bal-asof]")) onBalanceAsOf(t);
     }, true);
@@ -7291,6 +7823,15 @@
     // Budget inputs (delegated) — per owner
     $("#categoryList").addEventListener("change", function (e) {
       /* data-autospend-plan-bound */
+      if (e.target.matches && e.target.matches("select[data-pay-timing]")) {
+        const catT = catById(e.target.getAttribute("data-pay-timing"));
+        if (catT) {
+          catT.payTiming = Calc.normalizePayTiming(e.target.value);
+          save();
+          render();
+        }
+        return;
+      }
       const asEl = e.target.closest("[data-autospend]");
       if (asEl && e.target.matches("input[data-autospend]")) {
         const cat = catById(asEl.getAttribute("data-autospend"));

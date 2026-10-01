@@ -280,6 +280,109 @@
     };
   }
 
+  /**
+   * Additive balance fields preserved through migrateState:
+   *   suggested / suggestedAfterPlans / fromCarryPot — rolling seed flags
+   *   brukAt — ISO when «På konto nå» bruk was last typed/confirmed
+   *   forLonn / forLonnAsOf / forLonnAt — «Saldo før lønn» (per person, per month)
+   */
+  function copyBalanceExtras(src, dst) {
+    if (!src || !dst) return dst;
+    if (src.suggested) dst.suggested = true;
+    if (src.suggestedAfterPlans) dst.suggestedAfterPlans = true;
+    if (src.fromCarryPot) dst.fromCarryPot = true;
+    if (src.brukAt) dst.brukAt = String(src.brukAt);
+    var fl = parseBalanceAmount(src.forLonn);
+    if (fl != null) {
+      dst.forLonn = fl;
+      dst.forLonnAsOf = normalizeBalanceAsOf(src.forLonnAsOf);
+      dst.forLonnAt = src.forLonnAt ? String(src.forLonnAt) : null;
+    }
+    return dst;
+  }
+
+  /** Fast category timing vs payday: "before_salary" | "after_salary" (default). */
+  function normalizePayTiming(v) {
+    return v === BALANCE_WHEN_BEFORE ? BALANCE_WHEN_BEFORE : BALANCE_WHEN_AFTER;
+  }
+
+  function categoryPaidBeforeSalary(cat) {
+    return !!(cat && cat.type === "fast" && cat.payTiming === BALANCE_WHEN_BEFORE);
+  }
+
+  /** Creation time (ms) for a logged entry: createdAt, else uid() Date.now prefix. */
+  function entryCreatedMs(entry) {
+    if (!entry) return null;
+    if (entry.createdAt) {
+      var t = Date.parse(entry.createdAt);
+      if (Number.isFinite(t)) return t;
+    }
+    var id = entry.id ? String(entry.id) : "";
+    if (/^[0-9a-z]{8}/.test(id)) {
+      var n = parseInt(id.slice(0, 8), 36);
+      // Plausible Date.now window (2017 … 2059)
+      if (Number.isFinite(n) && n > 1.5e12 && n < 2.8e12) return n;
+    }
+    return null;
+  }
+
+  /**
+   * True when a logged entry happened AFTER the før-lønn snapshot (so it is not
+   * already inside «Saldo før lønn»).
+   *   asOf null → snapshot is start of month: every logged entry is after.
+   *   date > asOf → after; date < asOf → before (already in saldo).
+   *   same day / undated → compare creation time with forLonnAt when known,
+   *   otherwise same day counts as already in saldo, undated as after.
+   */
+  function entryAfterForLonnSnapshot(entry, asOf, atMs) {
+    if (!entry) return false;
+    if (!asOf) return true;
+    var d = entry.date ? String(entry.date).slice(0, 10) : "";
+    if (d && d > asOf) return true;
+    if (d && d < asOf) return false;
+    var created = entryCreatedMs(entry);
+    if (created != null && atMs != null && Number.isFinite(atMs)) {
+      return created > atMs;
+    }
+    return !d;
+  }
+
+  /** Explicit «Saldo før lønn» on a balance row, or null. */
+  function forLonnInfo(bal) {
+    if (!bal || typeof bal !== "object") return null;
+    var amount = parseBalanceAmount(bal.forLonn);
+    if (amount == null) return null;
+    return {
+      amount: amount,
+      asOf: normalizeBalanceAsOf(bal.forLonnAsOf),
+      at: bal.forLonnAt ? String(bal.forLonnAt) : null
+    };
+  }
+
+  /**
+   * Active før-lønn snapshot for person in month, or null.
+   * «På konto nå» stays an optional correction: a non-suggested bruk typed
+   * AFTER the før-lønn value (brukAt > forLonnAt) wins; otherwise før lønn wins.
+   */
+  function forLonnActiveFor(m, personId) {
+    if (!m || !m.balances || !personId) return null;
+    var bal = m.balances[personId];
+    var info = forLonnInfo(bal);
+    if (!info) return null;
+    var bruk = parseBalanceAmount(bal.bruk);
+    if (
+      bruk != null &&
+      !bal.suggested &&
+      !bal.suggestedAfterPlans &&
+      bal.brukAt &&
+      info.at &&
+      String(bal.brukAt) > String(info.at)
+    ) {
+      return null;
+    }
+    return info;
+  }
+
   function ensureBalancesShape(m, people) {
     if (!m.balances || typeof m.balances !== "object") m.balances = {};
     (people || []).forEach(function (p) {
@@ -691,12 +794,40 @@
         (Array.isArray(prevM.savings) && prevM.savings.length > 0));
     var anchorKey = null;
     var startPot = null;
-    if (
+    // «Saldo før lønn» anchor: nearest før-lønn month (not past a nearer confirmed
+    // På konto). Wins over the suggested-carry chain unless that chain month is nearer.
+    var flKey = findNearestPreviousForLonnKey(months, key, personId);
+    var chainApplies =
       prevM &&
       !prevM.balancesUpdatedAt &&
       monthHasSuggestedBalances(prevM) &&
-      prevHasLogs
-    ) {
+      prevHasLogs;
+    if (flKey && (flKey === prevImmediate || !chainApplies)) {
+      var flPot = forLonnEndPotForPerson(months, flKey, personId, people, cats, planned);
+      var flDist = monthsBetweenKeys(flKey, key);
+      if (flPot != null && Number.isFinite(flPot) && flDist != null && flDist > 0) {
+        var flProj = projectPotFollowBudget({
+          months: months,
+          fromKey: flKey,
+          people: people,
+          categories: cats,
+          plannedSpends: planned,
+          startPot: flPot,
+          horizon: flDist,
+          personId: personId
+        });
+        var flAmt = flProj && flProj.potByKey ? flProj.potByKey[key] : null;
+        if (Number.isFinite(flAmt)) {
+          return {
+            amount: Math.round(flAmt * 100) / 100,
+            anchorKey: flKey,
+            startPot: flPot,
+            fromForLonn: true
+          };
+        }
+      }
+    }
+    if (chainApplies) {
       ensureBalancesShape(prevM, people);
       refreshMonthCarryPot(months, prevImmediate, people, {
         categories: cats,
@@ -866,6 +997,26 @@
           if (
             legacy != null &&
             Math.abs(Number(bal0.bruk) - legacy) < 0.02
+          ) {
+            legacyFreeze = true;
+          }
+        }
+        // Rolling seed whose flags were dropped by an older migrateState (no
+        // balancesUpdatedAt, no brukAt) and still equal to the rolling pot →
+        // re-flag as suggested so it keeps following the plan.
+        if (!legacyFreeze && !bal0.brukAt) {
+          var rolledEq = computeRollingSuggestedForPerson(
+            months,
+            key,
+            active[i].id,
+            people,
+            categoriesOpt || [],
+            plannedSpends
+          );
+          if (
+            rolledEq &&
+            rolledEq.amount != null &&
+            Math.abs(Number(bal0.bruk) - rolledEq.amount) < 0.02
           ) {
             legacyFreeze = true;
           }
@@ -1412,6 +1563,10 @@
           };
           var sp = cloneSplit(c.split);
           if (sp) migrated.split = sp;
+          // Additive: Fast trekkes før/etter lønn (før-lønn Trygg)
+          if (c.payTiming === BALANCE_WHEN_BEFORE || c.payTiming === BALANCE_WHEN_AFTER) {
+            migrated.payTiming = c.payTiming;
+          }
           return migrated;
         })
       : [];
@@ -1446,7 +1601,23 @@
             when: normalizeBalanceWhen(b.when),
             asOf: normalizeBalanceAsOf(b.asOf)
           };
+          copyBalanceExtras(b, m.balances[nb]);
         });
+        // Additive: keep rolling-seed flags so suggested pots stay refreshable
+        if (src.balancesSuggested) m.balancesSuggested = true;
+        if (src.carryPot && typeof src.carryPot === "object") {
+          var cpOut = {};
+          var cpAny = false;
+          Object.keys(src.carryPot).forEach(function (pid) {
+            var v = Number(src.carryPot[pid]);
+            if (Number.isFinite(v)) {
+              cpOut[mapLegacyOwner(pid)] = v;
+              cpAny = true;
+            }
+          });
+          if (cpAny) m.carryPot = cpOut;
+          if (src.carryPotSource) m.carryPotSource = String(src.carryPotSource);
+        }
       } else if (src.saldoBefore != null && src.saldoBefore !== "") {
         var firstId = (people[0] && people[0].id) || ID_A;
         people.forEach(function (p) {
@@ -2251,6 +2422,8 @@
     opts = opts || {};
     if (!item || !viewedMk) return false;
     if (String(item.monthKey || "") !== viewedMk) return false;
+    // Før-lønn snapshot is typed by the user: seed «reflected» flags do not apply
+    if (opts.ignoreReflected) return true;
     if (item.reflectedInBalance) return false;
     if (opts.excludeSameMonth) return false;
     return true;
@@ -2369,6 +2542,305 @@
       }
     });
     return sum;
+  }
+
+  /**
+   * Felles + egne FAST trekk som telles automatisk for én person (samme regel som
+   * categoryAutoSpends: type fast og autoSpend !== false). Beløp = maks(plan, logget)
+   * for personens egen post + %-andel av felles-posten.
+   * Returns { own, felles, total, autoOwn, autoFelles, autoTotal, items[] }:
+   *   total = trukket (effektivt), autoTotal = del som ikke er logget (auto-kreditt).
+   */
+  function fastAutoTrekkForPerson(m, personId, people, categories, monthIndex) {
+    var out = {
+      own: 0,
+      felles: 0,
+      total: 0,
+      autoOwn: 0,
+      autoFelles: 0,
+      autoTotal: 0,
+      items: []
+    };
+    if (!m || !personId) return out;
+    (categories || []).forEach(function (cat) {
+      if (!cat || cat.archived || !categoryAutoSpends(cat)) return;
+      var ownPlanned = budgetForOwner(m, cat.id, personId, monthIndex) || 0;
+      var ownLogged = actualForCategoryOwner(m, cat.id, cat.name, personId) || 0;
+      if (ownPlanned > 0 || ownLogged > 0) {
+        var ownEff = Math.max(ownPlanned, ownLogged);
+        var ownAuto = Math.max(0, ownPlanned - ownLogged);
+        out.own += ownEff;
+        out.autoOwn += ownAuto;
+        out.items.push({
+          catId: cat.id,
+          name: cat.name,
+          scope: "own",
+          pct: 100,
+          planned: ownPlanned,
+          logged: ownLogged,
+          amount: ownEff,
+          auto: ownAuto,
+          paidBeforeSalary: categoryPaidBeforeSalary(cat)
+        });
+      }
+      var fPlanned = budgetForOwner(m, cat.id, "felles", monthIndex) || 0;
+      var fLogged = actualForCategoryOwner(m, cat.id, cat.name, "felles") || 0;
+      if (fPlanned > 0 || fLogged > 0) {
+        var pct = fellesSharePercent(cat, personId, people);
+        if (!(pct > 0)) return;
+        var fEff = fellesShare(cat, personId, people, Math.max(fPlanned, fLogged));
+        var fAuto = fellesShare(cat, personId, people, Math.max(0, fPlanned - fLogged));
+        out.felles += fEff;
+        out.autoFelles += fAuto;
+        out.items.push({
+          catId: cat.id,
+          name: cat.name,
+          scope: "felles",
+          pct: pct,
+          planned: fellesShare(cat, personId, people, fPlanned),
+          logged: fellesShare(cat, personId, people, fLogged),
+          amount: fEff,
+          auto: fAuto,
+          paidBeforeSalary: categoryPaidBeforeSalary(cat)
+        });
+      }
+    });
+    function r2(x) {
+      return Math.round(x * 100) / 100;
+    }
+    out.own = r2(out.own);
+    out.felles = r2(out.felles);
+    out.total = r2(out.own + out.felles);
+    out.autoOwn = r2(out.autoOwn);
+    out.autoFelles = r2(out.autoFelles);
+    out.autoTotal = r2(out.autoOwn + out.autoFelles);
+    return out;
+  }
+
+  /**
+   * «Saldo før lønn» → Trygg å bruke (per person, per måned).
+   *
+   *   etterLønn = førLønn + lønn(+ekstra) − faste som trekkes etter lønn (ubetalt)
+   *               − kjøp/sparing logget etter før-lønn-tidspunktet
+   *   Trygg     = etterLønn − planlagte utlegg (denne mnd + hold-back senere)
+   *               − variabelt budsjett igjen − buffer
+   *   endPot    = etterLønn − planlagte denne mnd − variabelt igjen
+   *               (slutt-pot hvis budsjettet følges; anker for Fremover/neste mnd)
+   *
+   * Faste merket payTiming "before_salary" er allerede ute av førLønn-saldoen →
+   * trekkes ikke (heller ikke logg av dem etter tidspunktet). Lønn: logget lønn/ekstra
+   * etter tidspunktet erstatter plan per type, ellers planlagt.
+   * Felles: kategori-% (samme som planUt). Ingen dobbel-telling med bank-saldo:
+   * førLønn er et eget øyeblikksbilde; «På konto nå» brukes ikke i denne formelen.
+   */
+  function forLonnBreakdownForPerson(
+    m,
+    personId,
+    people,
+    categories,
+    monthIndex,
+    plannedSpends,
+    monthKey,
+    opts
+  ) {
+    opts = opts || {};
+    if (!m || !personId) return null;
+    ensureMonthShape(m, people);
+    var info = opts.info || forLonnActiveFor(m, personId);
+    if (!info) return null;
+    var asOf = info.asOf;
+    var atMs = info.at ? Date.parse(info.at) : null;
+    if (!Number.isFinite(atMs)) atMs = null;
+    function after(e) {
+      return entryAfterForLonnSnapshot(e, asOf, atMs);
+    }
+    var active = activePeople(people);
+    var n = Math.max(1, active.length);
+    var cats = categories || [];
+    function r2(x) {
+      return Math.round(x * 100) / 100;
+    }
+
+    var plannedL = plannedIncomeFor(m, personId, "lønn");
+    var plannedE = plannedIncomeFor(m, personId, "ekstra");
+    var loggedL = sumAmounts(m.incomes, function (i) {
+      return i.person === personId && i.type === "lønn" && after(i);
+    });
+    var loggedE = sumAmounts(m.incomes, function (i) {
+      return i.person === personId && i.type === "ekstra" && after(i);
+    });
+    var lonn = loggedL > 0 ? loggedL : plannedL;
+    var ekstra = loggedE > 0 ? loggedE : plannedE;
+    var sparingAfter = sumAmounts(m.savings, function (s) {
+      return s.person === personId && after(s);
+    });
+
+    var fastEtter = 0;
+    var fastFor = 0;
+    var remVar = 0;
+    var itemsEtter = [];
+    var itemsFor = [];
+    cats.forEach(function (cat) {
+      if (!cat || cat.archived) return;
+      var ownPlanned = budgetForOwner(m, cat.id, personId, monthIndex) || 0;
+      var ownLogged = actualForCategoryOwner(m, cat.id, cat.name, personId) || 0;
+      var fPlanned = budgetForOwner(m, cat.id, "felles", monthIndex) || 0;
+      var fLogged = actualForCategoryOwner(m, cat.id, cat.name, "felles") || 0;
+      var pct = fellesSharePercent(cat, personId, people);
+      if (cat.type === "fast") {
+        var plannedShare = ownPlanned + fellesShare(cat, personId, people, fPlanned);
+        if (!(plannedShare > 0)) return;
+        var isFelles = fPlanned > 0;
+        if (categoryPaidBeforeSalary(cat)) {
+          fastFor += plannedShare;
+          itemsFor.push({
+            catId: cat.id,
+            name: cat.name,
+            felles: isFelles,
+            pct: isFelles ? pct : 100,
+            amount: r2(plannedShare)
+          });
+          return;
+        }
+        var unpaid =
+          Math.max(0, ownPlanned - ownLogged) +
+          fellesShare(cat, personId, people, Math.max(0, fPlanned - fLogged));
+        fastEtter += unpaid;
+        itemsEtter.push({
+          catId: cat.id,
+          name: cat.name,
+          felles: isFelles,
+          pct: isFelles ? pct : 100,
+          planned: r2(plannedShare),
+          amount: r2(unpaid)
+        });
+      } else {
+        remVar +=
+          Math.max(0, ownPlanned - ownLogged) +
+          fellesShare(cat, personId, people, Math.max(0, fPlanned - fLogged));
+      }
+    });
+
+    var loggedAfter = 0;
+    (m.expenses || []).forEach(function (e) {
+      if (!e) return;
+      var amt = Number(e.amount) || 0;
+      if (!amt || !after(e)) return;
+      var cat = e.categoryId ? catById(cats, e.categoryId) : null;
+      if (!cat && e.category) {
+        for (var i = 0; i < cats.length; i++) {
+          if (cats[i] && cats[i].name === e.category && !cats[i].archived) {
+            cat = cats[i];
+            break;
+          }
+        }
+      }
+      if (cat && categoryPaidBeforeSalary(cat)) return; // already in før-lønn saldo
+      if (e.owner === personId) loggedAfter += amt;
+      else if (e.owner === "felles") {
+        loggedAfter += cat ? fellesShare(cat, personId, people, amt) : amt / n;
+      }
+    });
+
+    var mk = monthKey ? String(monthKey) : "";
+    var plannedTotal = 0;
+    var plannedLater = 0;
+    if (mk) {
+      plannedTotal = plannedSpendReserveForPerson(
+        plannedSpends || [],
+        mk,
+        m.expenses,
+        personId,
+        people,
+        { ignoreReflected: true }
+      );
+      plannedLater = plannedSpendReserveForPerson(
+        plannedSpendsAfterMonth(plannedSpends || [], mk),
+        mk,
+        m.expenses,
+        personId,
+        people,
+        { ignoreReflected: true }
+      );
+    }
+    var plannedSame = Math.max(0, plannedTotal - plannedLater);
+    var buffer = Number(opts.bufferShare) || 0;
+    if (buffer < 0) buffer = 0;
+
+    var etterLonn =
+      info.amount + lonn + ekstra - fastEtter - loggedAfter - sparingAfter;
+    var trygg = etterLonn - plannedSame - plannedLater - remVar - buffer;
+    var endPot = etterLonn - plannedSame - remVar;
+    return {
+      personId: personId,
+      saldoForLonn: info.amount,
+      asOf: asOf,
+      at: info.at,
+      lonn: r2(lonn),
+      ekstra: r2(ekstra),
+      inn: r2(lonn + ekstra),
+      innSource: loggedL > 0 || loggedE > 0 ? "logged" : "plan",
+      fastEtterLonn: r2(fastEtter),
+      fastEtterLonnItems: itemsEtter,
+      fastForLonn: r2(fastFor),
+      fastForLonnItems: itemsFor,
+      loggedAfter: r2(loggedAfter),
+      sparingAfter: r2(sparingAfter),
+      plannedSameMonth: r2(plannedSame),
+      plannedLater: r2(plannedLater),
+      plannedReserve: r2(plannedSame + plannedLater),
+      remainingVariable: r2(remVar),
+      buffer: r2(buffer),
+      etterLonn: r2(etterLonn),
+      trygg: r2(trygg),
+      tryggForVariabel: r2(trygg + remVar),
+      endPot: r2(endPot),
+      formula:
+        "Trygg = før lønn + lønn − faste etter lønn − logget etter − planlagte utlegg − variabelt igjen − buffer"
+    };
+  }
+
+  /** End-of-month pot from a før-lønn month (or null) — anchor for rolling/Fremover. */
+  function forLonnEndPotForPerson(months, key, personId, people, categories, plannedSpends) {
+    if (!months || !key || !months[key]) return null;
+    var m = months[key];
+    if (!forLonnActiveFor(m, personId)) return null;
+    var bd = forLonnBreakdownForPerson(
+      m,
+      personId,
+      people,
+      categories || [],
+      monthIndexFromKey(key),
+      plannedSpends || [],
+      key,
+      {}
+    );
+    return bd ? bd.endPot : null;
+  }
+
+  /**
+   * Nearest month strictly before key with an active før-lønn snapshot for
+   * person, stopping at a nearer confirmed På konto for that person.
+   */
+  function findNearestPreviousForLonnKey(months, key, personId, maxLookback) {
+    var look = maxLookback == null ? 36 : maxLookback;
+    var k = key;
+    for (var i = 0; i < look; i++) {
+      k = shiftMonthKey(k, -1);
+      if (!k) return null;
+      var mm = months && months[k];
+      if (!mm) continue;
+      if (forLonnActiveFor(mm, personId)) return k;
+      if (
+        mm.balancesUpdatedAt &&
+        mm.balances &&
+        mm.balances[personId] &&
+        parseBalanceAmount(mm.balances[personId].bruk) != null
+      ) {
+        return null;
+      }
+    }
+    return null;
   }
 
   /**
@@ -2631,11 +3103,23 @@
     var safeToSpendNow = null;
     var safeToSpendSaldoRaw = null; // conservative / if-budget-used
     var safeToSpendSaldo = null;
+    // Household pot from rolling seeds / display fallback already includes the
+    // full variable budget (see projectPotFollowBudget) → no second subtraction.
+    var potIncludesVariable =
+      hasBruk &&
+      !m.balancesUpdatedAt &&
+      (brukFromDisplayFallback ||
+        active.every(function (p) {
+          var bx = m.balances && m.balances[p.id];
+          var bxN = bx ? parseBalanceAmount(bx.bruk) : null;
+          return bxN == null || !!(bx.fromCarryPot && bx.suggested);
+        }));
     if (hasBruk) {
       safeToSpendNowRaw = totalBruk - futureReserve - spendBuffer;
       safeToSpendNow = safeToSpendNowRaw;
-      safeToSpendSaldoRaw =
-        totalBruk - remainingBudgetAll - futureReserve - spendBuffer;
+      safeToSpendSaldoRaw = potIncludesVariable
+        ? safeToSpendNowRaw
+        : totalBruk - remainingBudgetAll - futureReserve - spendBuffer;
       safeToSpendSaldo = safeToSpendSaldoRaw;
     }
 
@@ -2710,13 +3194,23 @@
       var nowSafeP = null;
       var saldoRawP = null; // conservative / if-budget-used
       var saldoSafeP = null;
+      // Rolling pot seed (follow-budget) already subtracted this month's full
+      // variable budget → «hvis hele budsjettet brukes» must not subtract it again.
+      var rawBalP = (m.balances && m.balances[p.id]) || {};
+      var potSeededP =
+        hasPersonBruk &&
+        !m.balancesUpdatedAt &&
+        !!(bal.fromDisplayFallback || (rawBalP.fromCarryPot && rawBalP.suggested));
       if (hasPersonBruk) {
         // Saldo: never re-subtract autoExtra (Fast already in bank balance)
         nowRawP = brukN - futureP - bufferShareEach;
         nowSafeP = nowRawP;
-        saldoRawP = brukN - remAllP - futureP - bufferShareEach;
+        saldoRawP = potSeededP
+          ? nowRawP
+          : brukN - remAllP - futureP - bufferShareEach;
         saldoSafeP = saldoRawP;
       }
+      cp.potIncludesVariable = potSeededP;
 
       var modeP = "plan";
       var rawP = planRawP;
@@ -2733,6 +3227,45 @@
         safeP = planSafeP;
         needsSaldoP = false;
       }
+
+      // Faste trekk (egne + felles-andel) som telles automatisk — vises som
+      // «Trukket automatisk». Ut faktisk inkl. auto = logget + auto-kreditt.
+      var autoTrekkP = fastAutoTrekkForPerson(
+        m,
+        p.id,
+        people,
+        categories,
+        monthIndex
+      );
+      cp.autoTrekk = autoTrekkP;
+      cp.effectiveUtgifter = (cp.utgifter || 0) + (autoExtraP || 0);
+
+      // «Saldo før lønn» (eget felt) → egen Trygg-modus. Ingen bank-dobbeltrekk.
+      var flInfoP = forLonnActiveFor(m, p.id);
+      var flBdP = flInfoP
+        ? forLonnBreakdownForPerson(
+            m,
+            p.id,
+            people,
+            categories,
+            monthIndex,
+            plannedSpends || opts.plannedSpends || [],
+            mk,
+            { info: flInfoP, bufferShare: bufferShareEach }
+          )
+        : null;
+      if (flBdP) {
+        modeP = "forLonn";
+        rawP = flBdP.trygg;
+        safeP = flBdP.trygg;
+        nowRawP = flBdP.trygg;
+        nowSafeP = flBdP.trygg;
+        saldoRawP = flBdP.trygg;
+        saldoSafeP = flBdP.trygg;
+        needsSaldoP = false;
+      }
+      cp.forLonn = flBdP;
+      cp.hasForLonn = !!flBdP;
 
       cp.remainingBudgetAll = remAllP;
       cp.remainingFastBudgets = remFastP;
@@ -2754,6 +3287,42 @@
       cp.safeToSpendRaw = rawP;
       cp.safeToSpend = safeP;
     });
+
+    // Household when any person has «Saldo før lønn»: sum per person —
+    // før-lønn Trygg for those persons, bruk − reserve (existing saldo rule) for others.
+    var hasForLonn = active.some(function (p) {
+      return !!(byPerson[p.id] && byPerson[p.id].hasForLonn);
+    });
+    if (hasForLonn) {
+      var hhForLonn = 0;
+      active.forEach(function (p) {
+        var cpx = byPerson[p.id];
+        if (cpx.hasForLonn) {
+          hhForLonn += cpx.forLonn.trygg + bufferShareEach;
+        } else {
+          var bx = balanceByPerson[p.id] || {};
+          var bxN =
+            bx.bruk != null && Number.isFinite(Number(bx.bruk)) ? Number(bx.bruk) : 0;
+          hhForLonn += bxN - (cpx.futureReserve || 0);
+        }
+      });
+      hhForLonn = Math.round((hhForLonn - spendBuffer) * 100) / 100;
+      safeToSpendMode = "forLonn";
+      safeToSpendRaw = hhForLonn;
+      safeToSpend = hhForLonn;
+      safeToSpendNowRaw = hhForLonn;
+      safeToSpendNow = hhForLonn;
+      safeToSpendSaldoRaw = hhForLonn;
+      safeToSpendSaldo = hhForLonn;
+      needsSaldoForSafeToSpend = false;
+    }
+
+    // Household «Trukket automatisk» (faste, effektivt beløp)
+    var autoTrekkTotal = 0;
+    catStats.forEach(function (sx) {
+      if (sx.autoSpend) autoTrekkTotal += sx.actual || 0;
+    });
+    autoTrekkTotal = Math.round(autoTrekkTotal * 100) / 100;
 
     // Etter lønn (plan) = nå på bruk + forventet inn − forventet ut
     var etterLonn = hasBruk ? totalBruk + planInn - plannedTotal : null;
@@ -2817,6 +3386,9 @@
       safeToSpendRaw: safeToSpendRaw,
       safeToSpend: safeToSpend,
       etterLonn: etterLonn,
+      hasForLonn: hasForLonn,
+      potIncludesVariable: potIncludesVariable,
+      autoTrekkTotal: autoTrekkTotal,
       catStats: catStats,
       hasPlannedIncome: hasPlannedIncome,
       hasBudgets: hasBudgets,
@@ -4909,6 +5481,18 @@
     monthHasDatedCashflow: monthHasDatedCashflow,
     personCashflowParts: personCashflowParts,
     expectedCashflowForBalanceWhen: expectedCashflowForBalanceWhen,
-    balanceWhenLabel: balanceWhenLabel
+    balanceWhenLabel: balanceWhenLabel,
+    // Felles auto-trekk + Saldo før lønn
+    fastAutoTrekkForPerson: fastAutoTrekkForPerson,
+    normalizePayTiming: normalizePayTiming,
+    categoryPaidBeforeSalary: categoryPaidBeforeSalary,
+    entryCreatedMs: entryCreatedMs,
+    entryAfterForLonnSnapshot: entryAfterForLonnSnapshot,
+    forLonnInfo: forLonnInfo,
+    forLonnActiveFor: forLonnActiveFor,
+    forLonnBreakdownForPerson: forLonnBreakdownForPerson,
+    forLonnEndPotForPerson: forLonnEndPotForPerson,
+    findNearestPreviousForLonnKey: findNearestPreviousForLonnKey,
+    copyBalanceExtras: copyBalanceExtras
   };
 });

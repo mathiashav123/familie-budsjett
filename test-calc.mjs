@@ -4187,6 +4187,295 @@ console.log("\n36. Sep→Nov jump seed; Oct spend → Nov; no blank Trygg");
   assert(!st.settings.rebasePlanFromKey, "one-shot rebasePlanFromKey cleared");
 }
 
+
+// =====================================================================
+// Felles faste trukket automatisk + «Saldo før lønn» (2026-10-01)
+// =====================================================================
+function fbFixture() {
+  const people = [
+    { id: "p1", name: "Mathias", archived: false },
+    { id: "p2", name: "Andrea", archived: false }
+  ];
+  const cats = [
+    { id: "cLan", name: "Lån", type: "fast", owner: "felles", autoFill: true },
+    { id: "cHund", name: "Hund Fast", type: "fast", owner: "felles", autoFill: true },
+    { id: "cNett", name: "Internett", type: "fast", owner: "felles", autoFill: true, split: { p1: 70, p2: 30 } },
+    { id: "cAlarm", name: "Alarm", type: "fast", owner: "felles", autoFill: true },
+    { id: "cStrom", name: "Strøm", type: "variabel", owner: "felles", autoFill: true },
+    { id: "cForsikring", name: "Forsikring", type: "fast", owner: "p1", autoFill: true },
+    { id: "cMat", name: "Mat", type: "variabel", owner: "p1", autoFill: false }
+  ];
+  const m = {
+    budgets: {
+      cLan: { felles: 23441 },
+      cHund: { felles: 319 },
+      cNett: { felles: 919 },
+      cAlarm: { felles: 399 },
+      cStrom: { felles: 2000 },
+      cForsikring: { p1: 1000 },
+      cMat: { p1: 5000 }
+    },
+    budgetLines: {},
+    plannedIncome: {
+      p1: { lønn: 40000, ekstra: null, sparing: null },
+      p2: { lønn: 30000, ekstra: null, sparing: null }
+    },
+    incomes: [],
+    savings: [],
+    expenses: [],
+    balances: {}
+  };
+  return { people, cats, m };
+}
+const near = (a, b, msg) => assert(typeof a === "number" && Math.abs(a - b) < 0.011, `${msg} (got ${a}, expected ${b})`);
+
+console.log("\nFB1. Felles faste trukket automatisk per person (50/50 + Internett 70/30)");
+{
+  const { people, cats, m } = fbFixture();
+  const a1 = Calc.fastAutoTrekkForPerson(m, "p1", people, cats);
+  const a2 = Calc.fastAutoTrekkForPerson(m, "p2", people, cats);
+  near(a1.felles, 11720.5 + 159.5 + 643.3 + 199.5, "p1 felles andel faste (Lån/Hund/Alarm 50%, Internett 70%)");
+  near(a2.felles, 11720.5 + 159.5 + 275.7 + 199.5, "p2 felles andel faste (Internett 30%)");
+  near(a1.felles + a2.felles, 23441 + 319 + 919 + 399, "sum andeler = hele felles faste");
+  near(a1.own, 1000, "p1 egne faste (Forsikring)");
+  near(a2.own, 0, "p2 ingen egne faste");
+  near(a1.total, 1000 + 12722.8, "p1 total trukket");
+  near(a1.autoTotal, a1.total, "ingenting logget → alt er auto-kreditt");
+  assert(!a1.items.some((i) => i.name === "Strøm" || i.name === "Mat"), "variable (Strøm/Mat) telles ikke som trukket");
+  const nett = a1.items.find((i) => i.name === "Internett");
+  assert(nett && nett.pct === 70 && nett.scope === "felles", "Internett-item har 70% felles");
+
+  // Logged felles Lån → same effective, less auto
+  m.expenses.push({ id: "eL", owner: "felles", categoryId: "cLan", amount: 23441 });
+  const b1 = Calc.fastAutoTrekkForPerson(m, "p1", people, cats);
+  near(b1.felles, a1.felles, "logget Lån: effektiv andel uendret (ingen dobbel)");
+  near(b1.autoFelles, a1.felles - 11720.5, "logget Lån: auto-kreditt redusert med logget andel");
+  // Logged more than planned own → max(planned, logged)
+  m.expenses.push({ id: "eF", owner: "p1", categoryId: "cForsikring", amount: 1200 });
+  const c1 = Calc.fastAutoTrekkForPerson(m, "p1", people, cats);
+  near(c1.own, 1200, "egen fast logget over plan → logget teller");
+  near(c1.autoOwn, 0, "ingen auto når logget ≥ plan");
+  // autoSpend:false opts out
+  const cats2 = cats.map((c) => (c.id === "cAlarm" ? Object.assign({}, c, { autoSpend: false }) : c));
+  const d1 = Calc.fastAutoTrekkForPerson(fbFixture().m, "p1", people, cats2);
+  near(d1.felles, 12722.8 - 199.5, "autoSpend:false holder kategorien utenfor auto-trekk");
+  // 0% share → not listed
+  const cats3 = cats.map((c) => (c.id === "cNett" ? Object.assign({}, c, { split: { p1: 100, p2: 0 } }) : c));
+  const e2 = Calc.fastAutoTrekkForPerson(fbFixture().m, "p2", people, cats3);
+  assert(!e2.items.some((i) => i.name === "Internett"), "0% andel → ingen rad for personen");
+}
+
+console.log("\nFB2. calcFamily: autoTrekk, effectiveUtgifter, ingen dobbel-trekk i Trygg");
+{
+  const { people, cats, m } = fbFixture();
+  const c = Calc.calcFamily(m, people, cats, {}, 9, [], "2026-10");
+  const p1 = c.byPerson.p1;
+  near(p1.utgifter, 0, "p1 logget utgifter 0");
+  near(p1.effectiveUtgifter, 13722.8, "p1 Ut faktisk inkl. auto-trekk (egne 1000 + felles 12722.8)");
+  near(p1.autoTrekk.felles, 12722.8, "p1 autoTrekk.felles");
+  near(p1.remainingFastBudgets, 0, "p1 faste igjen = 0 (trukket automatisk)");
+  near(p1.remainingVariableBudgets, 5000 + 1000, "p1 variabelt igjen = Mat + halv Strøm");
+  near(c.byPerson.p2.effectiveUtgifter, 12355.2, "p2 Ut faktisk = felles andel 12355.2");
+  near(c.autoTrekkTotal, 23441 + 319 + 919 + 399 + 1000, "husholdning autoTrekkTotal");
+  // Plan mode: lønn − faste (auto) − future
+  near(p1.safeToSpendPlan, 40000 - 13722.8, "plan-Trygg trekker faste én gang");
+  // Saldo mode: bank already reflects faste → not subtracted again
+  m.balances.p1 = { bruk: 50000 };
+  m.balancesUpdatedAt = "2026-10-01T08:00:00.000Z";
+  const s = Calc.calcFamily(m, people, cats, {}, 9, [], "2026-10");
+  near(s.byPerson.p1.safeToSpend, 50000, "saldo-Trygg = på konto (faste ikke trukket på nytt)");
+  near(s.byPerson.p1.safeToSpendIfBudgetUsed, 50000 - 6000, "hvis budsjett brukes: kun variabelt igjen trekkes");
+}
+
+console.log("\nFB3. Rullerende pot inkluderer variabelt → «hvis hele budsjettet brukes» = nå");
+{
+  const { people, cats, m } = fbFixture();
+  m.balances.p1 = { bruk: 80000, suggested: true, fromCarryPot: true };
+  const c = Calc.calcFamily(m, people, cats, {}, 9, [], "2026-10");
+  assert(c.byPerson.p1.potIncludesVariable === true, "potIncludesVariable for rullerende seed");
+  near(c.byPerson.p1.safeToSpendIfBudgetUsed, c.byPerson.p1.safeToSpend, "if-used = nå (ingen dobbel variabel)");
+  m.balancesUpdatedAt = "2026-10-01T08:00:00.000Z";
+  const c2 = Calc.calcFamily(m, people, cats, {}, 9, [], "2026-10");
+  assert(c2.byPerson.p1.potIncludesVariable === false, "bekreftet bank-saldo → ikke pot");
+  near(c2.byPerson.p1.safeToSpendIfBudgetUsed, 80000 - 6000, "bekreftet: if-used trekker variabelt");
+}
+
+console.log("\nFB4. Saldo før lønn → Trygg (formel)");
+{
+  const { people, cats, m } = fbFixture();
+  m.balances.p1 = { forLonn: 20000, forLonnAsOf: null, forLonnAt: "2026-10-01T08:00:00.000Z" };
+  const bd = Calc.forLonnBreakdownForPerson(m, "p1", people, cats, 9, [], "2026-10");
+  near(bd.saldoForLonn, 20000, "før lønn");
+  near(bd.inn, 40000, "lønn fra plan");
+  near(bd.fastEtterLonn, 13722.8, "faste etter lønn (egne + felles-andel)");
+  near(bd.remainingVariable, 6000, "variabelt igjen");
+  near(bd.etterLonn, 20000 + 40000 - 13722.8, "etter lønn");
+  near(bd.trygg, 20000 + 40000 - 13722.8 - 6000, "Trygg = før + lønn − faste − variabelt");
+  near(bd.endPot, bd.trygg, "endPot = Trygg uten planlagte/buffer");
+  const c = Calc.calcFamily(m, people, cats, {}, 9, [], "2026-10");
+  assertEq(c.byPerson.p1.safeToSpendMode, "forLonn", "person-modus forLonn");
+  near(c.byPerson.p1.safeToSpend, bd.trygg, "calcFamily bruker før-lønn Trygg");
+  assert(c.hasForLonn === true && c.safeToSpendMode === "forLonn", "husholdning forLonn-modus");
+  near(c.safeToSpend, bd.trygg + 0, "husholdning = før-lønn Trygg + andre (bruk 0)");
+  // Andrea not affected
+  assert(c.byPerson.p2.safeToSpendMode !== "forLonn", "Andrea uten før lønn → vanlig modus");
+
+  // Mark Lån as paid before salary → not subtracted
+  const catsB = cats.map((x) => (x.id === "cLan" ? Object.assign({}, x, { payTiming: "before_salary" }) : x));
+  const bdB = Calc.forLonnBreakdownForPerson(m, "p1", people, catsB, 9, [], "2026-10");
+  near(bdB.fastEtterLonn, 13722.8 - 11720.5, "Lån før lønn → ikke i faste etter lønn");
+  near(bdB.fastForLonn, 11720.5, "Lån listet som betalt før lønn");
+  near(bdB.trygg, bd.trygg + 11720.5, "Trygg øker med Lån-andel");
+  // Logging Lån (before_salary) after snapshot must not reduce
+  m.expenses.push({ id: "eLan", owner: "felles", categoryId: "cLan", amount: 23441, date: "2026-10-02" });
+  const bdB2 = Calc.forLonnBreakdownForPerson(m, "p1", people, catsB, 9, [], "2026-10");
+  near(bdB2.trygg, bdB.trygg, "logg av før-lønn-fast etter tidspunkt påvirker ikke");
+  // Lån after salary + logged after → net same as unpaid plan (no double)
+  const bdA2 = Calc.forLonnBreakdownForPerson(m, "p1", people, cats, 9, [], "2026-10");
+  near(bdA2.trygg, bd.trygg, "etter-lønn fast logget etter snapshot: ingen dobbel");
+}
+
+console.log("\nFB5. Før lønn: asOf/logget-etter, lønn logget, planlagte utlegg, sparing");
+{
+  const { people, cats, m } = fbFixture();
+  m.balances.p1 = { forLonn: 10000, forLonnAsOf: "2026-10-05", forLonnAt: "2026-10-05T10:00:00.000Z" };
+  m.expenses.push({ id: "e1", owner: "p1", categoryId: "cMat", amount: 700, date: "2026-10-03" });
+  m.expenses.push({ id: "e2", owner: "p1", categoryId: "cMat", amount: 300, date: "2026-10-07" });
+  const bd = Calc.forLonnBreakdownForPerson(m, "p1", people, cats, 9, [], "2026-10");
+  near(bd.loggedAfter, 300, "kun kjøp etter før-lønn-dato trekkes");
+  near(bd.remainingVariable, 4000 + 1000, "variabelt igjen = Mat 5000 − 1000 logget + Strøm-andel");
+  near(bd.trygg, 10000 + 40000 - 13722.8 - 300 - 5000, "Trygg med asOf");
+  // Same day: created before snapshot → already in saldo
+  const tBefore = Date.parse("2026-10-05T09:00:00.000Z").toString(36);
+  const tAfter = Date.parse("2026-10-05T11:00:00.000Z").toString(36);
+  m.expenses.push({ id: tBefore + "aa", owner: "p1", categoryId: "cMat", amount: 50, date: "2026-10-05" });
+  m.expenses.push({ id: tAfter + "bb", owner: "p1", categoryId: "cMat", amount: 80, date: "2026-10-05" });
+  const bdS = Calc.forLonnBreakdownForPerson(m, "p1", people, cats, 9, [], "2026-10");
+  near(bdS.loggedAfter, 380, "samme dag: kun registrert etter tidspunktet trekkes");
+  // Logged lønn after snapshot replaces plan
+  m.incomes.push({ id: "i1", person: "p1", type: "lønn", amount: 41000, date: "2026-10-15" });
+  const bdL = Calc.forLonnBreakdownForPerson(m, "p1", people, cats, 9, [], "2026-10");
+  near(bdL.inn, 41000, "logget lønn etter tidspunkt erstatter plan");
+  assertEq(bdL.innSource, "logged", "innSource logged");
+  // Lønn logged BEFORE snapshot is already in saldo → plan not added again? (logged before = in saldo, plan used)
+  const m2 = fbFixture().m;
+  m2.balances.p1 = { forLonn: 10000, forLonnAsOf: "2026-10-20", forLonnAt: "2026-10-20T10:00:00.000Z" };
+  m2.savings.push({ id: "s1", person: "p1", amount: 2000, date: "2026-10-21" });
+  const bdSv = Calc.forLonnBreakdownForPerson(m2, "p1", people, cats, 9, [], "2026-10");
+  near(bdSv.sparingAfter, 2000, "sparing etter tidspunkt trekkes");
+  // Planned spends: same month (even if reflected) + later months hold back
+  const ps = [
+    { id: "ps1", owner: "p1", amount: 5000, monthKey: "2026-10", reflectedInBalance: true },
+    { id: "ps2", owner: "p1", amount: 3000, monthKey: "2026-12" }
+  ];
+  const m3 = fbFixture().m;
+  m3.balances.p1 = { forLonn: 20000, forLonnAt: "2026-10-01T08:00:00.000Z" };
+  const bdP = Calc.forLonnBreakdownForPerson(m3, "p1", people, cats, 9, ps, "2026-10");
+  near(bdP.plannedSameMonth, 5000, "planlagt denne mnd trekkes (også om merket reflektert)");
+  near(bdP.plannedLater, 3000, "senere planlagte holdes tilbake");
+  near(bdP.trygg, 20000 + 40000 - 13722.8 - 6000 - 8000, "Trygg minus planlagte");
+  near(bdP.endPot, 20000 + 40000 - 13722.8 - 6000 - 5000, "endPot trekker kun samme mnd");
+  // Buffer split
+  const c = Calc.calcFamily(m3, people, cats, { spendBuffer: 1000 }, 9, ps, "2026-10");
+  near(c.byPerson.p1.safeToSpend, bdP.trygg - 500, "buffer-andel trekkes per person");
+}
+
+console.log("\nFB6. Før lønn vs «På konto nå» (siste vinner)");
+{
+  const { people, cats, m } = fbFixture();
+  m.balances.p1 = {
+    bruk: 12345,
+    brukAt: "2026-10-01T07:00:00.000Z",
+    forLonn: 20000,
+    forLonnAt: "2026-10-01T08:00:00.000Z"
+  };
+  m.balancesUpdatedAt = "2026-10-01T07:00:00.000Z";
+  assert(!!Calc.forLonnActiveFor(m, "p1"), "før lønn satt etter På konto → før lønn aktiv");
+  m.balances.p1.brukAt = "2026-10-01T09:00:00.000Z";
+  assert(Calc.forLonnActiveFor(m, "p1") === null, "På konto satt etter før lønn → På konto vinner");
+  const c = Calc.calcFamily(m, people, cats, {}, 9, [], "2026-10");
+  assertEq(c.byPerson.p1.safeToSpendMode, "saldo", "saldo-modus når På konto er nyere");
+  near(c.byPerson.p1.safeToSpend, 12345, "Trygg = På konto");
+  // Suggested (rolling) bruk never beats før lønn
+  m.balances.p1 = { bruk: 99999, suggested: true, fromCarryPot: true, brukAt: "2026-10-01T09:00:00.000Z", forLonn: 20000, forLonnAt: "2026-10-01T08:00:00.000Z" };
+  assert(!!Calc.forLonnActiveFor(m, "p1"), "foreslått bruk slår ikke før lønn");
+  // entryAfterForLonnSnapshot basics
+  assert(Calc.entryAfterForLonnSnapshot({ date: "2026-10-01" }, null, null) === true, "uten asOf: alt er etter");
+  assert(Calc.entryAfterForLonnSnapshot({ date: "2026-10-01" }, "2026-10-02", null) === false, "før asOf: i saldo");
+  assert(Calc.entryAfterForLonnSnapshot({}, "2026-10-02", null) === true, "udatert: etter");
+  assert(Calc.normalizePayTiming("before_salary") === "before_salary" && Calc.normalizePayTiming("x") === "after_salary", "normalizePayTiming");
+  assert(Calc.categoryPaidBeforeSalary({ type: "fast", payTiming: "before_salary" }) === true, "categoryPaidBeforeSalary fast");
+  assert(Calc.categoryPaidBeforeSalary({ type: "variabel", payTiming: "before_salary" }) === false, "payTiming gjelder bare faste");
+}
+
+console.log("\nFB7. migrateState bevarer nye felt (additivt)");
+{
+  const { people, cats, m } = fbFixture();
+  const raw = {
+    version: 2,
+    people,
+    categories: cats.map((c) => (c.id === "cLan" ? Object.assign({}, c, { payTiming: "before_salary" }) : c)),
+    months: {
+      "2026-10": Object.assign({}, m, {
+        balances: {
+          p1: { bruk: 85597.2, suggested: true, fromCarryPot: true, forLonn: 231223, forLonnAsOf: "2026-10-01", forLonnAt: "2026-10-01T08:00:00.000Z", brukAt: "2026-10-01T07:00:00.000Z" }
+        },
+        balancesSuggested: true,
+        carryPot: { p1: 85597.2 }
+      })
+    },
+    settings: {}
+  };
+  const s = Calc.migrateState(JSON.parse(JSON.stringify(raw)));
+  const b = s.months["2026-10"].balances.p1;
+  assertEq(s.categories.find((c) => c.id === "cLan").payTiming, "before_salary", "payTiming bevart");
+  assertEq(b.forLonn, 231223, "forLonn bevart");
+  assertEq(b.forLonnAsOf, "2026-10-01", "forLonnAsOf bevart");
+  assertEq(b.forLonnAt, "2026-10-01T08:00:00.000Z", "forLonnAt bevart");
+  assertEq(b.brukAt, "2026-10-01T07:00:00.000Z", "brukAt bevart");
+  assert(b.suggested === true && b.fromCarryPot === true, "seed-flagg bevart (suggested/fromCarryPot)");
+  assertEq(b.bruk, 85597.2, "bruk bevart");
+  assert(s.months["2026-10"].balancesSuggested === true, "balancesSuggested bevart");
+  const s2 = Calc.migrateState(JSON.parse(JSON.stringify(s)));
+  assertEq(s2.months["2026-10"].balances.p1.forLonn, 231223, "idempotent migrate");
+  assertEq(s2.months["2026-10"].expenses.length, s.months["2026-10"].expenses.length, "ingen data slettet");
+}
+
+console.log("\nFB8. Før-lønn-måned er anker for rullerende pot neste måned");
+{
+  const { people, cats, m } = fbFixture();
+  const months = { "2026-10": m, "2026-11": JSON.parse(JSON.stringify(fbFixture().m)) };
+  months["2026-11"].balances = {};
+  m.balances.p1 = { forLonn: 20000, forLonnAt: "2026-10-01T08:00:00.000Z" };
+  const endPot = Calc.forLonnEndPotForPerson(months, "2026-10", "p1", people, cats, []);
+  near(endPot, 20000 + 40000 - 13722.8 - 6000, "endPot oktober");
+  assertEq(Calc.findNearestPreviousForLonnKey(months, "2026-11", "p1"), "2026-10", "nærmeste før-lønn-måned");
+  const r = Calc.computeRollingSuggestedForPerson(months, "2026-11", "p1", people, cats, []);
+  assert(r && r.anchorKey === "2026-10", "anker = før-lønn-måned");
+  near(r.amount, endPot + 40000 - 13722.8 - 6000, "november pot = endPot + lønn − faste − variabelt");
+  Calc.ensureSuggestedBalances(months, "2026-11", people, { plannedSpends: [], categories: cats });
+  near(Number(months["2026-11"].balances.p1.bruk), r.amount, "november seedet fra før-lønn-anker");
+  assert(months["2026-11"].balances.p1.suggested === true, "seed flagget suggested");
+}
+
+console.log("\nFB9. Heal: seed uten flagg (tapt ved gammel migrate) re-flagges");
+{
+  const { people, cats, m } = fbFixture();
+  const months = { "2026-10": m, "2026-11": JSON.parse(JSON.stringify(fbFixture().m)) };
+  m.balances.p1 = { forLonn: 20000, forLonnAt: "2026-10-01T08:00:00.000Z" };
+  const r = Calc.computeRollingSuggestedForPerson(months, "2026-11", "p1", people, cats, []);
+  months["2026-11"].balances = { p1: { bruk: r.amount } }; // flags lost, value = pot
+  const res = Calc.ensureSuggestedBalances(months, "2026-11", people, { plannedSpends: [], categories: cats });
+  assert(res.reason !== "has-bruk", "umerket seed lik pot blokkerer ikke (" + res.reason + ")");
+  assert(months["2026-11"].balances.p1.suggested === true, "re-flagget suggested");
+  // A real user value (different) is kept
+  months["2026-11"].balances = { p1: { bruk: 12345 } };
+  delete months["2026-11"].balancesSuggested;
+  const res2 = Calc.ensureSuggestedBalances(months, "2026-11", people, { plannedSpends: [], categories: cats });
+  assertEq(res2.reason, "has-bruk", "brukerverdi beholdes");
+  assertEq(months["2026-11"].balances.p1.bruk, 12345, "brukerverdi ikke overskrevet");
+}
+
 console.log("\n=== Results:", passed, "passed,", failed, "failed ===\n");
 if (failed) {
   console.error("FAILURES:");
