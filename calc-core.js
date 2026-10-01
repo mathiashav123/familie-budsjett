@@ -2618,6 +2618,41 @@
   }
 
   /**
+   * Diagnose: hvilke EGNE faste (plan-beløp, auto-trekk-kategorier) endret seg
+   * fra forrige måned? Sammenligner planned per kategori (scope own).
+   * Returnerer { prevOwn, curOwn, delta, changes: [{ catId, name, prev, cur }] }.
+   */
+  function ownFastDiffVsPrev(prevM, curM, personId, people, categories, prevMi, curMi) {
+    var prevAt = fastAutoTrekkForPerson(prevM || {}, personId, people, categories, prevMi);
+    var curAt = fastAutoTrekkForPerson(curM || {}, personId, people, categories, curMi);
+    var map = {};
+    function add(items, key) {
+      (items || []).forEach(function (it) {
+        if (it.scope !== "own") return;
+        var row = map[it.catId] || (map[it.catId] = { catId: it.catId, name: it.name, prev: 0, cur: 0 });
+        row[key] += it.planned || 0;
+      });
+    }
+    add(prevAt.items, "prev");
+    add(curAt.items, "cur");
+    var prevOwnPlan = 0;
+    var curOwnPlan = 0;
+    Object.keys(map).forEach(function (k) {
+      prevOwnPlan += map[k].prev;
+      curOwnPlan += map[k].cur;
+    });
+    var changes = Object.keys(map)
+      .map(function (k) { return map[k]; })
+      .filter(function (r) { return Math.abs(r.prev - r.cur) > 0.5; });
+    return {
+      prevOwn: Math.round(prevOwnPlan * 100) / 100,
+      curOwn: Math.round(curOwnPlan * 100) / 100,
+      delta: Math.round((curOwnPlan - prevOwnPlan) * 100) / 100,
+      changes: changes
+    };
+  }
+
+  /**
    * «Saldo før lønn» → Trygg å bruke (per person, per måned).
    *
    *   etterLønn = førLønn + lønn(+ekstra) − faste som trekkes etter lønn (ubetalt)
@@ -3239,6 +3274,17 @@
       );
       cp.autoTrekk = autoTrekkP;
       cp.effectiveUtgifter = (cp.utgifter || 0) + (autoExtraP || 0);
+      // «Til overs (faktisk)» = inntekt − sparing − Ut faktisk (inkl. faste
+      // trukket automatisk). Ikke-registrert lønn/ekstra → forventet (merket).
+      var innBasisP = incomeBasisForPerson(m, p.id);
+      cp.innBasis = innBasisP.total;
+      cp.innBasisPlanFilled = innBasisP.planFilled;
+      cp.innBasisFromPlan = innBasisP.planFilled > 0;
+      cp.innMissingTypes = innBasisP.missingTypes;
+      cp.tilOversFaktisk =
+        Math.round(
+          (innBasisP.total - (cp.sparing || 0) - cp.effectiveUtgifter) * 100
+        ) / 100;
 
       // «Saldo før lønn» (eget felt) → egen Trygg-modus. Ingen bank-dobbeltrekk.
       var flInfoP = forLonnActiveFor(m, p.id);
@@ -3317,6 +3363,18 @@
       needsSaldoForSafeToSpend = false;
     }
 
+    // Household «Til overs (faktisk)» — samme regel som per person.
+    var innBasisTotal = 0;
+    var innBasisPlanFilled = 0;
+    active.forEach(function (p) {
+      innBasisTotal += byPerson[p.id].innBasis || 0;
+      innBasisPlanFilled += byPerson[p.id].innBasisPlanFilled || 0;
+    });
+    var tilOversFaktisk =
+      Math.round(
+        (innBasisTotal - samletSparing - effectiveUtgifter) * 100
+      ) / 100;
+
     // Household «Trukket automatisk» (faste, effektivt beløp)
     var autoTrekkTotal = 0;
     catStats.forEach(function (sx) {
@@ -3361,6 +3419,10 @@
       expenseCount: expenseCount,
       netPlan: netPlan,
       netActual: netActual,
+      innBasis: innBasisTotal,
+      innBasisPlanFilled: innBasisPlanFilled,
+      innBasisFromPlan: innBasisPlanFilled > 0,
+      tilOversFaktisk: tilOversFaktisk,
       remainingFastBudgets: remainingFastBudgets,
       remainingBudgetAll: remainingBudgetAll,
       remainingVariableBudgets: remainingVariableBudgets,
@@ -4788,6 +4850,148 @@
   }
 
   /**
+   * Inntektsgrunnlag for «Til overs (faktisk)» per person.
+   * Regel (samme som «Saldo før lønn»): per type (lønn, ekstra) brukes logget
+   * beløp når det finnes (> 0), ellers forventet. Returnerer også hvor mye som
+   * er fylt inn fra plan, så UI kan vise «Lønn ikke registrert ennå».
+   */
+  function incomeBasisForPerson(m, personId) {
+    var out = {
+      lønn: 0,
+      ekstra: 0,
+      total: 0,
+      logged: 0,
+      planFilled: 0,
+      missingTypes: []
+    };
+    if (!m || !personId) return out;
+    ["lønn", "ekstra"].forEach(function (type) {
+      var logged = sumAmounts(m.incomes, function (i) {
+        return i && i.person === personId && i.type === type;
+      });
+      var planned = plannedIncomeFor(m, personId, type);
+      var v;
+      if (logged > 0) {
+        v = logged;
+        out.logged += logged;
+      } else {
+        v = planned;
+        if (planned > 0) {
+          out.planFilled += planned;
+          out.missingTypes.push(type);
+        }
+      }
+      out[type] = v;
+      out.total += v;
+    });
+    return out;
+  }
+
+  /**
+   * Kjøp (logget forbruk) for sammenligning mot forrige måned — samme grunnlag
+   * begge måneder: uten engangs (valgfritt), uten faste kategorier (valgfritt,
+   * faste telles automatisk og logges ulikt fra måned til måned).
+   * opts: { scope: "samlet" | personId, people, categories, uptoDay,
+   *         excludeOneOff, excludeFast }
+   * uptoDay: tell bare kjøp datert dag 1..uptoDay (udaterte telles med).
+   */
+  function purchasesSpend(m, opts) {
+    opts = opts || {};
+    var list = (m && m.expenses) || [];
+    var scope = opts.scope || "samlet";
+    var people = opts.people || [];
+    var categories = opts.categories || [];
+    var n = Math.max(1, activePeople(people).length);
+    var upto =
+      opts.uptoDay != null && Number.isFinite(Number(opts.uptoDay))
+        ? Number(opts.uptoDay)
+        : null;
+    var sum = 0;
+    for (var i = 0; i < list.length; i++) {
+      var e = list[i];
+      if (!e) continue;
+      var amt = Number(e.amount) || 0;
+      if (!amt) continue;
+      if (opts.excludeOneOff && expenseIsOneOff(e)) continue;
+      var cat = e.categoryId ? catById(categories, e.categoryId) : null;
+      if (!cat && e.category) {
+        for (var j = 0; j < categories.length; j++) {
+          var cj = categories[j];
+          if (cj && !cj.archived && cj.name === e.category) {
+            cat = cj;
+            break;
+          }
+        }
+      }
+      if (opts.excludeFast && cat && cat.type === "fast") continue;
+      if (upto != null && e.date) {
+        var dm = /^\d{4}-\d{2}-(\d{2})/.exec(String(e.date));
+        if (dm && Number(dm[1]) > upto) continue;
+      }
+      var owner = e.owner || "felles";
+      if (scope === "samlet") {
+        sum += amt;
+      } else if (owner === scope) {
+        sum += amt;
+      } else if (owner === "felles") {
+        sum += cat ? fellesShare(cat, scope, people, amt) : amt / n;
+      }
+    }
+    return Math.round(sum * 100) / 100;
+  }
+
+  /**
+   * «Kjøp vs forrige måned» — epler mot epler.
+   * - Inneværende måned (todayKey === curKey, dag < siste): kjøp hittil (1..dag)
+   *   mot samme periode forrige måned (1..min(dag, dager i forrige mnd)).
+   * - Ellers (avsluttet måned): hele måneden mot hele forrige måned.
+   * Grunnlag: logget kjøp uten faste kategorier og uten engangs.
+   * Returnerer null hvis forrige måned ikke har kjøp å sammenligne med.
+   */
+  function compareSpendVsPrev(curM, prevM, opts) {
+    opts = opts || {};
+    if (!prevM || !Array.isArray(prevM.expenses) || !prevM.expenses.length) {
+      return null;
+    }
+    var curKey = String(opts.curKey || "");
+    var todayKey = String(opts.todayKey || "");
+    var today = Number(opts.todayDay);
+    if (curKey && todayKey && curKey > todayKey) return null; // fremtidig måned
+    var base = {
+      scope: opts.scope || "samlet",
+      people: opts.people,
+      categories: opts.categories,
+      excludeOneOff: true,
+      excludeFast: opts.excludeFast !== false
+    };
+    var partial = false;
+    var day = null;
+    if (curKey && todayKey && curKey === todayKey && Number.isFinite(today)) {
+      var parts = curKey.split("-");
+      var dim = new Date(Number(parts[0]), Number(parts[1]), 0).getDate();
+      if (today < dim) {
+        partial = true;
+        day = today;
+      }
+    }
+    var prevFull = purchasesSpend(prevM, base);
+    var cur = purchasesSpend(curM || {}, Object.assign({}, base, { uptoDay: partial ? day : null }));
+    var prev = partial
+      ? purchasesSpend(prevM, Object.assign({}, base, { uptoDay: day }))
+      : prevFull;
+    if (!(prevFull > 0)) return null;
+    var changePct = prev > 0 ? Math.round(((cur - prev) / prev) * 100) : null;
+    return {
+      partial: partial,
+      day: day,
+      cur: cur,
+      prev: prev,
+      prevFull: prevFull,
+      changePct: changePct
+    };
+  }
+
+  /**
    * Income-based felles split from planned lønn+ekstra in a month.
    * Falls back to equal if no income.
    */
@@ -5454,6 +5658,10 @@
     looksLikeAmountExpression: looksLikeAmountExpression,
     expenseIsOneOff: expenseIsOneOff,
     sumExpenses: sumExpenses,
+    incomeBasisForPerson: incomeBasisForPerson,
+    purchasesSpend: purchasesSpend,
+    ownFastDiffVsPrev: ownFastDiffVsPrev,
+    compareSpendVsPrev: compareSpendVsPrev,
     incomeBasedSplit: incomeBasedSplit,
     applySplitToFellesCategories: applySplitToFellesCategories,
     detectMissedMonths: detectMissedMonths,

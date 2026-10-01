@@ -4476,6 +4476,156 @@ console.log("\nFB9. Heal: seed uten flagg (tapt ved gammel migrate) re-flagges")
   assertEq(months["2026-11"].balances.p1.bruk, 12345, "brukerverdi ikke overskrevet");
 }
 
+
+// ——— IO: Inn og ut — «faktisk» konsistent (okt 2026, modell av live-skjermbilde) ———
+function ioFixture() {
+  const people = [
+    { id: "p1", name: "Mathias", archived: false },
+    { id: "p2", name: "Andrea", archived: false }
+  ];
+  const cats = [
+    { id: "lan", name: "Lån", type: "fast", owner: "felles" },
+    { id: "hundF", name: "Hund Fast", type: "fast", owner: "felles" },
+    { id: "net", name: "Internett", type: "fast", owner: "felles", split: { p1: 70, p2: 30 } },
+    { id: "alarm", name: "Alarm", type: "fast", owner: "felles" },
+    { id: "fors", name: "Forsikring", type: "fast", owner: "p1" },
+    { id: "mob", name: "Mobil", type: "fast", owner: "p1" },
+    { id: "tip", name: "Tipping", type: "fast", owner: "p1" },
+    { id: "mat", name: "Mat", type: "variabel", owner: "p1" },
+    { id: "div", name: "Div", type: "variabel", owner: "p1" },
+    { id: "strom", name: "Strøm", type: "variabel", owner: "felles" },
+    { id: "fmat", name: "Mat", type: "variabel", owner: "felles" }
+  ];
+  const m = {
+    balances: {},
+    budgets: {
+      lan: { felles: 23441 }, hundF: { felles: 319 }, net: { felles: 919 }, alarm: { felles: 399 },
+      fors: { p1: 2727 }, mob: { p1: 568 }, tip: { p1: 196 },
+      mat: { p1: 7300 }, div: { p1: 1500 }, strom: { felles: 2000 }
+    },
+    budgetLines: {},
+    plannedIncome: { p1: { lønn: 38000, ekstra: null, sparing: null }, p2: { lønn: 31500, ekstra: null, sparing: null } },
+    incomes: [],
+    savings: [],
+    expenses: [{ id: "e1", owner: "p1", categoryId: "mat", category: "Mat", amount: 979, date: "2026-10-01" }]
+  };
+  return { people, cats, m };
+}
+function ioNear(a, b, msg) { assert(Math.abs(a - b) < 0.01, `${msg} (got ${a}, expected ${b})`); }
+
+console.log("\nIO1. Mathias okt: Til overs (faktisk) = Inn − Ut faktisk (inkl. faste)");
+{
+  const { people, cats, m } = ioFixture();
+  const c = Calc.calcFamily(m, people, cats, {}, 9, [], "2026-10");
+  const p1 = c.byPerson.p1;
+  ioNear(p1.planUt, 26013.8, "Ut forventet 26 014");
+  ioNear(p1.planInn - p1.planUt, 11986.2, "Til overs (plan) 11 986");
+  ioNear(p1.autoTrekk.total, 16213.8, "faste trukket 16 214");
+  ioNear(p1.autoTrekk.felles, 12722.8, "herav felles 12 723");
+  ioNear(p1.autoTrekk.own, 3491, "egne faste 3 491");
+  ioNear(p1.effectiveUtgifter, 17192.8, "Ut faktisk 17 193");
+  ioNear(p1.tilOvers, -979, "legacy tilOvers (kun logget) uendret −979");
+  assert(p1.innBasisFromPlan === true, "lønn ikke registrert → plan-grunnlag");
+  ioNear(p1.innBasisPlanFilled, 38000, "plan-fylt 38 000");
+  ioNear(p1.tilOversFaktisk, 38000 - 17192.8, "Til overs (faktisk) 20 807 = 38 000 − 17 193");
+  ioNear(p1.tilOversFaktisk, p1.innBasis - p1.sparing - p1.effectiveUtgifter, "identitet Inn − sparing − Ut");
+  ioNear(Calc.plannedFixedBudgetForPerson(m, "p1", cats, people, 9), 16213.8, "plan fast (egne + felles)");
+  ioNear(Calc.plannedVariableBudgetForPerson(m, "p1", cats, people, 9), 9800, "plan variabelt (egne 8 800 + Strøm 1 000)");
+}
+
+console.log("\nIO2. Andrea okt: kortet viser ikke 0 når Ut = 12 355");
+{
+  const { people, cats, m } = ioFixture();
+  const c = Calc.calcFamily(m, people, cats, {}, 9, [], "2026-10");
+  const p2 = c.byPerson.p2;
+  ioNear(p2.effectiveUtgifter, 12355.2, "Andrea Ut faktisk 12 355");
+  ioNear(p2.tilOvers, 0, "legacy tilOvers 0");
+  ioNear(p2.tilOversFaktisk, 31500 - 12355.2, "Andrea til overs (faktisk) 19 145");
+  // Samlet = sum personer
+  ioNear(c.tilOversFaktisk, c.byPerson.p1.tilOversFaktisk + p2.tilOversFaktisk, "samlet = sum personer");
+  ioNear(c.tilOversFaktisk, c.innBasis - c.samletSparing - c.effectiveUtgifter, "samlet identitet");
+  assert(c.innBasisFromPlan === true, "samlet: plan-grunnlag flagget");
+}
+
+console.log("\nIO3. Registrert lønn erstatter forventet per type; sparing trekkes");
+{
+  const { people, cats, m } = ioFixture();
+  m.plannedIncome.p1.ekstra = 3732;
+  m.incomes.push({ id: "i1", person: "p1", type: "lønn", amount: 38500 });
+  m.savings.push({ id: "s1", person: "p1", amount: 1000 });
+  const c = Calc.calcFamily(m, people, cats, {}, 9, [], "2026-10");
+  const p1 = c.byPerson.p1;
+  ioNear(p1.innBasis, 38500 + 3732, "logget lønn + forventet ekstra");
+  ioNear(p1.innBasisPlanFilled, 3732, "bare ekstra plan-fylt");
+  assert(JSON.stringify(p1.innMissingTypes) === JSON.stringify(["ekstra"]), "mangler: ekstra");
+  ioNear(p1.tilOversFaktisk, 38500 + 3732 - 1000 - 17192.8, "til overs = inn − sparing − ut");
+  m.incomes.push({ id: "i2", person: "p1", type: "ekstra", amount: 3000 });
+  const c2 = Calc.calcFamily(m, people, cats, {}, 9, [], "2026-10");
+  assert(c2.byPerson.p1.innBasisFromPlan === false, "alt registrert → ingen plan-hint");
+  ioNear(c2.byPerson.p1.tilOversFaktisk, 41500 - 1000 - 17192.8, "helt faktisk");
+  ioNear(c2.byPerson.p1.tilOvers, 41500 - 1000 - 979, "legacy tilOvers uendret semantikk");
+}
+
+console.log("\nIO4. Kjøp vs forrige måned: samme grunnlag og samme periode");
+{
+  const { people, cats, m } = ioFixture();
+  const sep = {
+    expenses: [
+      { id: "s1", owner: "p1", categoryId: "mat", category: "Mat", amount: 421, date: "2026-09-01" },
+      { id: "s2", owner: "p1", categoryId: "div", category: "Div", amount: 69, date: "2026-09-01" },
+      { id: "s3", owner: "p1", categoryId: "mat", category: "Mat", amount: 9999, date: "2026-09-03" },
+      { id: "s4", owner: "p1", categoryId: "tip", category: "Tipping", amount: 300, date: "2026-09-17" },
+      { id: "s5", owner: "p1", categoryId: "div", category: "Div", amount: 5000, date: "2026-09-20", oneOff: true },
+      { id: "s6", owner: "felles", categoryId: "fmat", category: "Mat", amount: 1000, date: "2026-09-01" }
+    ]
+  };
+  const base = { people, categories: cats, curKey: "2026-10", todayKey: "2026-10", todayDay: 1 };
+  const r = Calc.compareSpendVsPrev(m, sep, Object.assign({ scope: "samlet" }, base));
+  assert(r && r.partial === true && r.day === 1, "inneværende måned → samme periode (1.–1.)");
+  ioNear(r.cur, 979, "okt hittil 979");
+  ioNear(r.prev, 421 + 69 + 1000, "sep 1.–1.: 1 490 (uten faste/engangs)");
+  ioNear(r.prevFull, 421 + 69 + 9999 + 1000, "hele sep uten Tipping (fast) og engangs");
+  assertEq(r.changePct, Math.round(((979 - 1490) / 1490) * 100), "endring % på like perioder");
+  const rp = Calc.compareSpendVsPrev(m, sep, Object.assign({ scope: "p1" }, base));
+  ioNear(rp.prev, 421 + 69 + 500, "Mathias-scope: felles-kjøp med 50 % andel");
+  const full = Calc.compareSpendVsPrev(m, sep, Object.assign({ scope: "samlet" }, base, { todayKey: "2026-11", todayDay: 5 }));
+  assert(full && full.partial === false, "avsluttet måned → hele måneder");
+  ioNear(full.prev, full.prevFull, "hele mot hele");
+  const fut = Calc.compareSpendVsPrev(m, sep, Object.assign({ scope: "samlet" }, base, { curKey: "2026-12" }));
+  assert(fut === null, "fremtidig måned → ingen sammenligning");
+  assert(Calc.compareSpendVsPrev(m, { expenses: [] }, base) === null, "tom forrige måned → null");
+  ioNear(Calc.purchasesSpend(sep, { categories: cats, people, excludeFast: false, excludeOneOff: false }), 16789, "purchasesSpend uten filter = sum");
+}
+
+console.log("\nIO5. Ingen data endres av beregningen (additivt)");
+{
+  const { people, cats, m } = ioFixture();
+  const before = JSON.stringify({ b: m.budgets, pi: m.plannedIncome, e: m.expenses, i: m.incomes });
+  Calc.calcFamily(m, people, cats, {}, 9, [], "2026-10");
+  Calc.compareSpendVsPrev(m, m, { people, categories: cats, curKey: "2026-10", todayKey: "2026-10", todayDay: 1 });
+  assertEq(JSON.stringify({ b: m.budgets, pi: m.plannedIncome, e: m.expenses, i: m.incomes }), before, "budsjett/inntekt/kjøp uendret");
+}
+
+console.log("\nIO6. Diagnose: egne faste endret fra forrige måned");
+{
+  const { people, cats, m } = ioFixture();
+  const sep = JSON.parse(JSON.stringify(m));
+  sep.budgets.fors = { p1: 2727 }; sep.budgets.mob = { p1: 568 }; sep.budgets.tip = { p1: 200 };
+  sep.budgets.abo = { p1: 2750 };
+  const cats2 = cats.concat([{ id: "abo", name: "Abonnement", type: "fast", owner: "p1" }]);
+  const d = Calc.ownFastDiffVsPrev(sep, m, "p1", people, cats2, 8, 9);
+  ioNear(d.prevOwn, 6245, "sep egne faste 6 245");
+  ioNear(d.curOwn, 3491, "okt egne faste 3 491");
+  ioNear(d.delta, -2754, "endring −2 754");
+  const names = d.changes.map((r) => r.name).sort().join(",");
+  assertEq(names, "Abonnement,Tipping", "endrede kategorier listet");
+  sep.expenses = [{ id: "x", owner: "p1", categoryId: "tip", category: "Tipping", amount: 300, date: "2026-09-17" }];
+  const d2 = Calc.ownFastDiffVsPrev(sep, m, "p1", people, cats2, 8, 9);
+  ioNear(d2.prevOwn, 6245, "plan-basert: logget Tipping 300 påvirker ikke (6 245)");
+  const same = Calc.ownFastDiffVsPrev(m, m, "p1", people, cats, 9, 9);
+  assertEq(same.changes.length, 0, "ingen endring → tom liste");
+}
+
 console.log("\n=== Results:", passed, "passed,", failed, "failed ===\n");
 if (failed) {
   console.error("FAILURES:");

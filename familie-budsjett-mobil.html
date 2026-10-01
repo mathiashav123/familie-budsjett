@@ -4746,6 +4746,24 @@ button.cat-group-header {
 .progress.done > span,
 .progress.thin.done > span { background: var(--green); }
 
+/* Til overs (faktisk): lønn ikke registrert ennå */
+.net-actual-note {
+  margin: .3rem 0 0;
+  font-size: .72rem;
+  color: var(--muted);
+  line-height: 1.3;
+}
+.inn-plan-tag {
+  font-style: normal;
+  font-size: .68rem;
+  color: var(--muted);
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 0 .35rem;
+  margin-left: .25rem;
+}
+.person-row.inn-missing-row span { font-size: .72rem; }
+
 </style>
 </head>
 <body>
@@ -5096,6 +5114,7 @@ button.cat-group-header {
             <span class="value" id="netActual">—</span>
           </div>
         </div>
+        <p class="net-actual-note" id="netActualNote" hidden></p>
         <div id="familyEmpty" class="empty compact" hidden>
           <span class="empty-icon" aria-hidden="true">🌱</span>
           <p>Ingen tall ennå. Sett forventet under Plan, eller trykk «Kjøpt noe».</p>
@@ -8459,6 +8478,41 @@ window.FAMILIE_BUDGET_SUPABASE = {
   }
 
   /**
+   * Diagnose: hvilke EGNE faste (plan-beløp, auto-trekk-kategorier) endret seg
+   * fra forrige måned? Sammenligner planned per kategori (scope own).
+   * Returnerer { prevOwn, curOwn, delta, changes: [{ catId, name, prev, cur }] }.
+   */
+  function ownFastDiffVsPrev(prevM, curM, personId, people, categories, prevMi, curMi) {
+    var prevAt = fastAutoTrekkForPerson(prevM || {}, personId, people, categories, prevMi);
+    var curAt = fastAutoTrekkForPerson(curM || {}, personId, people, categories, curMi);
+    var map = {};
+    function add(items, key) {
+      (items || []).forEach(function (it) {
+        if (it.scope !== "own") return;
+        var row = map[it.catId] || (map[it.catId] = { catId: it.catId, name: it.name, prev: 0, cur: 0 });
+        row[key] += it.planned || 0;
+      });
+    }
+    add(prevAt.items, "prev");
+    add(curAt.items, "cur");
+    var prevOwnPlan = 0;
+    var curOwnPlan = 0;
+    Object.keys(map).forEach(function (k) {
+      prevOwnPlan += map[k].prev;
+      curOwnPlan += map[k].cur;
+    });
+    var changes = Object.keys(map)
+      .map(function (k) { return map[k]; })
+      .filter(function (r) { return Math.abs(r.prev - r.cur) > 0.5; });
+    return {
+      prevOwn: Math.round(prevOwnPlan * 100) / 100,
+      curOwn: Math.round(curOwnPlan * 100) / 100,
+      delta: Math.round((curOwnPlan - prevOwnPlan) * 100) / 100,
+      changes: changes
+    };
+  }
+
+  /**
    * «Saldo før lønn» → Trygg å bruke (per person, per måned).
    *
    *   etterLønn = førLønn + lønn(+ekstra) − faste som trekkes etter lønn (ubetalt)
@@ -9080,6 +9134,17 @@ window.FAMILIE_BUDGET_SUPABASE = {
       );
       cp.autoTrekk = autoTrekkP;
       cp.effectiveUtgifter = (cp.utgifter || 0) + (autoExtraP || 0);
+      // «Til overs (faktisk)» = inntekt − sparing − Ut faktisk (inkl. faste
+      // trukket automatisk). Ikke-registrert lønn/ekstra → forventet (merket).
+      var innBasisP = incomeBasisForPerson(m, p.id);
+      cp.innBasis = innBasisP.total;
+      cp.innBasisPlanFilled = innBasisP.planFilled;
+      cp.innBasisFromPlan = innBasisP.planFilled > 0;
+      cp.innMissingTypes = innBasisP.missingTypes;
+      cp.tilOversFaktisk =
+        Math.round(
+          (innBasisP.total - (cp.sparing || 0) - cp.effectiveUtgifter) * 100
+        ) / 100;
 
       // «Saldo før lønn» (eget felt) → egen Trygg-modus. Ingen bank-dobbeltrekk.
       var flInfoP = forLonnActiveFor(m, p.id);
@@ -9158,6 +9223,18 @@ window.FAMILIE_BUDGET_SUPABASE = {
       needsSaldoForSafeToSpend = false;
     }
 
+    // Household «Til overs (faktisk)» — samme regel som per person.
+    var innBasisTotal = 0;
+    var innBasisPlanFilled = 0;
+    active.forEach(function (p) {
+      innBasisTotal += byPerson[p.id].innBasis || 0;
+      innBasisPlanFilled += byPerson[p.id].innBasisPlanFilled || 0;
+    });
+    var tilOversFaktisk =
+      Math.round(
+        (innBasisTotal - samletSparing - effectiveUtgifter) * 100
+      ) / 100;
+
     // Household «Trukket automatisk» (faste, effektivt beløp)
     var autoTrekkTotal = 0;
     catStats.forEach(function (sx) {
@@ -9202,6 +9279,10 @@ window.FAMILIE_BUDGET_SUPABASE = {
       expenseCount: expenseCount,
       netPlan: netPlan,
       netActual: netActual,
+      innBasis: innBasisTotal,
+      innBasisPlanFilled: innBasisPlanFilled,
+      innBasisFromPlan: innBasisPlanFilled > 0,
+      tilOversFaktisk: tilOversFaktisk,
       remainingFastBudgets: remainingFastBudgets,
       remainingBudgetAll: remainingBudgetAll,
       remainingVariableBudgets: remainingVariableBudgets,
@@ -10629,6 +10710,148 @@ window.FAMILIE_BUDGET_SUPABASE = {
   }
 
   /**
+   * Inntektsgrunnlag for «Til overs (faktisk)» per person.
+   * Regel (samme som «Saldo før lønn»): per type (lønn, ekstra) brukes logget
+   * beløp når det finnes (> 0), ellers forventet. Returnerer også hvor mye som
+   * er fylt inn fra plan, så UI kan vise «Lønn ikke registrert ennå».
+   */
+  function incomeBasisForPerson(m, personId) {
+    var out = {
+      lønn: 0,
+      ekstra: 0,
+      total: 0,
+      logged: 0,
+      planFilled: 0,
+      missingTypes: []
+    };
+    if (!m || !personId) return out;
+    ["lønn", "ekstra"].forEach(function (type) {
+      var logged = sumAmounts(m.incomes, function (i) {
+        return i && i.person === personId && i.type === type;
+      });
+      var planned = plannedIncomeFor(m, personId, type);
+      var v;
+      if (logged > 0) {
+        v = logged;
+        out.logged += logged;
+      } else {
+        v = planned;
+        if (planned > 0) {
+          out.planFilled += planned;
+          out.missingTypes.push(type);
+        }
+      }
+      out[type] = v;
+      out.total += v;
+    });
+    return out;
+  }
+
+  /**
+   * Kjøp (logget forbruk) for sammenligning mot forrige måned — samme grunnlag
+   * begge måneder: uten engangs (valgfritt), uten faste kategorier (valgfritt,
+   * faste telles automatisk og logges ulikt fra måned til måned).
+   * opts: { scope: "samlet" | personId, people, categories, uptoDay,
+   *         excludeOneOff, excludeFast }
+   * uptoDay: tell bare kjøp datert dag 1..uptoDay (udaterte telles med).
+   */
+  function purchasesSpend(m, opts) {
+    opts = opts || {};
+    var list = (m && m.expenses) || [];
+    var scope = opts.scope || "samlet";
+    var people = opts.people || [];
+    var categories = opts.categories || [];
+    var n = Math.max(1, activePeople(people).length);
+    var upto =
+      opts.uptoDay != null && Number.isFinite(Number(opts.uptoDay))
+        ? Number(opts.uptoDay)
+        : null;
+    var sum = 0;
+    for (var i = 0; i < list.length; i++) {
+      var e = list[i];
+      if (!e) continue;
+      var amt = Number(e.amount) || 0;
+      if (!amt) continue;
+      if (opts.excludeOneOff && expenseIsOneOff(e)) continue;
+      var cat = e.categoryId ? catById(categories, e.categoryId) : null;
+      if (!cat && e.category) {
+        for (var j = 0; j < categories.length; j++) {
+          var cj = categories[j];
+          if (cj && !cj.archived && cj.name === e.category) {
+            cat = cj;
+            break;
+          }
+        }
+      }
+      if (opts.excludeFast && cat && cat.type === "fast") continue;
+      if (upto != null && e.date) {
+        var dm = /^\d{4}-\d{2}-(\d{2})/.exec(String(e.date));
+        if (dm && Number(dm[1]) > upto) continue;
+      }
+      var owner = e.owner || "felles";
+      if (scope === "samlet") {
+        sum += amt;
+      } else if (owner === scope) {
+        sum += amt;
+      } else if (owner === "felles") {
+        sum += cat ? fellesShare(cat, scope, people, amt) : amt / n;
+      }
+    }
+    return Math.round(sum * 100) / 100;
+  }
+
+  /**
+   * «Kjøp vs forrige måned» — epler mot epler.
+   * - Inneværende måned (todayKey === curKey, dag < siste): kjøp hittil (1..dag)
+   *   mot samme periode forrige måned (1..min(dag, dager i forrige mnd)).
+   * - Ellers (avsluttet måned): hele måneden mot hele forrige måned.
+   * Grunnlag: logget kjøp uten faste kategorier og uten engangs.
+   * Returnerer null hvis forrige måned ikke har kjøp å sammenligne med.
+   */
+  function compareSpendVsPrev(curM, prevM, opts) {
+    opts = opts || {};
+    if (!prevM || !Array.isArray(prevM.expenses) || !prevM.expenses.length) {
+      return null;
+    }
+    var curKey = String(opts.curKey || "");
+    var todayKey = String(opts.todayKey || "");
+    var today = Number(opts.todayDay);
+    if (curKey && todayKey && curKey > todayKey) return null; // fremtidig måned
+    var base = {
+      scope: opts.scope || "samlet",
+      people: opts.people,
+      categories: opts.categories,
+      excludeOneOff: true,
+      excludeFast: opts.excludeFast !== false
+    };
+    var partial = false;
+    var day = null;
+    if (curKey && todayKey && curKey === todayKey && Number.isFinite(today)) {
+      var parts = curKey.split("-");
+      var dim = new Date(Number(parts[0]), Number(parts[1]), 0).getDate();
+      if (today < dim) {
+        partial = true;
+        day = today;
+      }
+    }
+    var prevFull = purchasesSpend(prevM, base);
+    var cur = purchasesSpend(curM || {}, Object.assign({}, base, { uptoDay: partial ? day : null }));
+    var prev = partial
+      ? purchasesSpend(prevM, Object.assign({}, base, { uptoDay: day }))
+      : prevFull;
+    if (!(prevFull > 0)) return null;
+    var changePct = prev > 0 ? Math.round(((cur - prev) / prev) * 100) : null;
+    return {
+      partial: partial,
+      day: day,
+      cur: cur,
+      prev: prev,
+      prevFull: prevFull,
+      changePct: changePct
+    };
+  }
+
+  /**
    * Income-based felles split from planned lønn+ekstra in a month.
    * Falls back to equal if no income.
    */
@@ -11295,6 +11518,10 @@ window.FAMILIE_BUDGET_SUPABASE = {
     looksLikeAmountExpression: looksLikeAmountExpression,
     expenseIsOneOff: expenseIsOneOff,
     sumExpenses: sumExpenses,
+    incomeBasisForPerson: incomeBasisForPerson,
+    purchasesSpend: purchasesSpend,
+    ownFastDiffVsPrev: ownFastDiffVsPrev,
+    compareSpendVsPrev: compareSpendVsPrev,
     incomeBasedSplit: incomeBasedSplit,
     applySplitToFellesCategories: applySplitToFellesCategories,
     detectMissedMonths: detectMissedMonths,
@@ -12655,6 +12882,12 @@ window.FAMILIE_BUDGET_SUPABASE = {
     return monthKey(state.view.year, state.view.month) > monthKey(d.getFullYear(), d.getMonth());
   }
 
+  /** Viewed month is before the calendar month. */
+  function viewIsPastMonth() {
+    const d = new Date();
+    return monthKey(state.view.year, state.view.month) < monthKey(d.getFullYear(), d.getMonth());
+  }
+
   /** «Trukket automatisk» / «Trekkes automatisk» label for Fast auto-trekk. */
   function autoTrekkLabel() {
     return viewIsFutureMonth() ? "Trekkes automatisk" : "Trukket automatisk";
@@ -13571,6 +13804,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
   function renderInnUtNumbers(c) {
     const view = state.settings.innUtView || "samlet";
     let planInn, actInn, planUt, actUt, netPlan, netActual;
+    let netInnPlanFilled = 0;
     if (view === "samlet") {
       planInn = c.planInn;
       actInn = c.samletInntekt;
@@ -13578,7 +13812,11 @@ window.FAMILIE_BUDGET_SUPABASE = {
       actUt =
         c.effectiveUtgifter != null ? c.effectiveUtgifter : c.samletUtgifter;
       netPlan = c.netPlan;
-      netActual = c.netActual;
+      // Til overs (faktisk) = inntekt − sparing − Ut faktisk (inkl. faste
+      // trukket automatisk). Ikke-registrert lønn → forventet (se hint).
+      netActual =
+        c.tilOversFaktisk != null ? c.tilOversFaktisk : c.netActual;
+      netInnPlanFilled = c.innBasisPlanFilled || 0;
     } else {
       const pc = c.byPerson && c.byPerson[view];
       if (!pc) {
@@ -13592,7 +13830,23 @@ window.FAMILIE_BUDGET_SUPABASE = {
         actUt =
           pc.effectiveUtgifter != null ? pc.effectiveUtgifter : pc.utgifter;
         netPlan = pc.netPlan;
-        netActual = pc.tilOvers;
+        netActual =
+          pc.tilOversFaktisk != null ? pc.tilOversFaktisk : pc.tilOvers;
+        netInnPlanFilled = pc.innBasisPlanFilled || 0;
+      }
+    }
+    const netNote = $("#netActualNote");
+    if (netNote) {
+      if (netInnPlanFilled > 0.5) {
+        netNote.hidden = false;
+        netNote.textContent =
+          (viewIsPastMonth() ? "Lønn ikke registrert" : "Lønn ikke registrert ennå") +
+          " — «Til overs (faktisk)» regner med forventet " +
+          formatNOK(netInnPlanFilled) +
+          " minus Ut faktisk (inkl. faste). Registrer lønn med «+ Inntekt» for faktisk tall.";
+      } else {
+        netNote.hidden = true;
+        netNote.textContent = "";
       }
     }
     const utNote = $("#utAutoNote");
@@ -14129,7 +14383,17 @@ window.FAMILIE_BUDGET_SUPABASE = {
           : row.whenLabel || Calc.balanceWhenLabel(whenMode, asOfVal || null);
         const varMeta = row.variance;
         let diffHtml = "";
-        if (row.forventet == null && row.oppgitt == null) {
+        if (isSuggested && row.oppgitt != null) {
+          // Rullerende pot er ikke en bekreftet banksaldo — ingen «glemt kjøp»-
+          // varsel mot loggen (den inneholder planlagte utlegg/variabelt budsjett).
+          diffHtml =
+            '<div class="pa-konto-compare">' +
+            '<div class="pa-konto-compare-row"><span>Automatisk pot</span><strong>' +
+            formatNOK(row.oppgitt) +
+            "</strong></div>" +
+            '<p class="pa-konto-diff is-muted">Ikke en bekreftet saldo — skriv inn «På konto nå» for å sammenligne med loggen.</p>' +
+            "</div>";
+        } else if (row.forventet == null && row.oppgitt == null) {
           const prevMissing = row.prevBruk == null;
           diffHtml =
             '<p class="pa-konto-diff is-muted">Oppgi brukssaldo for å sammenligne</p>' +
@@ -14268,7 +14532,14 @@ window.FAMILIE_BUDGET_SUPABASE = {
     // Samlet husstand variance
     const samlet = $("#paKontoSamlet");
     if (samlet) {
-      if (people.length > 1 && (rec.hasOppgitt || rec.hasForventet)) {
+      const allSeeded = people.every(function (person) {
+        const bx = (m.balances && m.balances[person.id]) || {};
+        return bx.bruk == null || bx.bruk === "" || !!(bx.suggested || m.balancesSuggested);
+      });
+      if (people.length > 1 && allSeeded) {
+        samlet.hidden = true;
+        samlet.innerHTML = "";
+      } else if (people.length > 1 && (rec.hasOppgitt || rec.hasForventet)) {
         samlet.hidden = false;
         const v = rec.totalVariance;
         const diffClass =
@@ -14522,7 +14793,13 @@ window.FAMILIE_BUDGET_SUPABASE = {
           lønn: 0, ekstra: 0, sparing: 0, utgifter: 0, tilOvers: 0,
           planInn: 0, planUt: 0, netPlan: 0
         };
-        const pos = pc.tilOvers >= 0 ? "pos" : "neg";
+        const overs =
+          pc.tilOversFaktisk != null ? pc.tilOversFaktisk : pc.tilOvers;
+        const pos = overs >= 0 ? "pos" : "neg";
+        const innFromPlan = !!pc.innBasisFromPlan;
+        const innShown = innFromPlan
+          ? pc.innBasis
+          : (pc.lønn || 0) + (pc.ekstra || 0);
         return (
           '<section class="person-card dense" id="person-' +
           escapeAttr(person.id) +
@@ -14533,11 +14810,20 @@ window.FAMILIE_BUDGET_SUPABASE = {
           '</h3><span class="person-overs ' +
           pos +
           '">' +
-          formatNOK(pc.tilOvers) +
+          formatNOK(overs) +
           '</span></div><div class="person-rows dense">' +
-          '<div class="person-row"><span>Inn</span><span class="amt">' +
-          formatNOK(pc.lønn + pc.ekstra) +
-          '</span></div>' +
+          (innFromPlan
+            ? '<div class="person-row" title="Lønn ikke registrert ennå — regnet med forventet"><span>Inn <em class="inn-plan-tag">forventet</em></span><span class="amt">' +
+              formatNOK(innShown) +
+              "</span></div>" +
+              '<div class="person-row muted inn-missing-row"><span>' +
+              (viewIsPastMonth() ? "Lønn ikke registrert" : "Lønn ikke registrert ennå") +
+              " (faktisk " +
+              formatNOK((pc.lønn || 0) + (pc.ekstra || 0)) +
+              ")</span></div>"
+            : '<div class="person-row"><span>Inn</span><span class="amt">' +
+              formatNOK(innShown) +
+              "</span></div>") +
           '<div class="person-row"><span>Ut</span><span class="amt">' +
           formatNOK(pc.effectiveUtgifter != null ? pc.effectiveUtgifter : pc.utgifter) +
           '</span></div>' +
@@ -15992,31 +16278,62 @@ window.FAMILIE_BUDGET_SUPABASE = {
 
   function renderVsPrev(c) {
     const el = $("#vsPrevMonth");
-    const prev = prevMonthSpend();
-    if (prev == null || prev === 0) {
+    if (!el) return;
+    const view = state.settings.innUtView || "samlet";
+    const scope =
+      view !== "samlet" && c && c.byPerson && c.byPerson[view] ? view : "samlet";
+    const curKey = monthKey(state.view.year, state.view.month);
+    const prevKey = prevMonthKey(state.view.year, state.view.month);
+    const d = new Date();
+    const cmp = Calc.compareSpendVsPrev(getMonth(), state.months[prevKey], {
+      scope: scope,
+      people: state.people,
+      categories: state.categories,
+      curKey: curKey,
+      todayKey: monthKey(d.getFullYear(), d.getMonth()),
+      todayDay: d.getDate()
+    });
+    if (!cmp) {
       el.hidden = true;
+      el.textContent = "";
       return;
     }
-    const m = getMonth();
-    const curTypical = currentMonthTypicalSpend(m);
-    const cur = curTypical;
-    const change = ((cur - prev) / prev) * 100;
-    const rounded = Math.round(change);
-    const sign = rounded > 0 ? "+" : "";
-    const oneOffNote =
-      (m.expenses || []).some(function (e) { return Calc.expenseIsOneOff(e); })
-        ? " · uten engangs"
-        : "";
-    el.textContent =
-      "Utgifter vs forrige måned: " +
-      sign +
-      rounded +
-      "% (" +
-      formatNOK(prev) +
-      " → " +
-      formatNOK(cur) +
-      ")" +
-      oneOffNote;
+    const pm = Number(prevKey.split("-")[1]) - 1;
+    const cm = state.view.month;
+    const prevName = MONTHS_SHORT[pm].toLowerCase();
+    const curName = MONTHS_SHORT[cm].toLowerCase();
+    const pct =
+      cmp.changePct == null
+        ? ""
+        : " (" + (cmp.changePct > 0 ? "+" : "") + cmp.changePct + " %)";
+    let txt;
+    if (cmp.partial) {
+      txt =
+        "Kjøp hittil (1.–" +
+        cmp.day +
+        ". " +
+        curName +
+        "): " +
+        formatNOK(cmp.cur) +
+        " vs samme periode i " +
+        prevName +
+        ": " +
+        formatNOK(cmp.prev) +
+        pct +
+        " · hele " +
+        prevName +
+        ": " +
+        formatNOK(cmp.prevFull);
+    } else {
+      txt =
+        "Kjøp vs forrige måned: " +
+        formatNOK(cmp.prev) +
+        " → " +
+        formatNOK(cmp.cur) +
+        pct;
+    }
+    txt += " · uten faste og engangs";
+    el.textContent = txt;
     el.hidden = false;
   }
 
@@ -16290,6 +16607,30 @@ window.FAMILIE_BUDGET_SUPABASE = {
               " + andel felles " +
               formatNOK(at.felles) +
               ")</span></p>";
+            const pKey = prevMonthKey(state.view.year, state.view.month);
+            const pM = state.months && state.months[pKey];
+            if (pM && typeof Calc.ownFastDiffVsPrev === "function") {
+              const pMi = Number(pKey.split("-")[1]) - 1;
+              const diff = Calc.ownFastDiffVsPrev(
+                pM, m, ownerId, state.people, state.categories, pMi, state.view.month
+              );
+              if (diff.changes.length && Math.abs(diff.delta) > 0.5 && diff.prevOwn > 0.5) {
+                html +=
+                  '<p class="hint compact auto-trekk-diff">Egne faste (plan) endret fra ' +
+                  escapeHtml(MONTHS_SHORT[pMi].toLowerCase()) +
+                  ": " +
+                  formatNOK(diff.prevOwn) +
+                  " → " +
+                  formatNOK(diff.curOwn) +
+                  " (" +
+                  diff.changes
+                    .map(function (r) {
+                      return escapeHtml(r.name) + " " + formatNOK(r.prev) + " → " + formatNOK(r.cur);
+                    })
+                    .join(" · ") +
+                  ")</p>";
+              }
+            }
           }
         }
         html += subLabel("Faste", faste) + subLabel("Variable", variable);

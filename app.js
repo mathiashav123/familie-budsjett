@@ -148,6 +148,12 @@
     return monthKey(state.view.year, state.view.month) > monthKey(d.getFullYear(), d.getMonth());
   }
 
+  /** Viewed month is before the calendar month. */
+  function viewIsPastMonth() {
+    const d = new Date();
+    return monthKey(state.view.year, state.view.month) < monthKey(d.getFullYear(), d.getMonth());
+  }
+
   /** «Trukket automatisk» / «Trekkes automatisk» label for Fast auto-trekk. */
   function autoTrekkLabel() {
     return viewIsFutureMonth() ? "Trekkes automatisk" : "Trukket automatisk";
@@ -1064,6 +1070,7 @@
   function renderInnUtNumbers(c) {
     const view = state.settings.innUtView || "samlet";
     let planInn, actInn, planUt, actUt, netPlan, netActual;
+    let netInnPlanFilled = 0;
     if (view === "samlet") {
       planInn = c.planInn;
       actInn = c.samletInntekt;
@@ -1071,7 +1078,11 @@
       actUt =
         c.effectiveUtgifter != null ? c.effectiveUtgifter : c.samletUtgifter;
       netPlan = c.netPlan;
-      netActual = c.netActual;
+      // Til overs (faktisk) = inntekt − sparing − Ut faktisk (inkl. faste
+      // trukket automatisk). Ikke-registrert lønn → forventet (se hint).
+      netActual =
+        c.tilOversFaktisk != null ? c.tilOversFaktisk : c.netActual;
+      netInnPlanFilled = c.innBasisPlanFilled || 0;
     } else {
       const pc = c.byPerson && c.byPerson[view];
       if (!pc) {
@@ -1085,7 +1096,23 @@
         actUt =
           pc.effectiveUtgifter != null ? pc.effectiveUtgifter : pc.utgifter;
         netPlan = pc.netPlan;
-        netActual = pc.tilOvers;
+        netActual =
+          pc.tilOversFaktisk != null ? pc.tilOversFaktisk : pc.tilOvers;
+        netInnPlanFilled = pc.innBasisPlanFilled || 0;
+      }
+    }
+    const netNote = $("#netActualNote");
+    if (netNote) {
+      if (netInnPlanFilled > 0.5) {
+        netNote.hidden = false;
+        netNote.textContent =
+          (viewIsPastMonth() ? "Lønn ikke registrert" : "Lønn ikke registrert ennå") +
+          " — «Til overs (faktisk)» regner med forventet " +
+          formatNOK(netInnPlanFilled) +
+          " minus Ut faktisk (inkl. faste). Registrer lønn med «+ Inntekt» for faktisk tall.";
+      } else {
+        netNote.hidden = true;
+        netNote.textContent = "";
       }
     }
     const utNote = $("#utAutoNote");
@@ -1622,7 +1649,17 @@
           : row.whenLabel || Calc.balanceWhenLabel(whenMode, asOfVal || null);
         const varMeta = row.variance;
         let diffHtml = "";
-        if (row.forventet == null && row.oppgitt == null) {
+        if (isSuggested && row.oppgitt != null) {
+          // Rullerende pot er ikke en bekreftet banksaldo — ingen «glemt kjøp»-
+          // varsel mot loggen (den inneholder planlagte utlegg/variabelt budsjett).
+          diffHtml =
+            '<div class="pa-konto-compare">' +
+            '<div class="pa-konto-compare-row"><span>Automatisk pot</span><strong>' +
+            formatNOK(row.oppgitt) +
+            "</strong></div>" +
+            '<p class="pa-konto-diff is-muted">Ikke en bekreftet saldo — skriv inn «På konto nå» for å sammenligne med loggen.</p>' +
+            "</div>";
+        } else if (row.forventet == null && row.oppgitt == null) {
           const prevMissing = row.prevBruk == null;
           diffHtml =
             '<p class="pa-konto-diff is-muted">Oppgi brukssaldo for å sammenligne</p>' +
@@ -1761,7 +1798,14 @@
     // Samlet husstand variance
     const samlet = $("#paKontoSamlet");
     if (samlet) {
-      if (people.length > 1 && (rec.hasOppgitt || rec.hasForventet)) {
+      const allSeeded = people.every(function (person) {
+        const bx = (m.balances && m.balances[person.id]) || {};
+        return bx.bruk == null || bx.bruk === "" || !!(bx.suggested || m.balancesSuggested);
+      });
+      if (people.length > 1 && allSeeded) {
+        samlet.hidden = true;
+        samlet.innerHTML = "";
+      } else if (people.length > 1 && (rec.hasOppgitt || rec.hasForventet)) {
         samlet.hidden = false;
         const v = rec.totalVariance;
         const diffClass =
@@ -2015,7 +2059,13 @@
           lønn: 0, ekstra: 0, sparing: 0, utgifter: 0, tilOvers: 0,
           planInn: 0, planUt: 0, netPlan: 0
         };
-        const pos = pc.tilOvers >= 0 ? "pos" : "neg";
+        const overs =
+          pc.tilOversFaktisk != null ? pc.tilOversFaktisk : pc.tilOvers;
+        const pos = overs >= 0 ? "pos" : "neg";
+        const innFromPlan = !!pc.innBasisFromPlan;
+        const innShown = innFromPlan
+          ? pc.innBasis
+          : (pc.lønn || 0) + (pc.ekstra || 0);
         return (
           '<section class="person-card dense" id="person-' +
           escapeAttr(person.id) +
@@ -2026,11 +2076,20 @@
           '</h3><span class="person-overs ' +
           pos +
           '">' +
-          formatNOK(pc.tilOvers) +
+          formatNOK(overs) +
           '</span></div><div class="person-rows dense">' +
-          '<div class="person-row"><span>Inn</span><span class="amt">' +
-          formatNOK(pc.lønn + pc.ekstra) +
-          '</span></div>' +
+          (innFromPlan
+            ? '<div class="person-row" title="Lønn ikke registrert ennå — regnet med forventet"><span>Inn <em class="inn-plan-tag">forventet</em></span><span class="amt">' +
+              formatNOK(innShown) +
+              "</span></div>" +
+              '<div class="person-row muted inn-missing-row"><span>' +
+              (viewIsPastMonth() ? "Lønn ikke registrert" : "Lønn ikke registrert ennå") +
+              " (faktisk " +
+              formatNOK((pc.lønn || 0) + (pc.ekstra || 0)) +
+              ")</span></div>"
+            : '<div class="person-row"><span>Inn</span><span class="amt">' +
+              formatNOK(innShown) +
+              "</span></div>") +
           '<div class="person-row"><span>Ut</span><span class="amt">' +
           formatNOK(pc.effectiveUtgifter != null ? pc.effectiveUtgifter : pc.utgifter) +
           '</span></div>' +
@@ -3485,31 +3544,62 @@
 
   function renderVsPrev(c) {
     const el = $("#vsPrevMonth");
-    const prev = prevMonthSpend();
-    if (prev == null || prev === 0) {
+    if (!el) return;
+    const view = state.settings.innUtView || "samlet";
+    const scope =
+      view !== "samlet" && c && c.byPerson && c.byPerson[view] ? view : "samlet";
+    const curKey = monthKey(state.view.year, state.view.month);
+    const prevKey = prevMonthKey(state.view.year, state.view.month);
+    const d = new Date();
+    const cmp = Calc.compareSpendVsPrev(getMonth(), state.months[prevKey], {
+      scope: scope,
+      people: state.people,
+      categories: state.categories,
+      curKey: curKey,
+      todayKey: monthKey(d.getFullYear(), d.getMonth()),
+      todayDay: d.getDate()
+    });
+    if (!cmp) {
       el.hidden = true;
+      el.textContent = "";
       return;
     }
-    const m = getMonth();
-    const curTypical = currentMonthTypicalSpend(m);
-    const cur = curTypical;
-    const change = ((cur - prev) / prev) * 100;
-    const rounded = Math.round(change);
-    const sign = rounded > 0 ? "+" : "";
-    const oneOffNote =
-      (m.expenses || []).some(function (e) { return Calc.expenseIsOneOff(e); })
-        ? " · uten engangs"
-        : "";
-    el.textContent =
-      "Utgifter vs forrige måned: " +
-      sign +
-      rounded +
-      "% (" +
-      formatNOK(prev) +
-      " → " +
-      formatNOK(cur) +
-      ")" +
-      oneOffNote;
+    const pm = Number(prevKey.split("-")[1]) - 1;
+    const cm = state.view.month;
+    const prevName = MONTHS_SHORT[pm].toLowerCase();
+    const curName = MONTHS_SHORT[cm].toLowerCase();
+    const pct =
+      cmp.changePct == null
+        ? ""
+        : " (" + (cmp.changePct > 0 ? "+" : "") + cmp.changePct + " %)";
+    let txt;
+    if (cmp.partial) {
+      txt =
+        "Kjøp hittil (1.–" +
+        cmp.day +
+        ". " +
+        curName +
+        "): " +
+        formatNOK(cmp.cur) +
+        " vs samme periode i " +
+        prevName +
+        ": " +
+        formatNOK(cmp.prev) +
+        pct +
+        " · hele " +
+        prevName +
+        ": " +
+        formatNOK(cmp.prevFull);
+    } else {
+      txt =
+        "Kjøp vs forrige måned: " +
+        formatNOK(cmp.prev) +
+        " → " +
+        formatNOK(cmp.cur) +
+        pct;
+    }
+    txt += " · uten faste og engangs";
+    el.textContent = txt;
     el.hidden = false;
   }
 
@@ -3783,6 +3873,30 @@
               " + andel felles " +
               formatNOK(at.felles) +
               ")</span></p>";
+            const pKey = prevMonthKey(state.view.year, state.view.month);
+            const pM = state.months && state.months[pKey];
+            if (pM && typeof Calc.ownFastDiffVsPrev === "function") {
+              const pMi = Number(pKey.split("-")[1]) - 1;
+              const diff = Calc.ownFastDiffVsPrev(
+                pM, m, ownerId, state.people, state.categories, pMi, state.view.month
+              );
+              if (diff.changes.length && Math.abs(diff.delta) > 0.5 && diff.prevOwn > 0.5) {
+                html +=
+                  '<p class="hint compact auto-trekk-diff">Egne faste (plan) endret fra ' +
+                  escapeHtml(MONTHS_SHORT[pMi].toLowerCase()) +
+                  ": " +
+                  formatNOK(diff.prevOwn) +
+                  " → " +
+                  formatNOK(diff.curOwn) +
+                  " (" +
+                  diff.changes
+                    .map(function (r) {
+                      return escapeHtml(r.name) + " " + formatNOK(r.prev) + " → " + formatNOK(r.cur);
+                    })
+                    .join(" · ") +
+                  ")</p>";
+              }
+            }
           }
         }
         html += subLabel("Faste", faste) + subLabel("Variable", variable);

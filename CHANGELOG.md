@@ -1,6 +1,33 @@
 # Endringslogg – Familiebudsjett
 
 
+## 2026-10-01 — Inn og ut: «faktisk» konsistent + kjøp vs forrige måned på like vilkår
+
+Datakilde for analysen: **eksport-fallback** (`familie-budsjett-export-live.json`, 24.09) + tallene fra Mathias' skjermbilde okt 2026. Live Supabase krever innlogging (RLS); anon-nøkkelen ga `[]`.
+
+### 1–2. Til overs (faktisk) / personkort ignorerte faste
+**Rotårsak:** «Ut faktisk» brukte `effectiveUtgifter` (logget + faste trukket automatisk), men «Til overs (faktisk)» og kort-headeren brukte gammel `tilOvers` = logget inn − sparing − **kun loggede kjøp**. Mathias: Ut 17 193, men til overs −979 (= −kjøp). Andrea: Ut 12 355, header 0.
+**Fix:** ny `tilOversFaktisk = inntekt − sparing − Ut faktisk (inkl. faste)` per person og samlet (`calcFamily`). Inntekt per type (lønn/ekstra): registrert beløp hvis logget, ellers **forventet** (samme regel som «Saldo før lønn»). Når forventet brukes vises «Lønn ikke registrert ennå — regner med forventet X kr» under Til overs, og kortet viser «Inn · forventet» + «Lønn ikke registrert ennå (faktisk 0 kr)». Gammel `tilOvers` er uendret (brukes av cashflow/På konto).
+Okt (Mathias): 38 000 − 17 193 = **20 807** (var −979). Andrea: 31 500 − 12 355 = **19 145** (var 0). Samlet: 69 500 − 29 548 = **39 952**.
+
+### 3. Utgifter vs forrige måned
+**Rotårsak:** begge måneder var rene kjøp (ingen faste), men hele september (22 975) ble sammenlignet med 1 dag i oktober (979) → «−96 %». Også husstand selv på person-fanen.
+**Fix:** `compareSpendVsPrev` / `purchasesSpend`. Inneværende måned: «Kjøp hittil (1.–1. okt): X vs samme periode i sep: Y (±%) · hele sep: Z». Avsluttet måned: hele mot hele. Grunnlag: logget kjøp **uten faste kategorier og uten engangs**, følger valgt fane (person = egne + andel felles-kjøp).
+
+### 4. Egne faste 3 491 vs 6 245
+Ikke kodefeil: `fastAutoTrekkForPerson` = maks(plan, logget) per fast kategori. 16 214 − 12 722,8 = 3 491 og Ut forventet 26 014 = 3 491 + 8 800 + 13 722,8 ⇒ okt-planen for egne faste er satt 2 754 lavere og egne variable 1 500 lavere enn sep. «Før lønn» påvirker ikke beløpet, og en *slettet* kategori-verdi heales tilbake fra sep — så det er eksplisitte endringer. **Ny diagnose i Plan:** «Egne faste (plan) endret fra sep: 6 245 → 3 491 (Kategori a → b · …)» (`ownFastDiffVsPrev`).
+
+### 5. Inn forventet 38 000
+Eksporten (24.09) har okt = 40 910 + 3 732; live viser 38 000 ⇒ okt er redigert (sticky siden 18.09). Siden null-felt heales fra sep må ekstra være satt eksplisitt (f.eks. 0).
+
+### Også
+- På konto nå: automatisk rullerende pot sammenlignes ikke lenger mot loggen («Ca. 130 821 kr lavere — glemt kjøp?» var falsk alarm). Viser «Automatisk pot — ikke en bekreftet saldo».
+
+### Tester / deploy
+- `node test-calc.mjs` → 982 passed (44 nye: IO1–IO6), `node test-sync.mjs` → 22 passed
+- Pages `main` + mobil bundle
+
+
 ## 2026-10-01 — Felles faste trukket automatisk + «Saldo før lønn»
 
 ### 1. Felles faste vises som trukket automatisk
