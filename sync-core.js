@@ -68,7 +68,7 @@
           if (!Object.prototype.hasOwnProperty.call(m.balances, bid)) continue;
           var bal = m.balances[bid];
           if (!bal) continue;
-          if ((bal.bruk != null && Number(bal.bruk) !== 0) || (bal.spare != null && Number(bal.spare) !== 0)) {
+          if ((bal.bruk != null && Number(bal.bruk) !== 0) || (bal.spare != null && Number(bal.spare) !== 0) || (bal.forLonn != null && Number(bal.forLonn) !== 0)) {
             return true;
           }
         }

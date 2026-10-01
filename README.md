@@ -111,6 +111,15 @@ På Oversikt (og mini på Plan). Følger **Inn/Ut-fanen** (Samlet / person).
 
 **Plan-modus**: `planInn − utgifter (egne + felles-andel) − gjenstående faste`.
 
+**Faste trukket automatisk**: Faste kategorier (egne og felles) telles som betalt i inneværende måned — også personens %-andel av felles faste (Lån, Hund Fast, Internett 70/30, Alarm). Vises som «✓ Trukket automatisk» på kategori-rader i Plan (inkl. «Andel felles»), som sammendrag i person-seksjonen, i Inn/Ut («Ut faktisk» inkl. faste) og på personkortene. Saldo/pot-modus trekker dem **ikke** på nytt (de er allerede ute av kontoen/potten).
+
+**Saldo før lønn** (Oversikt → Trygg-kortet, valgfritt, per person per måned): skriv hva du hadde på brukskonto før lønna kom.
+`Trygg = før lønn + lønn/ekstra − faste som trekkes etter lønn (ubetalt, egne + felles-andel) − kjøp/sparing logget etter tidspunktet − planlagte utlegg − variabelt budsjett igjen − buffer`.
+- Plan → faste kategori → **Trekkes**: «Etter lønn» (standard) eller «Før lønn (allerede betalt)». Faste merket «Før lønn» er allerede ute av saldoen og trekkes ikke.
+- Inneværende måned: kjøp logget etter tidspunktet du skrev beløpet trekkes fra. Andre måneder: alle kjøp i måneden.
+- «På konto nå» er fortsatt valgfri korreksjon: skrives den **etter** før-lønn-beløpet, vinner den.
+- Før-lønn-måneden er anker for rullerende pot neste måned og Fremover.
+
 ## Backup
 
 Stor **Ta backup**-knapp på Oversikt, under Mer og i Innstillinger → samme JSON-eksport. Anbefalt før telefonbytte. CSV finnes fortsatt under Innstillinger.
