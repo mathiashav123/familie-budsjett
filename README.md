@@ -5,6 +5,13 @@ Rolig, mobilvennlig budsjettapp for husstanden. **Budsjett mot faktisk**, rask �
 Valuta: **NOK**. Språk: **bokmål**.
 
 
+## Inn og ut – «Til overs (faktisk)»
+
+- **Ut faktisk** = loggede kjøp + faste trukket automatisk (egne + andel felles).
+- **Til overs (faktisk)** = inntekt − sparing − Ut faktisk. Inntekt per type (lønn/ekstra): registrert beløp hvis logget, ellers *forventet* — da vises «Lønn ikke registrert ennå».
+- **Kjøp vs forrige måned** sammenligner bare loggede kjøp (uten faste og engangs). I inneværende måned: samme periode (1.–dagens dato) i begge måneder.
+- Plan viser «Egne faste (plan) endret fra forrige måned» når egne faste-beløp avviker.
+
 ## Årsoversikt
 
 Under **Mer → År**: velg år og se plan inn / plan ut / faktisk ut / til overs per måned, med totaler og enkel SVG-graf. I **Logg** kan du velge «Hele året».
