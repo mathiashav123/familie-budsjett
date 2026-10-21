@@ -5499,7 +5499,27 @@
    * Forventet respects balances[pid].when / asOf (see expectedCashflowForBalanceWhen).
    * Independent of oppgitt.
    */
-  function reconcilePaKonto(m, people, categories, monthIndex, prevBalances) {
+  /**
+   * Planned spends for monthKey already paid out of the bank (reflectedInBalance
+   * or done) and NOT logged as an expense — must reduce forventet saldo.
+   */
+  function reflectedPlannedForPerson(plannedSpends, monthKey, personId, people) {
+    if (!plannedSpends || !monthKey) return 0;
+    var n = activePeople(people).length || 1;
+    var sum = 0;
+    plannedSpends.forEach(function (ps) {
+      if (!ps || ps.monthKey !== monthKey) return;
+      if (!ps.reflectedInBalance && !ps.done) return;
+      if (ps.doneExpenseId) return; // already counted as logged expense
+      var amt = Number(ps.amount) || 0;
+      if (ps.owner === personId) sum += amt;
+      else if (ps.owner === "felles") sum += amt / n;
+    });
+    return sum;
+  }
+
+  function reconcilePaKonto(m, people, categories, monthIndex, prevBalances, recOpts) {
+    recOpts = recOpts || {};
     var active = activePeople(people);
     ensureMonthShape(m, people);
     var prev = prevBalances && typeof prevBalances === "object" ? prevBalances : null;
@@ -5541,7 +5561,14 @@
         when,
         asOf
       );
+      var plannedPaid = reflectedPlannedForPerson(
+        recOpts.plannedSpends,
+        recOpts.monthKey,
+        p.id,
+        people
+      );
       var forventet = expectedBrukFromPrev(prevBruk, cf.tilOvers, autoExtra);
+      if (forventet != null && plannedPaid) forventet -= plannedPaid;
       var etterLonn = etterLonnFromBruk(oppgitt, planInn, planUt);
       var differanse = balanceVariance(oppgitt, forventet);
       var source = forventet != null ? cf.source : null;
@@ -5565,6 +5592,7 @@
         tilOvers: cp.tilOvers,
         tilOversForMode: cf.tilOvers,
         autoSpendExtra: autoExtra,
+        plannedPaid: plannedPaid,
         effectiveTilOvers: (cf.tilOvers || 0) - (autoExtra || 0),
         prevBruk: prevBruk,
         source: source,
@@ -5775,6 +5803,7 @@
     etterLonnFromBruk: etterLonnFromBruk,
     varianceMeta: varianceMeta,
     reconcilePaKonto: reconcilePaKonto,
+    reflectedPlannedForPerson: reflectedPlannedForPerson,
     estimateSafeFromPrevBruk: estimateSafeFromPrevBruk,
     safeToSpendSaldoBreakdown: safeToSpendSaldoBreakdown,
     BALANCE_WHEN_BEFORE: BALANCE_WHEN_BEFORE,

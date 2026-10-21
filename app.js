@@ -581,7 +581,12 @@
       state.people,
       state.categories,
       state.view.month,
-      prevMonthBalances()
+      prevMonthBalances(),
+      {
+        plannedSpends: state.plannedSpends,
+        monthKey:
+          state.view.year + "-" + String(state.view.month + 1).padStart(2, "0")
+      }
     );
   }
 
@@ -932,6 +937,11 @@
       '<div class="pa-konto-breakdown-row is-minus"><span>− Sparing</span><strong>' +
       formatNOK(row.sparing || 0) +
       "</strong></div>" +
+      ((Number(row.plannedPaid) || 0) > 0.5
+        ? '<div class="pa-konto-breakdown-row is-minus"><span>− Planlagte utlegg betalt</span><strong>' +
+          formatNOK(row.plannedPaid) +
+          "</strong></div>"
+        : "") +
       '<div class="pa-konto-breakdown-row is-minus"><span>− Fast auto</span><strong>' +
       formatNOK(auto) +
       "</strong></div>" +
