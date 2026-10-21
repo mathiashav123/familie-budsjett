@@ -4665,6 +4665,22 @@ console.log("\nIO6. Diagnose: egne faste endret fra forrige måned");
   assertEq(Calc.incomeBasisForPerson(m3, "p1").total, 38000, "manglende type = lønn");
   assertEq(Calc.normIncomeType("Ekstra"), "ekstra", "normIncomeType Ekstra");
 }
+{
+  // Forventet saldo trekker planlagte utlegg som allerede er betalt (i saldo)
+  const people = [{ id: "p1", name: "M" }, { id: "p2", name: "A" }];
+  const ps = [
+    { id: "a", amount: 160000, owner: "p1", monthKey: "2026-10", reflectedInBalance: true },
+    { id: "b", amount: 1000, owner: "felles", monthKey: "2026-10", done: true },
+    { id: "c", amount: 500, owner: "p1", monthKey: "2026-10", done: true, doneExpenseId: "e1" },
+    { id: "d", amount: 999, owner: "p1", monthKey: "2026-11", reflectedInBalance: true },
+    { id: "e", amount: 777, owner: "p1", monthKey: "2026-10" }
+  ];
+  assertEq(Calc.reflectedPlannedForPerson(ps, "2026-10", "p1", people), 160500, "betalte planlagte utlegg p1 (felles halv, logget hoppes over)");
+  const m = { incomes: [], expenses: [], savings: [], budgets: {}, balances: { p1: { bruk: 40000, when: "after_salary" } } };
+  const r0 = Calc.reconcilePaKonto(JSON.parse(JSON.stringify(m)), people, [], 9, { p1: { bruk: 200000 } });
+  const r1 = Calc.reconcilePaKonto(JSON.parse(JSON.stringify(m)), people, [], 9, { p1: { bruk: 200000 } }, { plannedSpends: ps, monthKey: "2026-10" });
+  assertEq(r0.byPerson.p1.forventet - r1.byPerson.p1.forventet, 160500, "forventet minus betalte planlagte utlegg");
+}
 console.log("\n=== Results:", passed, "passed,", failed, "failed ===\n");
 if (failed) {
   console.error("FAILURES:");
