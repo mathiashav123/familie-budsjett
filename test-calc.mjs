@@ -4626,6 +4626,45 @@ console.log("\nIO6. Diagnose: egne faste endret fra forrige måned");
   assertEq(same.changes.length, 0, "ingen endring → tom liste");
 }
 
+
+// ---- Bekreft lønn (2026-10-21) ----
+{
+  console.log("\nBekreft lønn");
+  const mk = () => ({ incomes: [], expenses: [], savings: [], plannedIncome: { p1: { lønn: 38000, ekstra: 0 }, p2: { lønn: 31500, ekstra: 2000 } } });
+  let m = mk();
+  let st = Calc.salaryStatusForPerson(m, "p1");
+  assertEq(st.expected, 38000, "status forventet = plan");
+  assert(!st.isReceived, "ikke mottatt før bekreft");
+  assertEq(Calc.incomeBasisForPerson(m, "p1").planFilled, 38000, "plan-fylt før bekreft");
+  Calc.confirmSalary(m, "p1", { lønn: 38000, ekstra: 0, date: "2026-10-20" });
+  st = Calc.salaryStatusForPerson(m, "p1");
+  assert(st.isReceived && st.confirmed, "bekreftet etter confirmSalary");
+  assertEq(st.received, 38000, "mottatt 38000");
+  assertEq(st.date, "2026-10-20", "dato lagret");
+  let b = Calc.incomeBasisForPerson(m, "p1");
+  assertEq(b.total, 38000, "inntektsgrunnlag 38000 (ingen dobbelttelling)");
+  assertEq(b.planFilled, 0, "ingen plan-fylt etter bekreft");
+  Calc.confirmSalary(m, "p1", { lønn: 37500, date: "2026-10-21" });
+  assertEq(m.incomes.filter((i) => i.person === "p1").length, 1, "re-bekreft erstatter, ikke dobbelt");
+  assertEq(Calc.incomeBasisForPerson(m, "p1").total, 37500, "endret beløp brukt");
+  Calc.confirmSalary(m, "p2", { lønn: 31500, ekstra: 0 });
+  b = Calc.incomeBasisForPerson(m, "p2");
+  assertEq(b.total, 31500, "bekreftet uten ekstra → ekstra ikke fra plan");
+  assertEq(b.planFilled, 0, "p2 ingen ikke-registrert-note");
+  m.incomes.push({ id: "man1", person: "p2", type: "ekstra", amount: 500, date: "2026-10-05" });
+  Calc.confirmSalary(m, "p2", { lønn: 31000 });
+  assert(m.incomes.some((i) => i.id === "man1"), "manuell inntekt slettes ikke");
+  Calc.undoSalaryConfirm(m, "p1");
+  assert(!Calc.salaryStatusForPerson(m, "p1").isReceived, "angre fjerner bekreftelse");
+  assertEq(Calc.incomeBasisForPerson(m, "p1").planFilled, 38000, "etter angre: forventet igjen");
+  const m2 = mk();
+  m2.incomes.push({ id: "x", person: "p1", type: "Lønn", amount: 38000 });
+  assertEq(Calc.incomeBasisForPerson(m2, "p1").planFilled, 0, "type «Lønn» gjenkjennes som lønn");
+  const m3 = mk();
+  m3.incomes.push({ id: "y", person: "p1", amount: 38000 });
+  assertEq(Calc.incomeBasisForPerson(m3, "p1").total, 38000, "manglende type = lønn");
+  assertEq(Calc.normIncomeType("Ekstra"), "ekstra", "normIncomeType Ekstra");
+}
 console.log("\n=== Results:", passed, "passed,", failed, "failed ===\n");
 if (failed) {
   console.error("FAILURES:");

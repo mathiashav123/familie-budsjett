@@ -1649,7 +1649,7 @@
         m.incomes.push({
           id: i.id || uid(),
           person: mapLegacyOwner(i.person),
-          type: i.type === "ekstra" ? "ekstra" : "lønn",
+          type: normIncomeType(i.type) === "ekstra" ? "ekstra" : "lønn",
           amount: i.amount,
           note: i.note || "",
           date: i.date || ""
@@ -2168,10 +2168,10 @@
    */
   function calcPerson(m, personId, people, categories) {
     var lønn = sumAmounts(m.incomes, function (i) {
-      return i.person === personId && i.type === "lønn";
+      return i.person === personId && normIncomeType(i.type) === "lønn";
     });
     var ekstra = sumAmounts(m.incomes, function (i) {
-      return i.person === personId && i.type === "ekstra";
+      return i.person === personId && normIncomeType(i.type) === "ekstra";
     });
     var sparing = sumAmounts(m.savings, function (s) {
       return s.person === personId;
@@ -2699,13 +2699,14 @@
     var plannedL = plannedIncomeFor(m, personId, "lønn");
     var plannedE = plannedIncomeFor(m, personId, "ekstra");
     var loggedL = sumAmounts(m.incomes, function (i) {
-      return i.person === personId && i.type === "lønn" && after(i);
+      return i.person === personId && normIncomeType(i.type) === "lønn" && after(i);
     });
     var loggedE = sumAmounts(m.incomes, function (i) {
-      return i.person === personId && i.type === "ekstra" && after(i);
+      return i.person === personId && normIncomeType(i.type) === "ekstra" && after(i);
     });
-    var lonn = loggedL > 0 ? loggedL : plannedL;
-    var ekstra = loggedE > 0 ? loggedE : plannedE;
+    var salConf = isSalaryConfirmed(m, personId);
+    var lonn = loggedL > 0 || salConf ? loggedL : plannedL;
+    var ekstra = loggedE > 0 || salConf ? loggedE : plannedE;
     var sparingAfter = sumAmounts(m.savings, function (s) {
       return s.person === personId && after(s);
     });
@@ -4855,6 +4856,95 @@
    * beløp når det finnes (> 0), ellers forventet. Returnerer også hvor mye som
    * er fylt inn fra plan, så UI kan vise «Lønn ikke registrert ennå».
    */
+  /** Normaliser inntektstype (eldre/importerte data: «Lønn», «lonn», tom). */
+  function normIncomeType(t) {
+    var x = String(t == null ? "" : t).trim().toLowerCase();
+    if (x === "ekstra" || x === "bonus" || x === "extra") return "ekstra";
+    return "lønn";
+  }
+
+  /** Lønn bekreftet for måneden via «Bekreft lønn» (salaryConfirmed-flagg). */
+  function isSalaryConfirmed(m, personId) {
+    return !!(m && Array.isArray(m.incomes) && m.incomes.some(function (i) {
+      return i && i.person === personId && i.salaryConfirmed === true;
+    }));
+  }
+
+  /**
+   * Lønnsstatus for person/måned: forventet, mottatt (logget), bekreftet.
+   * received: lønn er registrert (logget lønn > 0 eller bekreftet).
+   */
+  function salaryStatusForPerson(m, personId) {
+    var expL = plannedIncomeFor(m, personId, "lønn") || 0;
+    var expE = plannedIncomeFor(m, personId, "ekstra") || 0;
+    var list = (m && Array.isArray(m.incomes) ? m.incomes : []).filter(function (i) {
+      return i && i.person === personId;
+    });
+    var gotL = 0, gotE = 0, date = null, confirmedIds = [], confL = 0, confE = 0, lastManualId = null;
+    list.forEach(function (i) {
+      var a = Number(i.amount) || 0;
+      if (normIncomeType(i.type) === "ekstra") gotE += a; else gotL += a;
+      if (i.date && (!date || i.date > date)) date = i.date;
+      if (i.salaryConfirmed === true) {
+        confirmedIds.push(i.id);
+        if (normIncomeType(i.type) === "ekstra") confE += a; else confL += a;
+      } else lastManualId = i.id;
+    });
+    var confirmed = confirmedIds.length > 0;
+    return {
+      person: personId,
+      expectedLønn: expL,
+      expectedEkstra: expE,
+      expected: expL + expE,
+      receivedLønn: gotL,
+      receivedEkstra: gotE,
+      received: gotL + gotE,
+      date: date,
+      confirmed: confirmed,
+      confirmedIds: confirmedIds,
+      confirmedLønn: confL,
+      confirmedEkstra: confE,
+      lastManualId: lastManualId,
+      isReceived: confirmed || gotL > 0
+    };
+  }
+
+  /**
+   * Bekreft lønn: erstatter tidligere bekreftelser for personen i måneden
+   * (aldri andre manuelle inntekter) og legger inn lønn (+ ekstra hvis > 0).
+   * Returnerer måneden. Additivt — sletter ingen brukerdata utenom egne
+   * bekreftelses-poster.
+   */
+  function confirmSalary(m, personId, opts) {
+    opts = opts || {};
+    if (!m) return m;
+    if (!Array.isArray(m.incomes)) m.incomes = [];
+    m.incomes = m.incomes.filter(function (i) {
+      return !(i && i.person === personId && i.salaryConfirmed === true);
+    });
+    var date = opts.date || null;
+    var mkId = opts.uid || function () {
+      return "inc_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    };
+    var l = Math.max(0, Number(opts.lønn) || 0);
+    var e = Math.max(0, Number(opts.ekstra) || 0);
+    m.incomes.push({ id: mkId(), person: personId, type: "lønn", amount: l,
+      note: "Bekreftet lønn", date: date, salaryConfirmed: true });
+    if (e > 0) {
+      m.incomes.push({ id: mkId(), person: personId, type: "ekstra", amount: e,
+        note: "Bekreftet ekstra", date: date, salaryConfirmed: true });
+    }
+    return m;
+  }
+
+  function undoSalaryConfirm(m, personId) {
+    if (!m || !Array.isArray(m.incomes)) return m;
+    m.incomes = m.incomes.filter(function (i) {
+      return !(i && i.person === personId && i.salaryConfirmed === true);
+    });
+    return m;
+  }
+
   function incomeBasisForPerson(m, personId) {
     var out = {
       lønn: 0,
@@ -4865,13 +4955,15 @@
       missingTypes: []
     };
     if (!m || !personId) return out;
+    var confirmed = isSalaryConfirmed(m, personId);
+    out.confirmed = confirmed;
     ["lønn", "ekstra"].forEach(function (type) {
       var logged = sumAmounts(m.incomes, function (i) {
-        return i && i.person === personId && i.type === type;
+        return i && i.person === personId && normIncomeType(i.type) === type;
       });
       var planned = plannedIncomeFor(m, personId, type);
       var v;
-      if (logged > 0) {
+      if (logged > 0 || confirmed) {
         v = logged;
         out.logged += logged;
       } else {
@@ -5183,10 +5275,10 @@
     }
 
     var lønn = sumAmounts(m.incomes, function (i) {
-      return i.person === personId && i.type === "lønn" && keep(i);
+      return i.person === personId && normIncomeType(i.type) === "lønn" && keep(i);
     });
     var ekstra = sumAmounts(m.incomes, function (i) {
-      return i.person === personId && i.type === "ekstra" && keep(i);
+      return i.person === personId && normIncomeType(i.type) === "ekstra" && keep(i);
     });
     if (excludeSalary) {
       lønn = 0;
@@ -5659,6 +5751,11 @@
     expenseIsOneOff: expenseIsOneOff,
     sumExpenses: sumExpenses,
     incomeBasisForPerson: incomeBasisForPerson,
+    normIncomeType: normIncomeType,
+    isSalaryConfirmed: isSalaryConfirmed,
+    salaryStatusForPerson: salaryStatusForPerson,
+    confirmSalary: confirmSalary,
+    undoSalaryConfirm: undoSalaryConfirm,
     purchasesSpend: purchasesSpend,
     ownFastDiffVsPrev: ownFastDiffVsPrev,
     compareSpendVsPrev: compareSpendVsPrev,

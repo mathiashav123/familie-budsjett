@@ -5,6 +5,9 @@ Rolig, mobilvennlig budsjettapp for husstanden. **Budsjett mot faktisk**, rask �
 Valuta: **NOK**. Språk: **bokmål**.
 
 
+## Lønn – «Bekreft lønn»
+Øverst på **Oversikt** ligger kortet «Lønn [måned]». Når lønna er kommet: sjekk beløpet (forhåndsutfylt med forventet), trykk **«Bekreft lønn for [måned]»**. Da vises «✓ Lønn mottatt», og «Lønn ikke registrert»-merknadene forsvinner. **Endre**/**Angre** retter opp. På Samlet-fanen vises begge personer. (Å endre *forventet* lønn i Plan registrerer ikke mottatt lønn.)
+
 ## Inn og ut – «Til overs (faktisk)»
 
 - **Ut faktisk** = loggede kjøp + faste trukket automatisk (egne + andel felles).

@@ -1067,6 +1067,119 @@
     }
   }
 
+  // ---- Lønnsstatus / «Bekreft lønn» -------------------------------------
+  const salaryEditOpen = {};
+
+  function salaryDefaultDate() {
+    const key = monthKey(state.view.year, state.view.month);
+    const t = todayISO();
+    if (t.slice(0, 7) === key) return t;
+    return key + "-20";
+  }
+
+  function formatDateNo(iso) {
+    if (!iso || !/^\d{4}-\d{2}-\d{2}/.test(iso)) return "";
+    return Number(iso.slice(8, 10)) + ". " + (MONTHS[Number(iso.slice(5, 7)) - 1] || "").toLowerCase();
+  }
+
+  function salaryAmtStr(n) {
+    return n > 0 ? String(Math.round(n * 100) / 100).replace(".", ",") : "";
+  }
+
+  function buildSalaryBlock(person, m) {
+    const st = Calc.salaryStatusForPerson(m, person.id);
+    const pid = escapeAttr(person.id);
+    const monthName = (MONTHS[state.view.month] || "").toLowerCase();
+    const editing = !!salaryEditOpen[person.id];
+    let html = '<div class="salary-row' + (st.isReceived ? " ok" : " pending") + '" data-salary-person="' + pid + '">';
+    html += '<div class="salary-head"><strong>' + escapeHtml(person.name) + "</strong>" +
+      '<span class="salary-expected">Forventet ' + formatNOK(st.expectedLønn) +
+      (st.expectedEkstra > 0 ? " + ekstra " + formatNOK(st.expectedEkstra) : "") + "</span></div>";
+    if (st.isReceived && !editing) {
+      html += '<div class="salary-ok">✓ Lønn mottatt: ' + formatNOK(st.received) +
+        (st.date ? " (" + escapeHtml(formatDateNo(st.date)) + ")" : "") + "</div>" +
+        '<div class="salary-actions">' +
+        (st.confirmed
+          ? '<button type="button" class="btn ghost sm" data-salary-edit="' + pid + '">Endre</button>'
+          : '<button type="button" class="btn ghost sm" data-salary-edit-manual="' + pid + '" data-inc-id="' + escapeAttr(st.lastManualId || "") + '">Endre</button>') +
+        (st.confirmed ? '<button type="button" class="btn ghost sm" data-salary-undo="' + pid + '">Angre</button>' : "") +
+        "</div>";
+    } else {
+      const preL = st.confirmed ? st.confirmedLønn : st.expectedLønn;
+      const preE = st.confirmed ? st.confirmedEkstra : st.expectedEkstra;
+      if (!st.isReceived) {
+        html += '<div class="salary-pending">' +
+          (viewIsPastMonth() ? "Lønn ikke registrert" : "Lønn ikke registrert ennå") + "</div>";
+      }
+      html += '<div class="salary-form">' +
+        '<label>Lønn <input type="text" inputmode="decimal" class="input salary-inp" data-salary-lonn="' + pid + '" value="' + escapeAttr(salaryAmtStr(preL)) + '" placeholder="0"></label>' +
+        '<label>Ekstra <input type="text" inputmode="decimal" class="input salary-inp" data-salary-ekstra="' + pid + '" value="' + escapeAttr(salaryAmtStr(preE)) + '" placeholder="0"></label>' +
+        '<label>Dato <input type="date" class="input salary-inp" data-salary-date="' + pid + '" value="' + escapeAttr((st.isReceived && st.date) || salaryDefaultDate()) + '"></label>' +
+        "</div>" +
+        '<button type="button" class="btn primary salary-confirm-btn" data-salary-confirm="' + pid + '">Bekreft lønn for ' + escapeHtml(monthName) + "</button>" +
+        (editing ? '<button type="button" class="btn ghost sm" data-salary-cancel="' + pid + '">Avbryt</button>' : "");
+    }
+    return html + "</div>";
+  }
+
+  function renderSalaryStatus() {
+    const host = $("#salaryStatus");
+    if (!host) return;
+    const view = state.settings.innUtView || "samlet";
+    const m = getMonth();
+    const people = activePeopleList().filter(function (p) {
+      return view === "samlet" || p.id === view;
+    });
+    if (!people.length) { host.innerHTML = ""; return; }
+    host.innerHTML = '<div class="salary-title">Lønn ' + escapeHtml((MONTHS[state.view.month] || "").toLowerCase()) + "</div>" +
+      people.map(function (p) { return buildSalaryBlock(p, m); }).join("");
+  }
+
+  function handleSalaryClick(e) {
+    const c = e.target.closest("[data-salary-confirm]");
+    if (c) {
+      const pid = c.getAttribute("data-salary-confirm");
+      const q = function (attr) {
+        return document.querySelector("[" + attr + '="' + String(pid).replace(/"/g, "") + '"]');
+      };
+      const li = q("data-salary-lonn"), ei = q("data-salary-ekstra"), di = q("data-salary-date");
+      const l = li ? parseAmount(li.value) : null;
+      const ex = ei && ei.value.trim() ? parseAmount(ei.value) : 0;
+      if (l == null || l < 0 || ex == null || ex < 0) { showToast("Ugyldig beløp"); return true; }
+      if (!(l + ex > 0)) { showToast("Skriv inn lønn"); return true; }
+      Calc.confirmSalary(getMonth(), pid, {
+        lønn: l, ekstra: ex, date: (di && di.value) || salaryDefaultDate(), uid: uid
+      });
+      delete salaryEditOpen[pid];
+      save();
+      render();
+      showToast("Lønn bekreftet for " + nameOf(pid));
+      return true;
+    }
+    const ed = e.target.closest("[data-salary-edit]");
+    if (ed) { salaryEditOpen[ed.getAttribute("data-salary-edit")] = true; renderSalaryStatus(); return true; }
+    const em = e.target.closest("[data-salary-edit-manual]");
+    if (em) {
+      const incId = em.getAttribute("data-inc-id");
+      const inc = getMonth().incomes.find(function (x) { return x.id === incId; });
+      if (inc) openIncome(inc.person, inc);
+      return true;
+    }
+    const ca = e.target.closest("[data-salary-cancel]");
+    if (ca) { delete salaryEditOpen[ca.getAttribute("data-salary-cancel")]; renderSalaryStatus(); return true; }
+    const un = e.target.closest("[data-salary-undo]");
+    if (un) {
+      const pid = un.getAttribute("data-salary-undo");
+      if (!confirm("Angre bekreftet lønn for " + nameOf(pid) + "?")) return true;
+      Calc.undoSalaryConfirm(getMonth(), pid);
+      save();
+      render();
+      showToast("Lønnsbekreftelse angret");
+      return true;
+    }
+    return false;
+  }
+
   function renderInnUtNumbers(c) {
     const view = state.settings.innUtView || "samlet";
     let planInn, actInn, planUt, actUt, netPlan, netActual;
@@ -1109,7 +1222,7 @@
           (viewIsPastMonth() ? "Lønn ikke registrert" : "Lønn ikke registrert ennå") +
           " — «Til overs (faktisk)» regner med forventet " +
           formatNOK(netInnPlanFilled) +
-          " minus Ut faktisk (inkl. faste). Registrer lønn med «+ Inntekt» for faktisk tall.";
+          " minus Ut faktisk (inkl. faste). Trykk «Bekreft lønn» øverst på Oversikt når lønna er kommet.";
       } else {
         netNote.hidden = true;
         netNote.textContent = "";
@@ -1565,6 +1678,7 @@
 
     renderInnUtTabs();
     renderInnUtNumbers(c);
+    renderSalaryStatus();
 
     renderSaldoHero(c);
 
@@ -2083,7 +2197,8 @@
               formatNOK(innShown) +
               "</span></div>" +
               '<div class="person-row muted inn-missing-row"><span>' +
-              (viewIsPastMonth() ? "Lønn ikke registrert" : "Lønn ikke registrert ennå") +
+              ((pc.innMissingTypes || []).indexOf("lønn") < 0 ? "Ekstra" : "Lønn") +
+              (viewIsPastMonth() ? " ikke registrert" : " ikke registrert ennå") +
               " (faktisk " +
               formatNOK((pc.lønn || 0) + (pc.ekstra || 0)) +
               ")</span></div>"
@@ -8217,6 +8332,7 @@
 
     // Person actions
     document.body.addEventListener("click", function (e) {
+      if (handleSalaryClick(e)) return;
       const focusInc = e.target.closest("[data-focus-plan-income]");
       if (focusInc) {
         focusPlanIncomeForPerson(focusInc.getAttribute("data-focus-plan-income"));
