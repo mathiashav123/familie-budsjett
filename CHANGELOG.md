@@ -11,6 +11,7 @@
 - `Calc.normIncomeType` (lønn/ekstra-normalisering), `salaryStatusForPerson`, `confirmSalary`, `undoSalaryConfirm`, `isSalaryConfirmed`. Bekreftet lønn → ingen plan-utfylling av ekstra (ingen dobbelttelling) i Til overs (faktisk) og Saldo før lønn.
 - Varsel i personkort sier «Ekstra ikke registrert» når kun ekstra mangler.
 - Synk: endringen går via `save()` → `schedulePush` (lokal endring nyere enn sky → push).
+- **Mobil-fil fikset:** `pack-mobil.mjs` brukte streng-erstatning, så `$$` i app.js ble til `$` → «Identifier '$' has already been declared» og den samlede `familie-budsjett-mobil.html` startet ikke. Bruker nå funksjons-erstatning.
 - Tester: +18 calc, +4 sync.
 
 ## 2026-10-01 — Inn og ut: «faktisk» konsistent + kjøp vs forrige måned på like vilkår

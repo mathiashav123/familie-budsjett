@@ -13334,7 +13334,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
 
   // ——— DOM ———
   const $ = function (sel) { return document.querySelector(sel); };
-  const $ = function (sel) { return Array.from(document.querySelectorAll(sel)); };
+  const $$ = function (sel) { return Array.from(document.querySelectorAll(sel)); };
 
   function showToast(msg) {
     const el = $("#toast");
@@ -14110,7 +14110,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     $("#utActual").textContent = formatNOK(actUt);
     $("#netPlan").textContent = formatNOK(netPlan);
     $("#netActual").textContent = formatNOK(netActual);
-    const netItems = $("#netBar .net-item");
+    const netItems = $$("#netBar .net-item");
     if (netItems[0]) {
       netItems[0].classList.toggle("pos", netPlan >= 0);
       netItems[0].classList.toggle("neg", netPlan < 0);
@@ -14146,7 +14146,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
       if (on) el.removeAttribute("hidden");
       else el.setAttribute("hidden", "");
     });
-    $(".main-tab[data-tab]").forEach(function (btn) {
+    $$(".main-tab[data-tab]").forEach(function (btn) {
       const on = btn.getAttribute("data-tab") === t;
       btn.setAttribute("aria-selected", on ? "true" : "false");
       btn.classList.toggle("is-active", on);
@@ -14556,7 +14556,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     fillOwnerSelect($("#newCatOwner"), "felles");
 
     const mode = state.settings.chartMode || "actual";
-    $('input[name="chartMode"]').forEach(function (r) {
+    $$('input[name="chartMode"]').forEach(function (r) {
       if (document.activeElement !== r) r.checked = r.value === mode;
     });
 
@@ -18953,10 +18953,10 @@ window.FAMILIE_BUDGET_SUPABASE = {
     $("#expAmount").value = edit ? String(edit.amount).replace(".", ",") : "";
     const _expCalc = $("#expCalc");
     if (_expCalc) _expCalc.hidden = true;
-    $('.calc-toggle[data-calc-panel="expCalc"]').forEach(function (b) {
+    $$('.calc-toggle[data-calc-panel="expCalc"]').forEach(function (b) {
       b.setAttribute("aria-expanded", "false");
     });
-    $(".amount-chip").forEach(function (c) {
+    $$(".amount-chip").forEach(function (c) {
       const v = c.getAttribute("data-amount");
       const cur = edit ? String(edit.amount) : "";
       c.classList.toggle("is-active", !!edit && v === cur);
@@ -19000,7 +19000,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     $("#incAmount").value = edit ? String(edit.amount).replace(".", ",") : "";
     const _incCalc = $("#incCalc");
     if (_incCalc) _incCalc.hidden = true;
-    $('.calc-toggle[data-calc-panel="incCalc"]').forEach(function (b) {
+    $$('.calc-toggle[data-calc-panel="incCalc"]').forEach(function (b) {
       b.setAttribute("aria-expanded", "false");
     });
     $("#incNote").value = edit ? edit.note || "" : "";
@@ -19020,7 +19020,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     $("#savAmount").value = edit ? String(edit.amount).replace(".", ",") : "";
     const _savCalc = $("#savCalc");
     if (_savCalc) _savCalc.hidden = true;
-    $('.calc-toggle[data-calc-panel="savCalc"]').forEach(function (b) {
+    $$('.calc-toggle[data-calc-panel="savCalc"]').forEach(function (b) {
       b.setAttribute("aria-expanded", "false");
     });
     $("#savNote").value = edit ? edit.note || "" : "";
@@ -20284,7 +20284,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
         const inp = $("#expAmount");
         if (!inp || !amt) return;
         inp.value = amt;
-        $(".amount-chip").forEach(function (c) {
+        $$(".amount-chip").forEach(function (c) {
           c.classList.toggle("is-active", c === btn);
         });
         try { inp.focus({ preventScroll: true }); } catch (err) { inp.focus(); }
@@ -20348,7 +20348,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     }
 
     function syncCalcToggleState(panelId, activeFor) {
-      $('.calc-toggle[data-calc-panel="' + (panelId || "") + '"]').forEach(function (b) {
+      $$('.calc-toggle[data-calc-panel="' + (panelId || "") + '"]').forEach(function (b) {
         const forKey = b.getAttribute("data-calc-for");
         const on = activeFor
           ? forKey === activeFor
@@ -20370,7 +20370,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
           parkPaKontoCalc();
         }
       }
-      $('.calc-toggle[data-calc-panel="' + (panelId || "") + '"]').forEach(function (b) {
+      $$('.calc-toggle[data-calc-panel="' + (panelId || "") + '"]').forEach(function (b) {
         b.setAttribute("aria-expanded", "false");
       });
     }
@@ -20469,7 +20469,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
       const inp = resolveCalcTargetInput(panelId);
       if (inp) {
         inp.value = formatAmountInput(n);
-        $(".amount-chip").forEach(function (c) { c.classList.remove("is-active"); });
+        $$(".amount-chip").forEach(function (c) { c.classList.remove("is-active"); });
         if (isDynamicCalcPanel(panelId)) {
           closeCalcPanel(panelId);
           try {
@@ -21065,7 +21065,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     function commitSplitFromDom(catId) {
       const cat = catById(catId);
       if (!cat) return;
-      const inputs = $('#categoryList [data-split-cat="' + catId + '"]');
+      const inputs = $$('#categoryList [data-split-cat="' + catId + '"]');
       const split = {};
       inputs.forEach(function (inp) {
         const pid = inp.getAttribute("data-split-person");
@@ -21116,7 +21116,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
       const catId = btn.getAttribute("data-normalize-split");
       const cat = catById(catId);
       if (!cat) return;
-      const inputs = $('#categoryList [data-split-cat="' + catId + '"]');
+      const inputs = $$('#categoryList [data-split-cat="' + catId + '"]');
       const raw = {};
       let sum = 0;
       inputs.forEach(function (inp) {
@@ -21251,7 +21251,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
         $("#expAmount").value = "";
         $("#expNote").value = "";
         $("#expDate").value = todayISO();
-        $(".amount-chip").forEach(function (c) { c.classList.remove("is-active"); });
+        $$(".amount-chip").forEach(function (c) { c.classList.remove("is-active"); });
         renderWhoSeg(state.settings.lastExpense.owner);
         hideExpNewCat();
         fillCategorySelect(
@@ -21836,12 +21836,12 @@ window.FAMILIE_BUDGET_SUPABASE = {
         dlg.classList.remove("is-open");
         dlg.removeAttribute("open");
         delete dlg.dataset.fallback;
-        if (!$("dialog.modal.is-open").length) {
+        if (!$$("dialog.modal.is-open").length) {
           document.body.classList.remove("modal-open");
         }
       }, 0);
     }
-    $("dialog.modal").forEach(function (dlg) {
+    $$("dialog.modal").forEach(function (dlg) {
       dlg.addEventListener("click", function (e) {
         if (e.target === dlg) closeDlg(dlg);
       });
@@ -21851,7 +21851,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
 
     document.addEventListener("keydown", function (e) {
       if (e.key !== "Escape") return;
-      const openOnes = $("dialog.modal.is-open");
+      const openOnes = $$("dialog.modal.is-open");
       if (!openOnes.length) return;
       e.preventDefault();
       closeDlg(openOnes[openOnes.length - 1]);
