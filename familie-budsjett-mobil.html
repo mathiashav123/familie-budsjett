@@ -4764,6 +4764,23 @@ button.cat-group-header {
 }
 .person-row.inn-missing-row span { font-size: .72rem; }
 
+/* Lønnsstatus / Bekreft lønn */
+.salary-status { margin: 8px 0 10px; display: grid; gap: 8px; }
+.salary-status:empty { display: none; }
+.salary-title { font-weight: 700; font-size: .95rem; }
+.salary-row { border-radius: 12px; padding: 10px 12px; border: 1px solid rgba(0,0,0,.08); background: rgba(255,196,0,.10); }
+.salary-row.ok { background: rgba(46,160,67,.10); border-color: rgba(46,160,67,.35); }
+.salary-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+.salary-expected { font-size: .85rem; opacity: .8; }
+.salary-ok { margin-top: 4px; font-weight: 700; color: #1a7f37; }
+.salary-pending { margin-top: 4px; font-size: .85rem; color: #9a6700; }
+.salary-form { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 6px; margin: 8px 0; }
+.salary-form label { display: grid; gap: 2px; font-size: .78rem; min-width: 0; }
+.salary-form .salary-inp { width: 100%; min-width: 0; font-size: 16px; box-sizing: border-box; }
+.salary-confirm-btn { width: 100%; min-height: 48px; font-size: 1rem; font-weight: 700; }
+.salary-actions { display: flex; gap: 6px; margin-top: 6px; }
+@media (max-width: 420px) { .salary-form { grid-template-columns: 1fr 1fr; } .salary-form label:last-child { grid-column: 1 / -1; } }
+
 </style>
 </head>
 <body>
@@ -4920,6 +4937,10 @@ button.cat-group-header {
 
     <!-- ——— OVERSIKT ——— -->
     <div id="panelOversikt" class="tab-panel" role="tabpanel" aria-labelledby="tabOversikt">
+      <section class="card compact-card salary-card" id="salaryCard" aria-label="Lønnsstatus">
+        <div class="salary-status" id="salaryStatus" aria-live="polite"></div>
+      </section>
+
       <section class="card safe-spend-card compact-card" id="safeSpendCard" aria-labelledby="safeSpendTitle">
         <div class="card-head safe-spend-head">
           <h2 id="safeSpendTitle">Trygg å bruke nå</h2>
@@ -7509,7 +7530,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
         m.incomes.push({
           id: i.id || uid(),
           person: mapLegacyOwner(i.person),
-          type: i.type === "ekstra" ? "ekstra" : "lønn",
+          type: normIncomeType(i.type) === "ekstra" ? "ekstra" : "lønn",
           amount: i.amount,
           note: i.note || "",
           date: i.date || ""
@@ -8028,10 +8049,10 @@ window.FAMILIE_BUDGET_SUPABASE = {
    */
   function calcPerson(m, personId, people, categories) {
     var lønn = sumAmounts(m.incomes, function (i) {
-      return i.person === personId && i.type === "lønn";
+      return i.person === personId && normIncomeType(i.type) === "lønn";
     });
     var ekstra = sumAmounts(m.incomes, function (i) {
-      return i.person === personId && i.type === "ekstra";
+      return i.person === personId && normIncomeType(i.type) === "ekstra";
     });
     var sparing = sumAmounts(m.savings, function (s) {
       return s.person === personId;
@@ -8559,13 +8580,14 @@ window.FAMILIE_BUDGET_SUPABASE = {
     var plannedL = plannedIncomeFor(m, personId, "lønn");
     var plannedE = plannedIncomeFor(m, personId, "ekstra");
     var loggedL = sumAmounts(m.incomes, function (i) {
-      return i.person === personId && i.type === "lønn" && after(i);
+      return i.person === personId && normIncomeType(i.type) === "lønn" && after(i);
     });
     var loggedE = sumAmounts(m.incomes, function (i) {
-      return i.person === personId && i.type === "ekstra" && after(i);
+      return i.person === personId && normIncomeType(i.type) === "ekstra" && after(i);
     });
-    var lonn = loggedL > 0 ? loggedL : plannedL;
-    var ekstra = loggedE > 0 ? loggedE : plannedE;
+    var salConf = isSalaryConfirmed(m, personId);
+    var lonn = loggedL > 0 || salConf ? loggedL : plannedL;
+    var ekstra = loggedE > 0 || salConf ? loggedE : plannedE;
     var sparingAfter = sumAmounts(m.savings, function (s) {
       return s.person === personId && after(s);
     });
@@ -10715,6 +10737,95 @@ window.FAMILIE_BUDGET_SUPABASE = {
    * beløp når det finnes (> 0), ellers forventet. Returnerer også hvor mye som
    * er fylt inn fra plan, så UI kan vise «Lønn ikke registrert ennå».
    */
+  /** Normaliser inntektstype (eldre/importerte data: «Lønn», «lonn», tom). */
+  function normIncomeType(t) {
+    var x = String(t == null ? "" : t).trim().toLowerCase();
+    if (x === "ekstra" || x === "bonus" || x === "extra") return "ekstra";
+    return "lønn";
+  }
+
+  /** Lønn bekreftet for måneden via «Bekreft lønn» (salaryConfirmed-flagg). */
+  function isSalaryConfirmed(m, personId) {
+    return !!(m && Array.isArray(m.incomes) && m.incomes.some(function (i) {
+      return i && i.person === personId && i.salaryConfirmed === true;
+    }));
+  }
+
+  /**
+   * Lønnsstatus for person/måned: forventet, mottatt (logget), bekreftet.
+   * received: lønn er registrert (logget lønn > 0 eller bekreftet).
+   */
+  function salaryStatusForPerson(m, personId) {
+    var expL = plannedIncomeFor(m, personId, "lønn") || 0;
+    var expE = plannedIncomeFor(m, personId, "ekstra") || 0;
+    var list = (m && Array.isArray(m.incomes) ? m.incomes : []).filter(function (i) {
+      return i && i.person === personId;
+    });
+    var gotL = 0, gotE = 0, date = null, confirmedIds = [], confL = 0, confE = 0, lastManualId = null;
+    list.forEach(function (i) {
+      var a = Number(i.amount) || 0;
+      if (normIncomeType(i.type) === "ekstra") gotE += a; else gotL += a;
+      if (i.date && (!date || i.date > date)) date = i.date;
+      if (i.salaryConfirmed === true) {
+        confirmedIds.push(i.id);
+        if (normIncomeType(i.type) === "ekstra") confE += a; else confL += a;
+      } else lastManualId = i.id;
+    });
+    var confirmed = confirmedIds.length > 0;
+    return {
+      person: personId,
+      expectedLønn: expL,
+      expectedEkstra: expE,
+      expected: expL + expE,
+      receivedLønn: gotL,
+      receivedEkstra: gotE,
+      received: gotL + gotE,
+      date: date,
+      confirmed: confirmed,
+      confirmedIds: confirmedIds,
+      confirmedLønn: confL,
+      confirmedEkstra: confE,
+      lastManualId: lastManualId,
+      isReceived: confirmed || gotL > 0
+    };
+  }
+
+  /**
+   * Bekreft lønn: erstatter tidligere bekreftelser for personen i måneden
+   * (aldri andre manuelle inntekter) og legger inn lønn (+ ekstra hvis > 0).
+   * Returnerer måneden. Additivt — sletter ingen brukerdata utenom egne
+   * bekreftelses-poster.
+   */
+  function confirmSalary(m, personId, opts) {
+    opts = opts || {};
+    if (!m) return m;
+    if (!Array.isArray(m.incomes)) m.incomes = [];
+    m.incomes = m.incomes.filter(function (i) {
+      return !(i && i.person === personId && i.salaryConfirmed === true);
+    });
+    var date = opts.date || null;
+    var mkId = opts.uid || function () {
+      return "inc_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    };
+    var l = Math.max(0, Number(opts.lønn) || 0);
+    var e = Math.max(0, Number(opts.ekstra) || 0);
+    m.incomes.push({ id: mkId(), person: personId, type: "lønn", amount: l,
+      note: "Bekreftet lønn", date: date, salaryConfirmed: true });
+    if (e > 0) {
+      m.incomes.push({ id: mkId(), person: personId, type: "ekstra", amount: e,
+        note: "Bekreftet ekstra", date: date, salaryConfirmed: true });
+    }
+    return m;
+  }
+
+  function undoSalaryConfirm(m, personId) {
+    if (!m || !Array.isArray(m.incomes)) return m;
+    m.incomes = m.incomes.filter(function (i) {
+      return !(i && i.person === personId && i.salaryConfirmed === true);
+    });
+    return m;
+  }
+
   function incomeBasisForPerson(m, personId) {
     var out = {
       lønn: 0,
@@ -10725,13 +10836,15 @@ window.FAMILIE_BUDGET_SUPABASE = {
       missingTypes: []
     };
     if (!m || !personId) return out;
+    var confirmed = isSalaryConfirmed(m, personId);
+    out.confirmed = confirmed;
     ["lønn", "ekstra"].forEach(function (type) {
       var logged = sumAmounts(m.incomes, function (i) {
-        return i && i.person === personId && i.type === type;
+        return i && i.person === personId && normIncomeType(i.type) === type;
       });
       var planned = plannedIncomeFor(m, personId, type);
       var v;
-      if (logged > 0) {
+      if (logged > 0 || confirmed) {
         v = logged;
         out.logged += logged;
       } else {
@@ -11043,10 +11156,10 @@ window.FAMILIE_BUDGET_SUPABASE = {
     }
 
     var lønn = sumAmounts(m.incomes, function (i) {
-      return i.person === personId && i.type === "lønn" && keep(i);
+      return i.person === personId && normIncomeType(i.type) === "lønn" && keep(i);
     });
     var ekstra = sumAmounts(m.incomes, function (i) {
-      return i.person === personId && i.type === "ekstra" && keep(i);
+      return i.person === personId && normIncomeType(i.type) === "ekstra" && keep(i);
     });
     if (excludeSalary) {
       lønn = 0;
@@ -11519,6 +11632,11 @@ window.FAMILIE_BUDGET_SUPABASE = {
     expenseIsOneOff: expenseIsOneOff,
     sumExpenses: sumExpenses,
     incomeBasisForPerson: incomeBasisForPerson,
+    normIncomeType: normIncomeType,
+    isSalaryConfirmed: isSalaryConfirmed,
+    salaryStatusForPerson: salaryStatusForPerson,
+    confirmSalary: confirmSalary,
+    undoSalaryConfirm: undoSalaryConfirm,
     purchasesSpend: purchasesSpend,
     ownFastDiffVsPrev: ownFastDiffVsPrev,
     compareSpendVsPrev: compareSpendVsPrev,
@@ -13801,6 +13919,119 @@ window.FAMILIE_BUDGET_SUPABASE = {
     }
   }
 
+  // ---- Lønnsstatus / «Bekreft lønn» -------------------------------------
+  const salaryEditOpen = {};
+
+  function salaryDefaultDate() {
+    const key = monthKey(state.view.year, state.view.month);
+    const t = todayISO();
+    if (t.slice(0, 7) === key) return t;
+    return key + "-20";
+  }
+
+  function formatDateNo(iso) {
+    if (!iso || !/^\d{4}-\d{2}-\d{2}/.test(iso)) return "";
+    return Number(iso.slice(8, 10)) + ". " + (MONTHS[Number(iso.slice(5, 7)) - 1] || "").toLowerCase();
+  }
+
+  function salaryAmtStr(n) {
+    return n > 0 ? String(Math.round(n * 100) / 100).replace(".", ",") : "";
+  }
+
+  function buildSalaryBlock(person, m) {
+    const st = Calc.salaryStatusForPerson(m, person.id);
+    const pid = escapeAttr(person.id);
+    const monthName = (MONTHS[state.view.month] || "").toLowerCase();
+    const editing = !!salaryEditOpen[person.id];
+    let html = '<div class="salary-row' + (st.isReceived ? " ok" : " pending") + '" data-salary-person="' + pid + '">';
+    html += '<div class="salary-head"><strong>' + escapeHtml(person.name) + "</strong>" +
+      '<span class="salary-expected">Forventet ' + formatNOK(st.expectedLønn) +
+      (st.expectedEkstra > 0 ? " + ekstra " + formatNOK(st.expectedEkstra) : "") + "</span></div>";
+    if (st.isReceived && !editing) {
+      html += '<div class="salary-ok">✓ Lønn mottatt: ' + formatNOK(st.received) +
+        (st.date ? " (" + escapeHtml(formatDateNo(st.date)) + ")" : "") + "</div>" +
+        '<div class="salary-actions">' +
+        (st.confirmed
+          ? '<button type="button" class="btn ghost sm" data-salary-edit="' + pid + '">Endre</button>'
+          : '<button type="button" class="btn ghost sm" data-salary-edit-manual="' + pid + '" data-inc-id="' + escapeAttr(st.lastManualId || "") + '">Endre</button>') +
+        (st.confirmed ? '<button type="button" class="btn ghost sm" data-salary-undo="' + pid + '">Angre</button>' : "") +
+        "</div>";
+    } else {
+      const preL = st.confirmed ? st.confirmedLønn : st.expectedLønn;
+      const preE = st.confirmed ? st.confirmedEkstra : st.expectedEkstra;
+      if (!st.isReceived) {
+        html += '<div class="salary-pending">' +
+          (viewIsPastMonth() ? "Lønn ikke registrert" : "Lønn ikke registrert ennå") + "</div>";
+      }
+      html += '<div class="salary-form">' +
+        '<label>Lønn <input type="text" inputmode="decimal" class="input salary-inp" data-salary-lonn="' + pid + '" value="' + escapeAttr(salaryAmtStr(preL)) + '" placeholder="0"></label>' +
+        '<label>Ekstra <input type="text" inputmode="decimal" class="input salary-inp" data-salary-ekstra="' + pid + '" value="' + escapeAttr(salaryAmtStr(preE)) + '" placeholder="0"></label>' +
+        '<label>Dato <input type="date" class="input salary-inp" data-salary-date="' + pid + '" value="' + escapeAttr((st.isReceived && st.date) || salaryDefaultDate()) + '"></label>' +
+        "</div>" +
+        '<button type="button" class="btn primary salary-confirm-btn" data-salary-confirm="' + pid + '">Bekreft lønn for ' + escapeHtml(monthName) + "</button>" +
+        (editing ? '<button type="button" class="btn ghost sm" data-salary-cancel="' + pid + '">Avbryt</button>' : "");
+    }
+    return html + "</div>";
+  }
+
+  function renderSalaryStatus() {
+    const host = $("#salaryStatus");
+    if (!host) return;
+    const view = state.settings.innUtView || "samlet";
+    const m = getMonth();
+    const people = activePeopleList().filter(function (p) {
+      return view === "samlet" || p.id === view;
+    });
+    if (!people.length) { host.innerHTML = ""; return; }
+    host.innerHTML = '<div class="salary-title">Lønn ' + escapeHtml((MONTHS[state.view.month] || "").toLowerCase()) + "</div>" +
+      people.map(function (p) { return buildSalaryBlock(p, m); }).join("");
+  }
+
+  function handleSalaryClick(e) {
+    const c = e.target.closest("[data-salary-confirm]");
+    if (c) {
+      const pid = c.getAttribute("data-salary-confirm");
+      const q = function (attr) {
+        return document.querySelector("[" + attr + '="' + String(pid).replace(/"/g, "") + '"]');
+      };
+      const li = q("data-salary-lonn"), ei = q("data-salary-ekstra"), di = q("data-salary-date");
+      const l = li ? parseAmount(li.value) : null;
+      const ex = ei && ei.value.trim() ? parseAmount(ei.value) : 0;
+      if (l == null || l < 0 || ex == null || ex < 0) { showToast("Ugyldig beløp"); return true; }
+      if (!(l + ex > 0)) { showToast("Skriv inn lønn"); return true; }
+      Calc.confirmSalary(getMonth(), pid, {
+        lønn: l, ekstra: ex, date: (di && di.value) || salaryDefaultDate(), uid: uid
+      });
+      delete salaryEditOpen[pid];
+      save();
+      render();
+      showToast("Lønn bekreftet for " + nameOf(pid));
+      return true;
+    }
+    const ed = e.target.closest("[data-salary-edit]");
+    if (ed) { salaryEditOpen[ed.getAttribute("data-salary-edit")] = true; renderSalaryStatus(); return true; }
+    const em = e.target.closest("[data-salary-edit-manual]");
+    if (em) {
+      const incId = em.getAttribute("data-inc-id");
+      const inc = getMonth().incomes.find(function (x) { return x.id === incId; });
+      if (inc) openIncome(inc.person, inc);
+      return true;
+    }
+    const ca = e.target.closest("[data-salary-cancel]");
+    if (ca) { delete salaryEditOpen[ca.getAttribute("data-salary-cancel")]; renderSalaryStatus(); return true; }
+    const un = e.target.closest("[data-salary-undo]");
+    if (un) {
+      const pid = un.getAttribute("data-salary-undo");
+      if (!confirm("Angre bekreftet lønn for " + nameOf(pid) + "?")) return true;
+      Calc.undoSalaryConfirm(getMonth(), pid);
+      save();
+      render();
+      showToast("Lønnsbekreftelse angret");
+      return true;
+    }
+    return false;
+  }
+
   function renderInnUtNumbers(c) {
     const view = state.settings.innUtView || "samlet";
     let planInn, actInn, planUt, actUt, netPlan, netActual;
@@ -13843,7 +14074,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
           (viewIsPastMonth() ? "Lønn ikke registrert" : "Lønn ikke registrert ennå") +
           " — «Til overs (faktisk)» regner med forventet " +
           formatNOK(netInnPlanFilled) +
-          " minus Ut faktisk (inkl. faste). Registrer lønn med «+ Inntekt» for faktisk tall.";
+          " minus Ut faktisk (inkl. faste). Trykk «Bekreft lønn» øverst på Oversikt når lønna er kommet.";
       } else {
         netNote.hidden = true;
         netNote.textContent = "";
@@ -14299,6 +14530,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
 
     renderInnUtTabs();
     renderInnUtNumbers(c);
+    renderSalaryStatus();
 
     renderSaldoHero(c);
 
@@ -14817,7 +15049,8 @@ window.FAMILIE_BUDGET_SUPABASE = {
               formatNOK(innShown) +
               "</span></div>" +
               '<div class="person-row muted inn-missing-row"><span>' +
-              (viewIsPastMonth() ? "Lønn ikke registrert" : "Lønn ikke registrert ennå") +
+              ((pc.innMissingTypes || []).indexOf("lønn") < 0 ? "Ekstra" : "Lønn") +
+              (viewIsPastMonth() ? " ikke registrert" : " ikke registrert ennå") +
               " (faktisk " +
               formatNOK((pc.lønn || 0) + (pc.ekstra || 0)) +
               ")</span></div>"
@@ -20951,6 +21184,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
 
     // Person actions
     document.body.addEventListener("click", function (e) {
+      if (handleSalaryClick(e)) return;
       const focusInc = e.target.closest("[data-focus-plan-income]");
       if (focusInc) {
         focusPlanIncomeForPerson(focusInc.getAttribute("data-focus-plan-income"));

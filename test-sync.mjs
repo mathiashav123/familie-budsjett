@@ -103,5 +103,24 @@ assert(!Sync.payloadsRoughlyEqual({ a: 1 }, { a: 2 }), "unequal payloads");
 }
 
 
+
+// Bekreft lønn → lokal endring må pushes, ikke overskrives av eldre sky
+{
+  const Calc = require("./calc-core.js");
+  const st = { categories: [], months: { "2026-10": { incomes: [], expenses: [], savings: [], plannedIncome: { p1: { lønn: 38000 } } } } };
+  const before = Sync.payloadFingerprint(st);
+  Calc.confirmSalary(st.months["2026-10"], "p1", { lønn: 38000, date: "2026-10-21" });
+  assert(Sync.payloadFingerprint(st) !== before, "bekreft lønn endrer fingerprint");
+  assert(Sync.hasMeaningfulLocalData(st), "bekreftet lønn = meningsfulle data");
+  const d = Sync.decideSyncAction({
+    cloudUpdatedAt: "2026-10-20T10:00:00.000Z",
+    localChangeAt: "2026-10-21T05:00:00.000Z",
+    lastSyncedCloudAt: "2026-10-20T10:00:00.000Z",
+    hasLocalData: true
+  });
+  assert(d.action === "push", "nyere lokal lønnsbekreftelse pushes (ikke pull av gammel sky) — " + d.action);
+  const copy = JSON.parse(JSON.stringify(st));
+  assert(copy.months["2026-10"].incomes[0].salaryConfirmed === true, "salaryConfirmed overlever JSON (sky-payload)");
+}
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed ? 1 : 0);

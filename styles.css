@@ -4747,3 +4747,20 @@ button.cat-group-header {
   margin-left: .25rem;
 }
 .person-row.inn-missing-row span { font-size: .72rem; }
+
+/* Lønnsstatus / Bekreft lønn */
+.salary-status { margin: 8px 0 10px; display: grid; gap: 8px; }
+.salary-status:empty { display: none; }
+.salary-title { font-weight: 700; font-size: .95rem; }
+.salary-row { border-radius: 12px; padding: 10px 12px; border: 1px solid rgba(0,0,0,.08); background: rgba(255,196,0,.10); }
+.salary-row.ok { background: rgba(46,160,67,.10); border-color: rgba(46,160,67,.35); }
+.salary-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+.salary-expected { font-size: .85rem; opacity: .8; }
+.salary-ok { margin-top: 4px; font-weight: 700; color: #1a7f37; }
+.salary-pending { margin-top: 4px; font-size: .85rem; color: #9a6700; }
+.salary-form { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 6px; margin: 8px 0; }
+.salary-form label { display: grid; gap: 2px; font-size: .78rem; min-width: 0; }
+.salary-form .salary-inp { width: 100%; min-width: 0; font-size: 16px; box-sizing: border-box; }
+.salary-confirm-btn { width: 100%; min-height: 48px; font-size: 1rem; font-weight: 700; }
+.salary-actions { display: flex; gap: 6px; margin-top: 6px; }
+@media (max-width: 420px) { .salary-form { grid-template-columns: 1fr 1fr; } .salary-form label:last-child { grid-column: 1 / -1; } }

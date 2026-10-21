@@ -1,6 +1,18 @@
 # Endringslogg – Familiebudsjett
 
 
+## 2026-10-21 — «Bekreft lønn»: tydelig lønnsstatus øverst på Oversikt
+
+**Problem:** Mathias fikk ikke registrert lønn — «Lønn ikke registrert ennå» ble stående selv om han endret beløpet.
+**Rotårsak:** (1) Eneste knapp ved Inn (*Endre*) gikk til **forventet** inntekt i Plan (`plannedIncome`), som aldri teller som mottatt. Faktisk lønn kunne bare legges inn via «+ Inntekt» nederst i personkortene, langt under kortet med varselet. (2) Sjekken krevde `type === "lønn"` eksakt; poster med «Lønn»/manglende type ble ikke regnet. (3) Lønn bekreftet uten ekstra lot planlagt ekstra stå som «ikke registrert», og varselet sa «Lønn» også når det bare var ekstra som manglet.
+**Fix:**
+- Nytt kort **«Lønn [måned]»** øverst på Oversikt. Følger valgt fane i Inn og ut (Samlet = begge personer med egne knapper). Viser forventet lønn (+ ekstra), felt for lønn/ekstra/dato (forhåndsutfylt) og stor knapp **«Bekreft lønn for [måned]»**. Etterpå: «✓ Lønn mottatt: X kr (dato)» med **Endre** / **Angre**.
+- Bekreftelse lagres additivt i `months[ym].incomes` (`salaryConfirmed: true`). Ny bekreftelse erstatter bare egne bekreftelsesposter; manuelle inntekter røres aldri. Angre fjerner bare bekreftelsesposter.
+- `Calc.normIncomeType` (lønn/ekstra-normalisering), `salaryStatusForPerson`, `confirmSalary`, `undoSalaryConfirm`, `isSalaryConfirmed`. Bekreftet lønn → ingen plan-utfylling av ekstra (ingen dobbelttelling) i Til overs (faktisk) og Saldo før lønn.
+- Varsel i personkort sier «Ekstra ikke registrert» når kun ekstra mangler.
+- Synk: endringen går via `save()` → `schedulePush` (lokal endring nyere enn sky → push).
+- Tester: +18 calc, +4 sync.
+
 ## 2026-10-01 — Inn og ut: «faktisk» konsistent + kjøp vs forrige måned på like vilkår
 
 Datakilde for analysen: **eksport-fallback** (`familie-budsjett-export-live.json`, 24.09) + tallene fra Mathias' skjermbilde okt 2026. Live Supabase krever innlogging (RLS); anon-nøkkelen ga `[]`.
