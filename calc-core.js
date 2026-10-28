@@ -2274,6 +2274,164 @@
     );
   }
 
+
+  /**
+   * Simple month overview for one person: income planned vs received,
+   * per-category planned vs used (own + felles share), plus/minus now and
+   * expected at month end. Fast (auto) categories count as drawn.
+   */
+  function monthOverviewForPerson(m, personId, people, categories, monthIndex) {
+    var rows = [];
+    (categories || []).forEach(function (cat) {
+      if (!cat || cat.archived) return;
+      var planned = 0, used = 0, shared = false;
+      if (cat.owner === personId) {
+        planned = budgetForOwner(m, cat.id, personId, monthIndex) || 0;
+        used = effectiveActualForCategoryOwner(m, cat, personId, monthIndex) || 0;
+      } else if (cat.owner === "felles") {
+        var pct = fellesSharePercent(cat, personId, people);
+        if (!(pct > 0)) return;
+        shared = true;
+        planned = fellesShare(cat, personId, people, budgetForOwner(m, cat.id, "felles", monthIndex) || 0);
+        used = fellesShare(cat, personId, people, effectiveActualForCategoryOwner(m, cat, "felles", monthIndex) || 0);
+      } else return;
+      if (!(planned > 0) && !(used > 0)) return;
+      rows.push({
+        id: cat.id, name: cat.name, fast: cat.type === "fast", shared: shared,
+        planned: planned, used: used, remain: planned - used, over: used > planned
+      });
+    });
+    var plannedIncome = plannedIncomeForPerson(m, personId);
+    var received = 0;
+    ((m && m.incomes) || []).forEach(function (i) {
+      if (i && i.person === personId) received += Number(i.amount) || 0;
+    });
+    var plannedOut = 0, usedOut = 0, fullOut = 0;
+    rows.forEach(function (r) {
+      plannedOut += r.planned; usedOut += r.used; fullOut += Math.max(r.planned, r.used);
+    });
+    var incomeExpected = Math.max(plannedIncome, received);
+    return {
+      plannedIncome: plannedIncome, receivedIncome: received, incomeExpected: incomeExpected,
+      plannedOut: plannedOut, usedOut: usedOut, rows: rows,
+      plusMinusNow: received - usedOut,
+      expectedEndNoMore: incomeExpected - usedOut,
+      expectedEndBudget: incomeExpected - fullOut,
+      plannedResult: plannedIncome - plannedOut
+    };
+  }
+
+  /**
+   * Month overview for a scope: personId | "felles" | "alle" (household).
+   * Read-only: never mutates m.
+   */
+  function monthOverview(m, scope, people, categories, monthIndex) {
+    if (scope !== "felles" && scope !== "alle") {
+      return monthOverviewForPerson(m, scope, people, categories, monthIndex);
+    }
+    var act = activePeople(people);
+    var rows = [];
+    (categories || []).forEach(function (cat) {
+      if (!cat || cat.archived) return;
+      var owners = scope === "felles" ? ["felles"] : ["felles"].concat(act.map(function (p) { return p.id; }));
+      if (owners.indexOf(cat.owner) < 0) return;
+      var planned = budgetForOwner(m, cat.id, cat.owner, monthIndex) || 0;
+      var used = effectiveActualForCategoryOwner(m, cat, cat.owner, monthIndex) || 0;
+      if (!(planned > 0) && !(used > 0)) return;
+      var shares = null;
+      if (cat.owner === "felles") {
+        shares = act.map(function (p) {
+          return {
+            personId: p.id, name: p.name,
+            pct: fellesSharePercent(cat, p.id, people),
+            planned: fellesShare(cat, p.id, people, planned),
+            used: fellesShare(cat, p.id, people, used)
+          };
+        });
+      }
+      var ownerName = cat.owner === "felles" ? "Felles" : ((act.filter(function (p) { return p.id === cat.owner; })[0] || {}).name || "");
+      rows.push({
+        id: cat.id, name: cat.name, fast: cat.type === "fast", shared: cat.owner === "felles",
+        owner: cat.owner, ownerName: ownerName, shares: shares,
+        planned: planned, used: used, remain: planned - used, over: used > planned
+      });
+    });
+    var plannedIncome = 0, received = 0;
+    if (scope === "alle") {
+      act.forEach(function (p) {
+        plannedIncome += plannedIncomeForPerson(m, p.id);
+        ((m && m.incomes) || []).forEach(function (i) {
+          if (i && i.person === p.id) received += Number(i.amount) || 0;
+        });
+      });
+    }
+    var plannedOut = 0, usedOut = 0, fullOut = 0;
+    rows.forEach(function (r) {
+      plannedOut += r.planned; usedOut += r.used; fullOut += Math.max(r.planned, r.used);
+    });
+    var shareTotals = null;
+    if (scope === "felles") {
+      shareTotals = act.map(function (p) {
+        var pl = 0, us = 0;
+        rows.forEach(function (r) {
+          (r.shares || []).forEach(function (sh) { if (sh.personId === p.id) { pl += sh.planned; us += sh.used; } });
+        });
+        return { personId: p.id, name: p.name, planned: pl, used: us };
+      });
+    }
+    var incomeExpected = Math.max(plannedIncome, received);
+    return {
+      scope: scope, plannedIncome: plannedIncome, receivedIncome: received, incomeExpected: incomeExpected,
+      plannedOut: plannedOut, usedOut: usedOut, rows: rows, shareTotals: shareTotals,
+      plusMinusNow: received - usedOut,
+      expectedEndNoMore: incomeExpected - usedOut,
+      expectedEndBudget: incomeExpected - fullOut,
+      plannedResult: plannedIncome - plannedOut
+    };
+  }
+
+  /** Category status for progress bars/warnings: ok | near (>=80%) | over. */
+  function overviewRowStatus(r) {
+    if (!r) return "ok";
+    if (r.planned <= 0) return r.used > 0 ? "over" : "ok";
+    if (r.used > r.planned + 0.5) return "over";
+    if (!r.fast && r.used >= r.planned * 0.8) return "near";
+    return "ok";
+  }
+
+  /** Plain-Norwegian tips from an overview (variable categories only). */
+  function overviewTips(ov, opts) {
+    var tips = [];
+    if (!ov || !ov.rows) return tips;
+    var dayFrac = opts && opts.dayFraction != null ? opts.dayFraction : 1;
+    var overs = ov.rows.filter(function (r) { return !r.fast && r.used > r.planned && r.planned >= 0; })
+      .sort(function (a, b) { return (b.used - b.planned) - (a.used - a.planned); });
+    overs.slice(0, 3).forEach(function (r) {
+      var diff = Math.round(r.used - r.planned);
+      var t = r.name + " er " + diff.toLocaleString("nb-NO") + " kr over planen.";
+      var n = String(r.name).toLowerCase();
+      if (n.indexOf("fastfood") >= 0) t += " Sett et tak, f.eks. 2 bestillinger i måneden.";
+      else if (n === "mat") t += " Handle med handleliste én gang i uka og ha med matpakke.";
+      else if (n.indexOf("spill") >= 0 || n.indexOf("gøy") >= 0) t += " Vent 48 timer før kjøp som ikke er planlagt.";
+      else t += " Juster planen hvis beløpet er riktig, eller stopp kjøp her resten av måneden.";
+      tips.push({ kind: "over", catId: r.id, text: t });
+    });
+    if (dayFrac < 1) {
+      ov.rows.forEach(function (r) {
+        if (r.fast || !(r.planned > 0) || r.used > r.planned) return;
+        if (r.used / r.planned > dayFrac + 0.25 && r.used >= r.planned * 0.8) {
+          tips.push({ kind: "near", catId: r.id, text: r.name + " er nesten brukt opp (" + Math.round(r.used / r.planned * 100) + " %) – det er fortsatt dager igjen av måneden." });
+        }
+      });
+    }
+    if (ov.expectedEndBudget < 0 && ov.incomeExpected > 0) {
+      tips.push({ kind: "minus", text: "Med planen går måneden i minus. Kutt i de røde kategoriene eller flytt et planlagt kjøp." });
+    } else if (ov.expectedEndNoMore > 0 && ov.incomeExpected > 0 && !overs.length) {
+      tips.push({ kind: "good", text: "Bra! Du ligger innenfor planen. Sett gjerne overskuddet rett i sparing." });
+    }
+    return tips;
+  }
+
   function plannedUtFelles(m, categories, monthIndex) {
     var sum = 0;
     (categories || []).forEach(function (cat) {
@@ -5691,6 +5849,10 @@
     findNearestPreviousWithConfirmedBalances: findNearestPreviousWithConfirmedBalances,
     migrateState: migrateState,
     plannedIncomeFor: plannedIncomeFor,
+    monthOverviewForPerson: monthOverviewForPerson,
+    monthOverview: monthOverview,
+    overviewRowStatus: overviewRowStatus,
+    overviewTips: overviewTips,
     plannedSparingFor: plannedSparingFor,
     plannedSparingTotal: plannedSparingTotal,
     emptyPlannedIncomeBlock: emptyPlannedIncomeBlock,

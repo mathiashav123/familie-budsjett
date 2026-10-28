@@ -1132,6 +1132,189 @@
     return html + "</div>";
   }
 
+
+  const OV_SCOPE_KEY = "familie-budsjett-ov-scope";
+  const OV_SIMPLE_KEY = "familie-budsjett-ui-simple";
+  function ovLocalGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function ovLocalSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
+
+  function overviewScope() {
+    const people = activePeopleList();
+    let s = ovLocalGet(OV_SCOPE_KEY);
+    if (!s) {
+      const v = state.settings.innUtView;
+      s = v && v !== "samlet" ? v : "alle";
+    }
+    if (s !== "alle" && s !== "felles" && !people.some(function (p) { return p.id === s; })) s = "alle";
+    return s;
+  }
+
+  function ovMonthIndexFromKey(key) { return parseInt(String(key).slice(5, 7), 10) - 1; }
+
+  function ovBar(r) {
+    const st = Calc.overviewRowStatus(r);
+    const pct = r.planned > 0 ? Math.min(100, Math.round((r.used / r.planned) * 100)) : (r.used > 0 ? 100 : 0);
+    return '<div class="mo-bar mo-' + st + '" role="img" aria-label="' + pct + ' prosent brukt"><span style="width:' + pct + '%"></span></div>';
+  }
+
+  function renderMonthOverview() {
+    const host = $("#monthOverview");
+    if (!host || typeof Calc.monthOverview !== "function") return;
+    const m = getMonth();
+    const people = activePeopleList();
+    const scope = overviewScope();
+    const mName = (MONTHS[state.view.month] || "").toLowerCase();
+    const o = Calc.monthOverview(m, scope, state.people, state.categories, state.view.month);
+    function cls(n) { return n < -0.5 ? "neg" : "pos"; }
+    const scopeName = scope === "alle" ? "Hele husstanden" : scope === "felles" ? "Felles" :
+      ((people.filter(function (p) { return p.id === scope; })[0] || {}).name || "");
+
+    const seg = '<div class="mo-seg" role="tablist" aria-label="Velg hvem">' +
+      people.map(function (p) { return { id: p.id, name: p.name }; })
+        .concat([{ id: "felles", name: "Felles" }, { id: "alle", name: "Alle" }])
+        .map(function (b) {
+          return '<button type="button" role="tab" class="mo-seg-btn' + (b.id === scope ? " active" : "") +
+            '" aria-selected="' + (b.id === scope) + '" data-ov-scope="' + escapeAttr(b.id) + '">' + escapeHtml(b.name) + "</button>";
+        }).join("") + "</div>";
+
+    // Today-in-month fraction (only for the current calendar month)
+    const now = new Date();
+    let dayFrac = 1;
+    if (now.getFullYear() === state.view.year && now.getMonth() === state.view.month) {
+      const dim = new Date(state.view.year, state.view.month + 1, 0).getDate();
+      dayFrac = now.getDate() / dim;
+    }
+
+    let keys = "";
+    if (scope === "felles") {
+      keys =
+        '<div class="mo-box"><div class="mo-lbl">Felles plan</div><div class="mo-big">' + formatNOK(o.plannedOut) + '</div><div class="mo-sub">skulle bruke</div></div>' +
+        '<div class="mo-box"><div class="mo-lbl">Felles brukt</div><div class="mo-big ' + (o.usedOut > o.plannedOut + 0.5 ? "neg" : "") + '">' + formatNOK(o.usedOut) + '</div><div class="mo-sub">faste regnes som betalt</div></div>' +
+        (o.shareTotals || []).map(function (st) {
+          return '<div class="mo-box"><div class="mo-lbl">' + escapeHtml(/s$/i.test(st.name) ? st.name + "'" : st.name + "s") + ' del</div><div class="mo-big">' + formatNOK(st.used) + '</div><div class="mo-sub">brukt · plan ' + formatNOK(st.planned) + "</div></div>";
+        }).join("");
+    } else {
+      keys =
+        '<div class="mo-box"><div class="mo-lbl">Inntekt</div><div class="mo-big">' + formatNOK(o.receivedIncome) + '</div><div class="mo-sub">mottatt · plan ' + formatNOK(o.plannedIncome) + "</div></div>" +
+        '<div class="mo-box"><div class="mo-lbl">Utgifter</div><div class="mo-big ' + (o.usedOut > o.plannedOut + 0.5 ? "neg" : "") + '">' + formatNOK(o.usedOut) + '</div><div class="mo-sub">brukt · plan ' + formatNOK(o.plannedOut) + "</div></div>" +
+        '<div class="mo-box"><div class="mo-lbl">Pluss/minus nå</div><div class="mo-big ' + cls(o.plusMinusNow) + '">' + formatNOKSigned(o.plusMinusNow) + '</div><div class="mo-sub">mottatt − brukt</div></div>' +
+        '<div class="mo-box"><div class="mo-lbl">Ved månedsslutt</div><div class="mo-big ' + cls(o.expectedEndBudget) + '">' + formatNOKSigned(o.expectedEndBudget) + '</div><div class="mo-sub">hvis resten av planen brukes<br>' + formatNOKSigned(o.expectedEndNoMore) + " hvis du ikke kjøper mer</div></div>";
+    }
+
+    // Plan vs faktisk summary bar
+    const pvPct = o.plannedOut > 0 ? Math.round((o.usedOut / o.plannedOut) * 100) : 0;
+    const pv = '<div class="mo-pv"><div class="mo-pv-head"><strong>Denne måneden: plan vs faktisk</strong><span>' +
+      formatNOK(o.usedOut) + " av " + formatNOK(o.plannedOut) + " (" + pvPct + " %)</span></div>" +
+      ovBar({ planned: o.plannedOut, used: o.usedOut, fast: false }) +
+      (scope === "felles" ? "" : '<p class="mo-plan">Planen var ' + formatNOKSigned(o.plannedResult) + " for " + escapeHtml(mName) + ".</p>") + "</div>";
+
+    // Warnings + tips
+    const tips = Calc.overviewTips(o, { dayFraction: dayFrac });
+    const tipsHtml = tips.length ? '<div class="mo-tips"><div class="mo-h3">Tips og varsler</div><ul>' +
+      tips.map(function (t) { return '<li class="mo-tip-' + t.kind + '">' + escapeHtml(t.text) + "</li>"; }).join("") + "</ul></div>" : "";
+
+    // Category list: variable first (most at risk), then fast
+    function rowHtml(r) {
+      const st = Calc.overviewRowStatus(r);
+      let sub = "";
+      if (scope === "alle" && r.ownerName) sub += '<span class="mo-tag">' + escapeHtml(r.ownerName) + "</span>";
+      else if (r.shared && scope !== "felles") sub += '<span class="mo-tag">felles – din del</span>';
+      if (scope === "felles" && r.shares) {
+        sub += r.shares.map(function (sh) { return '<span class="mo-tag">' + escapeHtml(sh.name) + " " + Math.round(sh.pct) + " %: " + formatNOK(sh.used) + "</span>"; }).join("");
+      }
+      return '<div class="mo-row mo-row-' + st + '"><div class="mo-row-top"><span class="mo-row-name">' + escapeHtml(r.name) + "</span>" +
+        '<span class="mo-row-nums">' + formatNOK(r.used) + ' <small>av ' + formatNOK(r.planned) + "</small></span></div>" +
+        ovBar(r) +
+        '<div class="mo-row-bot"><span>' + sub + '</span><span class="' + cls(r.remain) + '">' +
+        (r.remain < -0.5 ? formatNOK(-r.remain) + " over" : formatNOK(r.remain) + " igjen") + "</span></div></div>";
+    }
+    const varRows = o.rows.filter(function (r) { return !r.fast; }).sort(function (a, b) {
+      const ra = a.planned > 0 ? a.used / a.planned : 9, rb = b.planned > 0 ? b.used / b.planned : 9;
+      return rb - ra;
+    });
+    const fastRows = o.rows.filter(function (r) { return r.fast; }).sort(function (a, b) { return b.planned - a.planned; });
+    let fastSum = 0; fastRows.forEach(function (r) { fastSum += Math.max(r.planned, r.used); });
+    const cats = '<div class="mo-h3">Kjøp per kategori</div>' + (varRows.map(rowHtml).join("") || '<p class="hint compact">Ingen kategorier.</p>') +
+      (fastRows.length ? '<details class="mo-fast"><summary>Faste utgifter: ' + formatNOK(fastSum) + " (" + fastRows.length + " poster)</summary>" + fastRows.map(rowHtml).join("") + "</details>" : "");
+
+    // Trend: last 6 months, variable categories
+    const trendKeys = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(state.view.year, state.view.month - i, 1);
+      const k = monthKey(d.getFullYear(), d.getMonth());
+      if (state.months[k]) trendKeys.push(k);
+    }
+    let trend = "";
+    if (trendKeys.length >= 2) {
+      const byCat = {};
+      const totals = {};
+      trendKeys.forEach(function (k) {
+        const om = Calc.monthOverview(state.months[k], scope, state.people, state.categories, ovMonthIndexFromKey(k));
+        totals[k] = 0;
+        om.rows.forEach(function (r) {
+          if (r.fast) return;
+          const id = r.name + "|" + (r.owner || "");
+          if (!byCat[id]) byCat[id] = { name: r.name, vals: {}, sum: 0 };
+          byCat[id].vals[k] = r.used; byCat[id].sum += r.used; totals[k] += r.used;
+        });
+      });
+      const list = Object.keys(byCat).map(function (k) { return byCat[k]; }).filter(function (c) { return c.sum > 0; })
+        .sort(function (a, b) { return b.sum - a.sum; }).slice(0, 8);
+      if (list.length) {
+        const short = function (k) { return (MONTHS[ovMonthIndexFromKey(k)] || "").slice(0, 3); };
+        trend = '<details class="mo-trend"><summary>Utvikling siste måneder (kjøp)</summary><div class="mo-table-wrap"><table class="mo-table"><thead><tr><th>Kategori</th>' +
+          trendKeys.map(function (k) { return "<th>" + escapeHtml(short(k)) + "</th>"; }).join("") + "</tr></thead><tbody>" +
+          list.map(function (c) {
+            return "<tr><td>" + escapeHtml(c.name) + "</td>" + trendKeys.map(function (k) { return "<td>" + (c.vals[k] ? formatNOK(c.vals[k]).replace(" kr", "") : "–") + "</td>"; }).join("") + "</tr>";
+          }).join("") +
+          '<tr class="mo-total"><td>Sum</td>' + trendKeys.map(function (k) { return "<td>" + formatNOK(totals[k]).replace(" kr", "") + "</td>"; }).join("") + "</tr>" +
+          "</tbody></table></div></details>";
+      }
+    }
+
+    const help = '<details class="mo-help"><summary>Hva betyr dette?</summary><ul>' +
+      "<li><b>Plan</b> er det du har satt opp at du skal bruke. <b>Brukt</b> er det du faktisk har ført.</li>" +
+      "<li><b>Faste utgifter</b> (lån, abonnement osv.) regnes som betalt med en gang.</li>" +
+      "<li><b>Felles</b> poster deles etter fordelingen (f.eks. 50/50 eller 70/30). I din visning ser du bare din del.</li>" +
+      "<li><b>Ved månedsslutt</b> = inntekt − alt som er planlagt (eller brukt, hvis det er mer).</li>" +
+      "<li>Grønn = innenfor, gul = snart brukt opp (80 %), rød = over planen.</li></ul></details>";
+
+    host.innerHTML = seg +
+      '<h2 class="mo-title">' + escapeHtml(scopeName) + " – " + escapeHtml(mName) + " " + state.view.year + "</h2>" +
+      '<div class="mo-grid">' + keys + "</div>" + pv + tipsHtml + cats + trend + help;
+
+    if (!host._ovBound) {
+      host._ovBound = true;
+      host.addEventListener("click", function (e) {
+        const b = e.target.closest("[data-ov-scope]");
+        if (!b) return;
+        ovLocalSet(OV_SCOPE_KEY, b.getAttribute("data-ov-scope"));
+        renderMonthOverview();
+      });
+    }
+    const card = $("#monthOverviewCard");
+    if (card) card.hidden = false;
+    applySimpleMode();
+  }
+
+  function applySimpleMode() {
+    const panel = $("#panelOversikt");
+    const btn = $("#btnToggleDetails");
+    const simple = ovLocalGet(OV_SIMPLE_KEY) !== "0";
+    if (panel) panel.classList.toggle("ov-simple", simple);
+    if (btn) {
+      btn.textContent = simple ? "Vis flere detaljer ▾" : "Skjul detaljer ▴";
+      btn.setAttribute("aria-expanded", String(!simple));
+      if (!btn._bound) {
+        btn._bound = true;
+        btn.addEventListener("click", function () {
+          ovLocalSet(OV_SIMPLE_KEY, ovLocalGet(OV_SIMPLE_KEY) !== "0" ? "0" : "1");
+          applySimpleMode();
+        });
+      }
+    }
+  }
+
   function renderSalaryStatus() {
     const host = $("#salaryStatus");
     if (!host) return;
@@ -1689,6 +1872,7 @@
     renderInnUtTabs();
     renderInnUtNumbers(c);
     renderSalaryStatus();
+    renderMonthOverview();
 
     renderSaldoHero(c);
 
