@@ -4781,25 +4781,52 @@ button.cat-group-header {
 .salary-actions { display: flex; gap: 6px; margin-top: 6px; }
 @media (max-width: 420px) { .salary-form { grid-template-columns: 1fr 1fr; } .salary-form label:last-child { grid-column: 1 / -1; } }
 
-/* Månedsoversikt */
-.month-ov-card .mo-person + .mo-person { margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(127,127,127,.25); }
-.mo-title { font-size: 1.1rem; margin: 0 0 10px; }
-.mo-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.mo-box { border: 1px solid rgba(127,127,127,.25); border-radius: 10px; padding: 8px 10px; }
-.mo-lbl { font-size: .78rem; opacity: .75; }
-.mo-big { font-size: 1.25rem; font-weight: 700; }
-.mo-sub { font-size: .74rem; opacity: .7; }
-.mo-big.pos, .mo-table td.pos { color: #1a8f3c; }
-.mo-big.neg, .mo-table td.neg { color: #c62828; }
-.mo-plan { font-size: .85rem; margin: 8px 0; opacity: .85; }
+/* Månedsoversikt v2 */
+.month-ov-card { border-top: 4px solid #2f6fdb; }
+.mo-seg { display: flex; gap: 4px; padding: 3px; border-radius: 12px; background: rgba(127,127,127,.14); margin-bottom: 12px; overflow-x: auto; }
+.mo-seg-btn { flex: 1 1 0; min-width: 64px; border: 0; background: transparent; padding: 9px 8px; border-radius: 9px; font: inherit; font-weight: 600; color: inherit; cursor: pointer; }
+.mo-seg-btn.active { background: #fff; color: #1d4fa8; box-shadow: 0 1px 3px rgba(0,0,0,.18); }
+.mo-title { font-size: 1.15rem; margin: 0 0 10px; }
+.mo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.mo-box { border: 1px solid rgba(127,127,127,.22); border-radius: 12px; padding: 10px 12px; background: rgba(127,127,127,.04); }
+.mo-lbl { font-size: .78rem; opacity: .75; font-weight: 600; text-transform: uppercase; letter-spacing: .02em; }
+.mo-big { font-size: 1.45rem; font-weight: 800; line-height: 1.2; margin: 2px 0; }
+.mo-sub { font-size: .75rem; opacity: .7; }
+.mo-big.pos, .mo-table td.pos, .mo-row-bot .pos { color: #1a8f3c; }
+.mo-big.neg, .mo-table td.neg, .mo-row-bot .neg { color: #c62828; }
+.mo-pv { margin: 14px 0 6px; }
+.mo-pv-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: .9rem; margin-bottom: 4px; }
+.mo-plan { font-size: .85rem; margin: 6px 0 0; opacity: .85; }
+.mo-bar { height: 8px; border-radius: 6px; background: rgba(127,127,127,.18); overflow: hidden; }
+.mo-bar span { display: block; height: 100%; border-radius: 6px; background: #1a8f3c; }
+.mo-bar.mo-near span { background: #e0a100; }
+.mo-bar.mo-over span { background: #c62828; }
+.mo-h3 { font-weight: 700; margin: 16px 0 6px; font-size: .95rem; }
+.mo-tips ul { margin: 0; padding-left: 0; list-style: none; }
+.mo-tips li { padding: 8px 10px; border-radius: 10px; margin-bottom: 6px; font-size: .88rem; background: rgba(127,127,127,.08); border-left: 4px solid #2f6fdb; }
+.mo-tips li.mo-tip-over, .mo-tips li.mo-tip-minus { border-left-color: #c62828; background: rgba(198,40,40,.07); }
+.mo-tips li.mo-tip-near { border-left-color: #e0a100; background: rgba(224,161,0,.08); }
+.mo-tips li.mo-tip-good { border-left-color: #1a8f3c; background: rgba(26,143,60,.08); }
+.mo-row { padding: 8px 0; border-bottom: 1px solid rgba(127,127,127,.14); }
+.mo-row-top, .mo-row-bot { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.mo-row-top { margin-bottom: 4px; }
+.mo-row-name { font-weight: 600; }
+.mo-row-nums small { opacity: .65; }
+.mo-row-bot { font-size: .78rem; margin-top: 3px; }
+.mo-row-bot span:last-child { font-weight: 700; white-space: nowrap; }
+.mo-tag { display: inline-block; font-size: .7rem; padding: 0 6px; margin: 0 4px 2px 0; border-radius: 6px; background: rgba(127,127,127,.16); }
+.mo-fast, .mo-trend, .mo-help { margin-top: 12px; }
+.mo-fast summary, .mo-trend summary, .mo-help summary { cursor: pointer; font-weight: 700; padding: 6px 0; }
+.mo-help ul { font-size: .85rem; padding-left: 18px; margin: 4px 0; }
 .mo-table-wrap { overflow-x: auto; }
-.mo-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.mo-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
 .mo-table th, .mo-table td { padding: 5px 6px; text-align: right; border-bottom: 1px solid rgba(127,127,127,.15); white-space: nowrap; }
-.mo-table th:first-child, .mo-table td:first-child { text-align: left; white-space: normal; }
-.mo-table tr.over td:first-child { border-left: 3px solid #c62828; }
-.mo-table tr.ok td:first-child { border-left: 3px solid #1a8f3c; }
-.mo-tag { font-size: .68rem; padding: 0 5px; border-radius: 6px; background: rgba(127,127,127,.18); }
-@media (max-width: 640px) { .mo-grid { grid-template-columns: 1fr 1fr; } .mo-big { font-size: 1.1rem; } }
+.mo-table th:first-child, .mo-table td:first-child { text-align: left; }
+.mo-table tr.mo-total td { font-weight: 700; }
+.ov-details-toggle { text-align: center; margin: 4px 0 12px; }
+.ov-simple #forwardPanelCard, .ov-simple .inn-ut-card, .ov-simple #personGrid, .ov-simple #chartTitle, .ov-simple section[aria-labelledby="chartTitle"] { display: none !important; }
+@media (prefers-color-scheme: dark) { .mo-seg-btn.active { background: #2b3445; color: #9cc0ff; } }
+@media (max-width: 640px) { .mo-grid { grid-template-columns: 1fr 1fr; } .mo-big { font-size: 1.2rem; } .mo-seg-btn { padding: 10px 4px; } }
 
 </style>
 </head>
@@ -4960,6 +4987,7 @@ button.cat-group-header {
       <section class="card compact-card month-ov-card" id="monthOverviewCard" aria-label="Månedsoversikt">
         <div id="monthOverview"></div>
       </section>
+      <div class="ov-details-toggle"><button type="button" class="btn sm" id="btnToggleDetails" aria-expanded="false">Vis flere detaljer ▾</button></div>
       <section class="card compact-card salary-card" id="salaryCard" aria-label="Lønnsstatus">
         <div class="salary-status" id="salaryStatus" aria-live="polite"></div>
       </section>
@@ -8223,6 +8251,117 @@ window.FAMILIE_BUDGET_SUPABASE = {
       expectedEndBudget: incomeExpected - fullOut,
       plannedResult: plannedIncome - plannedOut
     };
+  }
+
+  /**
+   * Month overview for a scope: personId | "felles" | "alle" (household).
+   * Read-only: never mutates m.
+   */
+  function monthOverview(m, scope, people, categories, monthIndex) {
+    if (scope !== "felles" && scope !== "alle") {
+      return monthOverviewForPerson(m, scope, people, categories, monthIndex);
+    }
+    var act = activePeople(people);
+    var rows = [];
+    (categories || []).forEach(function (cat) {
+      if (!cat || cat.archived) return;
+      var owners = scope === "felles" ? ["felles"] : ["felles"].concat(act.map(function (p) { return p.id; }));
+      if (owners.indexOf(cat.owner) < 0) return;
+      var planned = budgetForOwner(m, cat.id, cat.owner, monthIndex) || 0;
+      var used = effectiveActualForCategoryOwner(m, cat, cat.owner, monthIndex) || 0;
+      if (!(planned > 0) && !(used > 0)) return;
+      var shares = null;
+      if (cat.owner === "felles") {
+        shares = act.map(function (p) {
+          return {
+            personId: p.id, name: p.name,
+            pct: fellesSharePercent(cat, p.id, people),
+            planned: fellesShare(cat, p.id, people, planned),
+            used: fellesShare(cat, p.id, people, used)
+          };
+        });
+      }
+      var ownerName = cat.owner === "felles" ? "Felles" : ((act.filter(function (p) { return p.id === cat.owner; })[0] || {}).name || "");
+      rows.push({
+        id: cat.id, name: cat.name, fast: cat.type === "fast", shared: cat.owner === "felles",
+        owner: cat.owner, ownerName: ownerName, shares: shares,
+        planned: planned, used: used, remain: planned - used, over: used > planned
+      });
+    });
+    var plannedIncome = 0, received = 0;
+    if (scope === "alle") {
+      act.forEach(function (p) {
+        plannedIncome += plannedIncomeForPerson(m, p.id);
+        ((m && m.incomes) || []).forEach(function (i) {
+          if (i && i.person === p.id) received += Number(i.amount) || 0;
+        });
+      });
+    }
+    var plannedOut = 0, usedOut = 0, fullOut = 0;
+    rows.forEach(function (r) {
+      plannedOut += r.planned; usedOut += r.used; fullOut += Math.max(r.planned, r.used);
+    });
+    var shareTotals = null;
+    if (scope === "felles") {
+      shareTotals = act.map(function (p) {
+        var pl = 0, us = 0;
+        rows.forEach(function (r) {
+          (r.shares || []).forEach(function (sh) { if (sh.personId === p.id) { pl += sh.planned; us += sh.used; } });
+        });
+        return { personId: p.id, name: p.name, planned: pl, used: us };
+      });
+    }
+    var incomeExpected = Math.max(plannedIncome, received);
+    return {
+      scope: scope, plannedIncome: plannedIncome, receivedIncome: received, incomeExpected: incomeExpected,
+      plannedOut: plannedOut, usedOut: usedOut, rows: rows, shareTotals: shareTotals,
+      plusMinusNow: received - usedOut,
+      expectedEndNoMore: incomeExpected - usedOut,
+      expectedEndBudget: incomeExpected - fullOut,
+      plannedResult: plannedIncome - plannedOut
+    };
+  }
+
+  /** Category status for progress bars/warnings: ok | near (>=80%) | over. */
+  function overviewRowStatus(r) {
+    if (!r) return "ok";
+    if (r.planned <= 0) return r.used > 0 ? "over" : "ok";
+    if (r.used > r.planned + 0.5) return "over";
+    if (!r.fast && r.used >= r.planned * 0.8) return "near";
+    return "ok";
+  }
+
+  /** Plain-Norwegian tips from an overview (variable categories only). */
+  function overviewTips(ov, opts) {
+    var tips = [];
+    if (!ov || !ov.rows) return tips;
+    var dayFrac = opts && opts.dayFraction != null ? opts.dayFraction : 1;
+    var overs = ov.rows.filter(function (r) { return !r.fast && r.used > r.planned && r.planned >= 0; })
+      .sort(function (a, b) { return (b.used - b.planned) - (a.used - a.planned); });
+    overs.slice(0, 3).forEach(function (r) {
+      var diff = Math.round(r.used - r.planned);
+      var t = r.name + " er " + diff.toLocaleString("nb-NO") + " kr over planen.";
+      var n = String(r.name).toLowerCase();
+      if (n.indexOf("fastfood") >= 0) t += " Sett et tak, f.eks. 2 bestillinger i måneden.";
+      else if (n === "mat") t += " Handle med handleliste én gang i uka og ha med matpakke.";
+      else if (n.indexOf("spill") >= 0 || n.indexOf("gøy") >= 0) t += " Vent 48 timer før kjøp som ikke er planlagt.";
+      else t += " Juster planen hvis beløpet er riktig, eller stopp kjøp her resten av måneden.";
+      tips.push({ kind: "over", catId: r.id, text: t });
+    });
+    if (dayFrac < 1) {
+      ov.rows.forEach(function (r) {
+        if (r.fast || !(r.planned > 0) || r.used > r.planned) return;
+        if (r.used / r.planned > dayFrac + 0.25 && r.used >= r.planned * 0.8) {
+          tips.push({ kind: "near", catId: r.id, text: r.name + " er nesten brukt opp (" + Math.round(r.used / r.planned * 100) + " %) – det er fortsatt dager igjen av måneden." });
+        }
+      });
+    }
+    if (ov.expectedEndBudget < 0 && ov.incomeExpected > 0) {
+      tips.push({ kind: "minus", text: "Med planen går måneden i minus. Kutt i de røde kategoriene eller flytt et planlagt kjøp." });
+    } else if (ov.expectedEndNoMore > 0 && ov.incomeExpected > 0 && !overs.length) {
+      tips.push({ kind: "good", text: "Bra! Du ligger innenfor planen. Sett gjerne overskuddet rett i sparing." });
+    }
+    return tips;
   }
 
   function plannedUtFelles(m, categories, monthIndex) {
@@ -11643,6 +11782,9 @@ window.FAMILIE_BUDGET_SUPABASE = {
     migrateState: migrateState,
     plannedIncomeFor: plannedIncomeFor,
     monthOverviewForPerson: monthOverviewForPerson,
+    monthOverview: monthOverview,
+    overviewRowStatus: overviewRowStatus,
+    overviewTips: overviewTips,
     plannedSparingFor: plannedSparingFor,
     plannedSparingTotal: plannedSparingTotal,
     emptyPlannedIncomeBlock: emptyPlannedIncomeBlock,
@@ -14085,42 +14227,186 @@ window.FAMILIE_BUDGET_SUPABASE = {
   }
 
 
+  const OV_SCOPE_KEY = "familie-budsjett-ov-scope";
+  const OV_SIMPLE_KEY = "familie-budsjett-ui-simple";
+  function ovLocalGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function ovLocalSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
+
+  function overviewScope() {
+    const people = activePeopleList();
+    let s = ovLocalGet(OV_SCOPE_KEY);
+    if (!s) {
+      const v = state.settings.innUtView;
+      s = v && v !== "samlet" ? v : "alle";
+    }
+    if (s !== "alle" && s !== "felles" && !people.some(function (p) { return p.id === s; })) s = "alle";
+    return s;
+  }
+
+  function ovMonthIndexFromKey(key) { return parseInt(String(key).slice(5, 7), 10) - 1; }
+
+  function ovBar(r) {
+    const st = Calc.overviewRowStatus(r);
+    const pct = r.planned > 0 ? Math.min(100, Math.round((r.used / r.planned) * 100)) : (r.used > 0 ? 100 : 0);
+    return '<div class="mo-bar mo-' + st + '" role="img" aria-label="' + pct + ' prosent brukt"><span style="width:' + pct + '%"></span></div>';
+  }
+
   function renderMonthOverview() {
     const host = $("#monthOverview");
-    if (!host || typeof Calc.monthOverviewForPerson !== "function") return;
-    const view = state.settings.innUtView || "samlet";
+    if (!host || typeof Calc.monthOverview !== "function") return;
     const m = getMonth();
-    const people = activePeopleList().filter(function (p) {
-      return view === "samlet" || p.id === view;
-    });
+    const people = activePeopleList();
+    const scope = overviewScope();
     const mName = (MONTHS[state.view.month] || "").toLowerCase();
-    function cls(n) { return n < 0 ? "neg" : "pos"; }
-    host.innerHTML = people.map(function (p) {
-      const o = Calc.monthOverviewForPerson(m, p.id, state.people, state.categories, state.view.month);
-      if (!o.rows.length && !o.plannedIncome && !o.receivedIncome) return "";
-      const rows = o.rows.slice().sort(function (a, b) {
-        return (b.over - a.over) || (a.fast - b.fast) || (b.used - a.used);
-      }).map(function (r) {
-        return '<tr class="' + (r.over ? "over" : "ok") + '"><td>' + escapeHtml(r.name) +
-          (r.shared ? ' <span class="mo-tag">felles</span>' : "") +
-          (r.fast ? ' <span class="mo-tag">fast</span>' : "") + "</td>" +
-          "<td>" + formatNOK(r.planned) + "</td><td>" + formatNOK(r.used) + "</td>" +
-          '<td class="' + cls(r.remain) + '">' + formatNOK(r.remain) + "</td></tr>";
-      }).join("");
-      return '<div class="mo-person">' +
-        '<h2 class="mo-title">' + escapeHtml(p.name) + " – " + escapeHtml(mName) + "</h2>" +
-        '<div class="mo-grid">' +
-        '<div class="mo-box"><div class="mo-lbl">Inntekt</div><div class="mo-big">' + formatNOK(o.receivedIncome) + '</div><div class="mo-sub">mottatt · planlagt ' + formatNOK(o.plannedIncome) + "</div></div>" +
-        '<div class="mo-box"><div class="mo-lbl">Utgifter</div><div class="mo-big ' + (o.usedOut > o.plannedOut ? "neg" : "") + '">' + formatNOK(o.usedOut) + '</div><div class="mo-sub">brukt · skulle bruke ' + formatNOK(o.plannedOut) + "</div></div>" +
+    const o = Calc.monthOverview(m, scope, state.people, state.categories, state.view.month);
+    function cls(n) { return n < -0.5 ? "neg" : "pos"; }
+    const scopeName = scope === "alle" ? "Hele husstanden" : scope === "felles" ? "Felles" :
+      ((people.filter(function (p) { return p.id === scope; })[0] || {}).name || "");
+
+    const seg = '<div class="mo-seg" role="tablist" aria-label="Velg hvem">' +
+      people.map(function (p) { return { id: p.id, name: p.name }; })
+        .concat([{ id: "felles", name: "Felles" }, { id: "alle", name: "Alle" }])
+        .map(function (b) {
+          return '<button type="button" role="tab" class="mo-seg-btn' + (b.id === scope ? " active" : "") +
+            '" aria-selected="' + (b.id === scope) + '" data-ov-scope="' + escapeAttr(b.id) + '">' + escapeHtml(b.name) + "</button>";
+        }).join("") + "</div>";
+
+    // Today-in-month fraction (only for the current calendar month)
+    const now = new Date();
+    let dayFrac = 1;
+    if (now.getFullYear() === state.view.year && now.getMonth() === state.view.month) {
+      const dim = new Date(state.view.year, state.view.month + 1, 0).getDate();
+      dayFrac = now.getDate() / dim;
+    }
+
+    let keys = "";
+    if (scope === "felles") {
+      keys =
+        '<div class="mo-box"><div class="mo-lbl">Felles plan</div><div class="mo-big">' + formatNOK(o.plannedOut) + '</div><div class="mo-sub">skulle bruke</div></div>' +
+        '<div class="mo-box"><div class="mo-lbl">Felles brukt</div><div class="mo-big ' + (o.usedOut > o.plannedOut + 0.5 ? "neg" : "") + '">' + formatNOK(o.usedOut) + '</div><div class="mo-sub">faste regnes som betalt</div></div>' +
+        (o.shareTotals || []).map(function (st) {
+          return '<div class="mo-box"><div class="mo-lbl">' + escapeHtml(/s$/i.test(st.name) ? st.name + "'" : st.name + "s") + ' del</div><div class="mo-big">' + formatNOK(st.used) + '</div><div class="mo-sub">brukt · plan ' + formatNOK(st.planned) + "</div></div>";
+        }).join("");
+    } else {
+      keys =
+        '<div class="mo-box"><div class="mo-lbl">Inntekt</div><div class="mo-big">' + formatNOK(o.receivedIncome) + '</div><div class="mo-sub">mottatt · plan ' + formatNOK(o.plannedIncome) + "</div></div>" +
+        '<div class="mo-box"><div class="mo-lbl">Utgifter</div><div class="mo-big ' + (o.usedOut > o.plannedOut + 0.5 ? "neg" : "") + '">' + formatNOK(o.usedOut) + '</div><div class="mo-sub">brukt · plan ' + formatNOK(o.plannedOut) + "</div></div>" +
         '<div class="mo-box"><div class="mo-lbl">Pluss/minus nå</div><div class="mo-big ' + cls(o.plusMinusNow) + '">' + formatNOKSigned(o.plusMinusNow) + '</div><div class="mo-sub">mottatt − brukt</div></div>' +
-        '<div class="mo-box"><div class="mo-lbl">Ved månedsslutt</div><div class="mo-big ' + cls(o.expectedEndBudget) + '">' + formatNOKSigned(o.expectedEndBudget) + '</div><div class="mo-sub">hvis resten av budsjettet brukes · ' + formatNOKSigned(o.expectedEndNoMore) + " hvis du ikke kjøper mer</div></div>" +
-        "</div>" +
-        '<p class="mo-plan">Planen var ' + formatNOKSigned(o.plannedResult) + " denne måneden.</p>" +
-        '<div class="mo-table-wrap"><table class="mo-table"><thead><tr><th>Kategori</th><th>Plan</th><th>Brukt</th><th>Igjen</th></tr></thead><tbody>' +
-        rows + "</tbody></table></div></div>";
-    }).join("");
+        '<div class="mo-box"><div class="mo-lbl">Ved månedsslutt</div><div class="mo-big ' + cls(o.expectedEndBudget) + '">' + formatNOKSigned(o.expectedEndBudget) + '</div><div class="mo-sub">hvis resten av planen brukes<br>' + formatNOKSigned(o.expectedEndNoMore) + " hvis du ikke kjøper mer</div></div>";
+    }
+
+    // Plan vs faktisk summary bar
+    const pvPct = o.plannedOut > 0 ? Math.round((o.usedOut / o.plannedOut) * 100) : 0;
+    const pv = '<div class="mo-pv"><div class="mo-pv-head"><strong>Denne måneden: plan vs faktisk</strong><span>' +
+      formatNOK(o.usedOut) + " av " + formatNOK(o.plannedOut) + " (" + pvPct + " %)</span></div>" +
+      ovBar({ planned: o.plannedOut, used: o.usedOut, fast: false }) +
+      (scope === "felles" ? "" : '<p class="mo-plan">Planen var ' + formatNOKSigned(o.plannedResult) + " for " + escapeHtml(mName) + ".</p>") + "</div>";
+
+    // Warnings + tips
+    const tips = Calc.overviewTips(o, { dayFraction: dayFrac });
+    const tipsHtml = tips.length ? '<div class="mo-tips"><div class="mo-h3">Tips og varsler</div><ul>' +
+      tips.map(function (t) { return '<li class="mo-tip-' + t.kind + '">' + escapeHtml(t.text) + "</li>"; }).join("") + "</ul></div>" : "";
+
+    // Category list: variable first (most at risk), then fast
+    function rowHtml(r) {
+      const st = Calc.overviewRowStatus(r);
+      let sub = "";
+      if (scope === "alle" && r.ownerName) sub += '<span class="mo-tag">' + escapeHtml(r.ownerName) + "</span>";
+      else if (r.shared && scope !== "felles") sub += '<span class="mo-tag">felles – din del</span>';
+      if (scope === "felles" && r.shares) {
+        sub += r.shares.map(function (sh) { return '<span class="mo-tag">' + escapeHtml(sh.name) + " " + Math.round(sh.pct) + " %: " + formatNOK(sh.used) + "</span>"; }).join("");
+      }
+      return '<div class="mo-row mo-row-' + st + '"><div class="mo-row-top"><span class="mo-row-name">' + escapeHtml(r.name) + "</span>" +
+        '<span class="mo-row-nums">' + formatNOK(r.used) + ' <small>av ' + formatNOK(r.planned) + "</small></span></div>" +
+        ovBar(r) +
+        '<div class="mo-row-bot"><span>' + sub + '</span><span class="' + cls(r.remain) + '">' +
+        (r.remain < -0.5 ? formatNOK(-r.remain) + " over" : formatNOK(r.remain) + " igjen") + "</span></div></div>";
+    }
+    const varRows = o.rows.filter(function (r) { return !r.fast; }).sort(function (a, b) {
+      const ra = a.planned > 0 ? a.used / a.planned : 9, rb = b.planned > 0 ? b.used / b.planned : 9;
+      return rb - ra;
+    });
+    const fastRows = o.rows.filter(function (r) { return r.fast; }).sort(function (a, b) { return b.planned - a.planned; });
+    let fastSum = 0; fastRows.forEach(function (r) { fastSum += Math.max(r.planned, r.used); });
+    const cats = '<div class="mo-h3">Kjøp per kategori</div>' + (varRows.map(rowHtml).join("") || '<p class="hint compact">Ingen kategorier.</p>') +
+      (fastRows.length ? '<details class="mo-fast"><summary>Faste utgifter: ' + formatNOK(fastSum) + " (" + fastRows.length + " poster)</summary>" + fastRows.map(rowHtml).join("") + "</details>" : "");
+
+    // Trend: last 6 months, variable categories
+    const trendKeys = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(state.view.year, state.view.month - i, 1);
+      const k = monthKey(d.getFullYear(), d.getMonth());
+      if (state.months[k]) trendKeys.push(k);
+    }
+    let trend = "";
+    if (trendKeys.length >= 2) {
+      const byCat = {};
+      const totals = {};
+      trendKeys.forEach(function (k) {
+        const om = Calc.monthOverview(state.months[k], scope, state.people, state.categories, ovMonthIndexFromKey(k));
+        totals[k] = 0;
+        om.rows.forEach(function (r) {
+          if (r.fast) return;
+          const id = r.name + "|" + (r.owner || "");
+          if (!byCat[id]) byCat[id] = { name: r.name, vals: {}, sum: 0 };
+          byCat[id].vals[k] = r.used; byCat[id].sum += r.used; totals[k] += r.used;
+        });
+      });
+      const list = Object.keys(byCat).map(function (k) { return byCat[k]; }).filter(function (c) { return c.sum > 0; })
+        .sort(function (a, b) { return b.sum - a.sum; }).slice(0, 8);
+      if (list.length) {
+        const short = function (k) { return (MONTHS[ovMonthIndexFromKey(k)] || "").slice(0, 3); };
+        trend = '<details class="mo-trend"><summary>Utvikling siste måneder (kjøp)</summary><div class="mo-table-wrap"><table class="mo-table"><thead><tr><th>Kategori</th>' +
+          trendKeys.map(function (k) { return "<th>" + escapeHtml(short(k)) + "</th>"; }).join("") + "</tr></thead><tbody>" +
+          list.map(function (c) {
+            return "<tr><td>" + escapeHtml(c.name) + "</td>" + trendKeys.map(function (k) { return "<td>" + (c.vals[k] ? formatNOK(c.vals[k]).replace(" kr", "") : "–") + "</td>"; }).join("") + "</tr>";
+          }).join("") +
+          '<tr class="mo-total"><td>Sum</td>' + trendKeys.map(function (k) { return "<td>" + formatNOK(totals[k]).replace(" kr", "") + "</td>"; }).join("") + "</tr>" +
+          "</tbody></table></div></details>";
+      }
+    }
+
+    const help = '<details class="mo-help"><summary>Hva betyr dette?</summary><ul>' +
+      "<li><b>Plan</b> er det du har satt opp at du skal bruke. <b>Brukt</b> er det du faktisk har ført.</li>" +
+      "<li><b>Faste utgifter</b> (lån, abonnement osv.) regnes som betalt med en gang.</li>" +
+      "<li><b>Felles</b> poster deles etter fordelingen (f.eks. 50/50 eller 70/30). I din visning ser du bare din del.</li>" +
+      "<li><b>Ved månedsslutt</b> = inntekt − alt som er planlagt (eller brukt, hvis det er mer).</li>" +
+      "<li>Grønn = innenfor, gul = snart brukt opp (80 %), rød = over planen.</li></ul></details>";
+
+    host.innerHTML = seg +
+      '<h2 class="mo-title">' + escapeHtml(scopeName) + " – " + escapeHtml(mName) + " " + state.view.year + "</h2>" +
+      '<div class="mo-grid">' + keys + "</div>" + pv + tipsHtml + cats + trend + help;
+
+    if (!host._ovBound) {
+      host._ovBound = true;
+      host.addEventListener("click", function (e) {
+        const b = e.target.closest("[data-ov-scope]");
+        if (!b) return;
+        ovLocalSet(OV_SCOPE_KEY, b.getAttribute("data-ov-scope"));
+        renderMonthOverview();
+      });
+    }
     const card = $("#monthOverviewCard");
-    if (card) card.hidden = !host.innerHTML;
+    if (card) card.hidden = false;
+    applySimpleMode();
+  }
+
+  function applySimpleMode() {
+    const panel = $("#panelOversikt");
+    const btn = $("#btnToggleDetails");
+    const simple = ovLocalGet(OV_SIMPLE_KEY) !== "0";
+    if (panel) panel.classList.toggle("ov-simple", simple);
+    if (btn) {
+      btn.textContent = simple ? "Vis flere detaljer ▾" : "Skjul detaljer ▴";
+      btn.setAttribute("aria-expanded", String(!simple));
+      if (!btn._bound) {
+        btn._bound = true;
+        btn.addEventListener("click", function () {
+          ovLocalSet(OV_SIMPLE_KEY, ovLocalGet(OV_SIMPLE_KEY) !== "0" ? "0" : "1");
+          applySimpleMode();
+        });
+      }
+    }
   }
 
   function renderSalaryStatus() {
