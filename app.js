@@ -1132,6 +1132,45 @@
     return html + "</div>";
   }
 
+
+  function renderMonthOverview() {
+    const host = $("#monthOverview");
+    if (!host || typeof Calc.monthOverviewForPerson !== "function") return;
+    const view = state.settings.innUtView || "samlet";
+    const m = getMonth();
+    const people = activePeopleList().filter(function (p) {
+      return view === "samlet" || p.id === view;
+    });
+    const mName = (MONTHS[state.view.month] || "").toLowerCase();
+    function cls(n) { return n < 0 ? "neg" : "pos"; }
+    host.innerHTML = people.map(function (p) {
+      const o = Calc.monthOverviewForPerson(m, p.id, state.people, state.categories, state.view.month);
+      if (!o.rows.length && !o.plannedIncome && !o.receivedIncome) return "";
+      const rows = o.rows.slice().sort(function (a, b) {
+        return (b.over - a.over) || (a.fast - b.fast) || (b.used - a.used);
+      }).map(function (r) {
+        return '<tr class="' + (r.over ? "over" : "ok") + '"><td>' + escapeHtml(r.name) +
+          (r.shared ? ' <span class="mo-tag">felles</span>' : "") +
+          (r.fast ? ' <span class="mo-tag">fast</span>' : "") + "</td>" +
+          "<td>" + formatNOK(r.planned) + "</td><td>" + formatNOK(r.used) + "</td>" +
+          '<td class="' + cls(r.remain) + '">' + formatNOK(r.remain) + "</td></tr>";
+      }).join("");
+      return '<div class="mo-person">' +
+        '<h2 class="mo-title">' + escapeHtml(p.name) + " – " + escapeHtml(mName) + "</h2>" +
+        '<div class="mo-grid">' +
+        '<div class="mo-box"><div class="mo-lbl">Inntekt</div><div class="mo-big">' + formatNOK(o.receivedIncome) + '</div><div class="mo-sub">mottatt · planlagt ' + formatNOK(o.plannedIncome) + "</div></div>" +
+        '<div class="mo-box"><div class="mo-lbl">Utgifter</div><div class="mo-big ' + (o.usedOut > o.plannedOut ? "neg" : "") + '">' + formatNOK(o.usedOut) + '</div><div class="mo-sub">brukt · skulle bruke ' + formatNOK(o.plannedOut) + "</div></div>" +
+        '<div class="mo-box"><div class="mo-lbl">Pluss/minus nå</div><div class="mo-big ' + cls(o.plusMinusNow) + '">' + formatNOKSigned(o.plusMinusNow) + '</div><div class="mo-sub">mottatt − brukt</div></div>' +
+        '<div class="mo-box"><div class="mo-lbl">Ved månedsslutt</div><div class="mo-big ' + cls(o.expectedEndBudget) + '">' + formatNOKSigned(o.expectedEndBudget) + '</div><div class="mo-sub">hvis resten av budsjettet brukes · ' + formatNOKSigned(o.expectedEndNoMore) + " hvis du ikke kjøper mer</div></div>" +
+        "</div>" +
+        '<p class="mo-plan">Planen var ' + formatNOKSigned(o.plannedResult) + " denne måneden.</p>" +
+        '<div class="mo-table-wrap"><table class="mo-table"><thead><tr><th>Kategori</th><th>Plan</th><th>Brukt</th><th>Igjen</th></tr></thead><tbody>' +
+        rows + "</tbody></table></div></div>";
+    }).join("");
+    const card = $("#monthOverviewCard");
+    if (card) card.hidden = !host.innerHTML;
+  }
+
   function renderSalaryStatus() {
     const host = $("#salaryStatus");
     if (!host) return;
@@ -1689,6 +1728,7 @@
     renderInnUtTabs();
     renderInnUtNumbers(c);
     renderSalaryStatus();
+    renderMonthOverview();
 
     renderSaldoHero(c);
 

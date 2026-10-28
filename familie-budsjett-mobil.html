@@ -4781,6 +4781,26 @@ button.cat-group-header {
 .salary-actions { display: flex; gap: 6px; margin-top: 6px; }
 @media (max-width: 420px) { .salary-form { grid-template-columns: 1fr 1fr; } .salary-form label:last-child { grid-column: 1 / -1; } }
 
+/* Månedsoversikt */
+.month-ov-card .mo-person + .mo-person { margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(127,127,127,.25); }
+.mo-title { font-size: 1.1rem; margin: 0 0 10px; }
+.mo-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.mo-box { border: 1px solid rgba(127,127,127,.25); border-radius: 10px; padding: 8px 10px; }
+.mo-lbl { font-size: .78rem; opacity: .75; }
+.mo-big { font-size: 1.25rem; font-weight: 700; }
+.mo-sub { font-size: .74rem; opacity: .7; }
+.mo-big.pos, .mo-table td.pos { color: #1a8f3c; }
+.mo-big.neg, .mo-table td.neg { color: #c62828; }
+.mo-plan { font-size: .85rem; margin: 8px 0; opacity: .85; }
+.mo-table-wrap { overflow-x: auto; }
+.mo-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.mo-table th, .mo-table td { padding: 5px 6px; text-align: right; border-bottom: 1px solid rgba(127,127,127,.15); white-space: nowrap; }
+.mo-table th:first-child, .mo-table td:first-child { text-align: left; white-space: normal; }
+.mo-table tr.over td:first-child { border-left: 3px solid #c62828; }
+.mo-table tr.ok td:first-child { border-left: 3px solid #1a8f3c; }
+.mo-tag { font-size: .68rem; padding: 0 5px; border-radius: 6px; background: rgba(127,127,127,.18); }
+@media (max-width: 640px) { .mo-grid { grid-template-columns: 1fr 1fr; } .mo-big { font-size: 1.1rem; } }
+
 </style>
 </head>
 <body>
@@ -4937,6 +4957,9 @@ button.cat-group-header {
 
     <!-- ——— OVERSIKT ——— -->
     <div id="panelOversikt" class="tab-panel" role="tabpanel" aria-labelledby="tabOversikt">
+      <section class="card compact-card month-ov-card" id="monthOverviewCard" aria-label="Månedsoversikt">
+        <div id="monthOverview"></div>
+      </section>
       <section class="card compact-card salary-card" id="salaryCard" aria-label="Lønnsstatus">
         <div class="salary-status" id="salaryStatus" aria-live="polite"></div>
       </section>
@@ -8153,6 +8176,53 @@ window.FAMILIE_BUDGET_SUPABASE = {
       plannedIncomeFor(m, personId, "lønn") +
       plannedIncomeFor(m, personId, "ekstra")
     );
+  }
+
+
+  /**
+   * Simple month overview for one person: income planned vs received,
+   * per-category planned vs used (own + felles share), plus/minus now and
+   * expected at month end. Fast (auto) categories count as drawn.
+   */
+  function monthOverviewForPerson(m, personId, people, categories, monthIndex) {
+    var rows = [];
+    (categories || []).forEach(function (cat) {
+      if (!cat || cat.archived) return;
+      var planned = 0, used = 0, shared = false;
+      if (cat.owner === personId) {
+        planned = budgetForOwner(m, cat.id, personId, monthIndex) || 0;
+        used = effectiveActualForCategoryOwner(m, cat, personId, monthIndex) || 0;
+      } else if (cat.owner === "felles") {
+        var pct = fellesSharePercent(cat, personId, people);
+        if (!(pct > 0)) return;
+        shared = true;
+        planned = fellesShare(cat, personId, people, budgetForOwner(m, cat.id, "felles", monthIndex) || 0);
+        used = fellesShare(cat, personId, people, effectiveActualForCategoryOwner(m, cat, "felles", monthIndex) || 0);
+      } else return;
+      if (!(planned > 0) && !(used > 0)) return;
+      rows.push({
+        id: cat.id, name: cat.name, fast: cat.type === "fast", shared: shared,
+        planned: planned, used: used, remain: planned - used, over: used > planned
+      });
+    });
+    var plannedIncome = plannedIncomeForPerson(m, personId);
+    var received = 0;
+    ((m && m.incomes) || []).forEach(function (i) {
+      if (i && i.person === personId) received += Number(i.amount) || 0;
+    });
+    var plannedOut = 0, usedOut = 0, fullOut = 0;
+    rows.forEach(function (r) {
+      plannedOut += r.planned; usedOut += r.used; fullOut += Math.max(r.planned, r.used);
+    });
+    var incomeExpected = Math.max(plannedIncome, received);
+    return {
+      plannedIncome: plannedIncome, receivedIncome: received, incomeExpected: incomeExpected,
+      plannedOut: plannedOut, usedOut: usedOut, rows: rows,
+      plusMinusNow: received - usedOut,
+      expectedEndNoMore: incomeExpected - usedOut,
+      expectedEndBudget: incomeExpected - fullOut,
+      plannedResult: plannedIncome - plannedOut
+    };
   }
 
   function plannedUtFelles(m, categories, monthIndex) {
@@ -11572,6 +11642,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     findNearestPreviousWithConfirmedBalances: findNearestPreviousWithConfirmedBalances,
     migrateState: migrateState,
     plannedIncomeFor: plannedIncomeFor,
+    monthOverviewForPerson: monthOverviewForPerson,
     plannedSparingFor: plannedSparingFor,
     plannedSparingTotal: plannedSparingTotal,
     emptyPlannedIncomeBlock: emptyPlannedIncomeBlock,
@@ -14013,6 +14084,45 @@ window.FAMILIE_BUDGET_SUPABASE = {
     return html + "</div>";
   }
 
+
+  function renderMonthOverview() {
+    const host = $("#monthOverview");
+    if (!host || typeof Calc.monthOverviewForPerson !== "function") return;
+    const view = state.settings.innUtView || "samlet";
+    const m = getMonth();
+    const people = activePeopleList().filter(function (p) {
+      return view === "samlet" || p.id === view;
+    });
+    const mName = (MONTHS[state.view.month] || "").toLowerCase();
+    function cls(n) { return n < 0 ? "neg" : "pos"; }
+    host.innerHTML = people.map(function (p) {
+      const o = Calc.monthOverviewForPerson(m, p.id, state.people, state.categories, state.view.month);
+      if (!o.rows.length && !o.plannedIncome && !o.receivedIncome) return "";
+      const rows = o.rows.slice().sort(function (a, b) {
+        return (b.over - a.over) || (a.fast - b.fast) || (b.used - a.used);
+      }).map(function (r) {
+        return '<tr class="' + (r.over ? "over" : "ok") + '"><td>' + escapeHtml(r.name) +
+          (r.shared ? ' <span class="mo-tag">felles</span>' : "") +
+          (r.fast ? ' <span class="mo-tag">fast</span>' : "") + "</td>" +
+          "<td>" + formatNOK(r.planned) + "</td><td>" + formatNOK(r.used) + "</td>" +
+          '<td class="' + cls(r.remain) + '">' + formatNOK(r.remain) + "</td></tr>";
+      }).join("");
+      return '<div class="mo-person">' +
+        '<h2 class="mo-title">' + escapeHtml(p.name) + " – " + escapeHtml(mName) + "</h2>" +
+        '<div class="mo-grid">' +
+        '<div class="mo-box"><div class="mo-lbl">Inntekt</div><div class="mo-big">' + formatNOK(o.receivedIncome) + '</div><div class="mo-sub">mottatt · planlagt ' + formatNOK(o.plannedIncome) + "</div></div>" +
+        '<div class="mo-box"><div class="mo-lbl">Utgifter</div><div class="mo-big ' + (o.usedOut > o.plannedOut ? "neg" : "") + '">' + formatNOK(o.usedOut) + '</div><div class="mo-sub">brukt · skulle bruke ' + formatNOK(o.plannedOut) + "</div></div>" +
+        '<div class="mo-box"><div class="mo-lbl">Pluss/minus nå</div><div class="mo-big ' + cls(o.plusMinusNow) + '">' + formatNOKSigned(o.plusMinusNow) + '</div><div class="mo-sub">mottatt − brukt</div></div>' +
+        '<div class="mo-box"><div class="mo-lbl">Ved månedsslutt</div><div class="mo-big ' + cls(o.expectedEndBudget) + '">' + formatNOKSigned(o.expectedEndBudget) + '</div><div class="mo-sub">hvis resten av budsjettet brukes · ' + formatNOKSigned(o.expectedEndNoMore) + " hvis du ikke kjøper mer</div></div>" +
+        "</div>" +
+        '<p class="mo-plan">Planen var ' + formatNOKSigned(o.plannedResult) + " denne måneden.</p>" +
+        '<div class="mo-table-wrap"><table class="mo-table"><thead><tr><th>Kategori</th><th>Plan</th><th>Brukt</th><th>Igjen</th></tr></thead><tbody>' +
+        rows + "</tbody></table></div></div>";
+    }).join("");
+    const card = $("#monthOverviewCard");
+    if (card) card.hidden = !host.innerHTML;
+  }
+
   function renderSalaryStatus() {
     const host = $("#salaryStatus");
     if (!host) return;
@@ -14570,6 +14680,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     renderInnUtTabs();
     renderInnUtNumbers(c);
     renderSalaryStatus();
+    renderMonthOverview();
 
     renderSaldoHero(c);
 

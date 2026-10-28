@@ -2274,6 +2274,53 @@
     );
   }
 
+
+  /**
+   * Simple month overview for one person: income planned vs received,
+   * per-category planned vs used (own + felles share), plus/minus now and
+   * expected at month end. Fast (auto) categories count as drawn.
+   */
+  function monthOverviewForPerson(m, personId, people, categories, monthIndex) {
+    var rows = [];
+    (categories || []).forEach(function (cat) {
+      if (!cat || cat.archived) return;
+      var planned = 0, used = 0, shared = false;
+      if (cat.owner === personId) {
+        planned = budgetForOwner(m, cat.id, personId, monthIndex) || 0;
+        used = effectiveActualForCategoryOwner(m, cat, personId, monthIndex) || 0;
+      } else if (cat.owner === "felles") {
+        var pct = fellesSharePercent(cat, personId, people);
+        if (!(pct > 0)) return;
+        shared = true;
+        planned = fellesShare(cat, personId, people, budgetForOwner(m, cat.id, "felles", monthIndex) || 0);
+        used = fellesShare(cat, personId, people, effectiveActualForCategoryOwner(m, cat, "felles", monthIndex) || 0);
+      } else return;
+      if (!(planned > 0) && !(used > 0)) return;
+      rows.push({
+        id: cat.id, name: cat.name, fast: cat.type === "fast", shared: shared,
+        planned: planned, used: used, remain: planned - used, over: used > planned
+      });
+    });
+    var plannedIncome = plannedIncomeForPerson(m, personId);
+    var received = 0;
+    ((m && m.incomes) || []).forEach(function (i) {
+      if (i && i.person === personId) received += Number(i.amount) || 0;
+    });
+    var plannedOut = 0, usedOut = 0, fullOut = 0;
+    rows.forEach(function (r) {
+      plannedOut += r.planned; usedOut += r.used; fullOut += Math.max(r.planned, r.used);
+    });
+    var incomeExpected = Math.max(plannedIncome, received);
+    return {
+      plannedIncome: plannedIncome, receivedIncome: received, incomeExpected: incomeExpected,
+      plannedOut: plannedOut, usedOut: usedOut, rows: rows,
+      plusMinusNow: received - usedOut,
+      expectedEndNoMore: incomeExpected - usedOut,
+      expectedEndBudget: incomeExpected - fullOut,
+      plannedResult: plannedIncome - plannedOut
+    };
+  }
+
   function plannedUtFelles(m, categories, monthIndex) {
     var sum = 0;
     (categories || []).forEach(function (cat) {
@@ -5691,6 +5738,7 @@
     findNearestPreviousWithConfirmedBalances: findNearestPreviousWithConfirmedBalances,
     migrateState: migrateState,
     plannedIncomeFor: plannedIncomeFor,
+    monthOverviewForPerson: monthOverviewForPerson,
     plannedSparingFor: plannedSparingFor,
     plannedSparingTotal: plannedSparingTotal,
     emptyPlannedIncomeBlock: emptyPlannedIncomeBlock,
