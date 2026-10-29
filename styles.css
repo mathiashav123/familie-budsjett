@@ -4840,3 +4840,10 @@ body.solo #innUtTabs, body.solo #sparingTabs, body.solo #btnMerSplitWizard, body
 #dlgOnboard .input { width: 100%; box-sizing: border-box; }
 #dlgOnboard .onb-pct .input { width: 72px; flex: 0 0 72px; padding: 6px 8px; }
 #dlgOnboard .onb-pct { white-space: nowrap; }
+
+.me-ask { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 12px; margin-bottom: 10px; border-radius: 12px; background: rgba(47,111,219,.08); }
+.me-ask span { width: 100%; font-weight: 600; }
+.share-help { margin: 10px 0; padding: 10px 12px; border: 1px solid rgba(127,127,127,.2); border-radius: 12px; }
+.share-steps { padding-left: 20px; margin: 8px 0; }
+.share-steps li { margin-bottom: 6px; }
+.onb-join { width: 100%; margin-bottom: 14px; white-space: normal; }

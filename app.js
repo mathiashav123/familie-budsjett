@@ -1159,6 +1159,26 @@
     return '<div class="mo-bar mo-' + st + '" role="img" aria-label="' + pct + ' prosent brukt"><span style="width:' + pct + '%"></span></div>';
   }
 
+  const ME_KEY = "familie-budsjett-me";
+  function deviceMe() {
+    const id = ovLocalGet(ME_KEY);
+    return activePeopleList().some(function (p) { return p.id === id; }) ? id : null;
+  }
+  function setDeviceMe(id) {
+    ovLocalSet(ME_KEY, id);
+    ovLocalSet(OV_SCOPE_KEY, id);
+  }
+  function renderMeBlock() {
+    const people = activePeopleList();
+    const blk = $("#meBlock"), sel = $("#meSelect");
+    if (!blk || !sel) return;
+    blk.hidden = people.length < 2;
+    const me = deviceMe();
+    sel.innerHTML = '<option value="">Velg…</option>' + people.map(function (p) {
+      return '<option value="' + escapeAttr(p.id) + '"' + (p.id === me ? " selected" : "") + ">" + escapeHtml(p.name) + "</option>";
+    }).join("");
+  }
+
   function applySoloClass() {
     const solo = activePeopleList().length === 1;
     document.body.classList.toggle("solo", solo);
@@ -1180,6 +1200,13 @@
     const people = activePeopleList();
     const scope = overviewScope();
     const mName = (MONTHS[state.view.month] || "").toLowerCase();
+    renderMeBlock();
+    let meAsk = "";
+    if (people.length > 1 && !deviceMe() && ovLocalGet(ME_KEY) !== "-") {
+      meAsk = '<div class="me-ask"><span>Hvem er du på denne enheten?</span>' + people.map(function (p) {
+        return '<button type="button" class="btn sm" data-set-me="' + escapeAttr(p.id) + '">Dette er meg: ' + escapeHtml(p.name) + "</button>";
+      }).join("") + '<button type="button" class="btn sm ghost" data-set-me="">Ikke nå</button></div>';
+    }
     const o = Calc.monthOverview(m, scope, state.people, state.categories, state.view.month);
     function cls(n) { return n < -0.5 ? "neg" : "pos"; }
     const scopeName = scope === "alle" ? "Hele husstanden" : scope === "felles" ? "Felles" :
@@ -1295,13 +1322,20 @@
       "<li><b>Ved månedsslutt</b> = inntekt − alt som er planlagt (eller brukt, hvis det er mer).</li>" +
       "<li>Grønn = innenfor, gul = snart brukt opp (80 %), rød = over planen.</li></ul></details>";
 
-    host.innerHTML = seg +
+    host.innerHTML = meAsk + seg +
       '<h2 class="mo-title">' + escapeHtml(scopeName) + " – " + escapeHtml(mName) + " " + state.view.year + "</h2>" +
       '<div class="mo-grid">' + keys + "</div>" + pv + tipsHtml + cats + trend + help;
 
     if (!host._ovBound) {
       host._ovBound = true;
       host.addEventListener("click", function (e) {
+        const me = e.target.closest("[data-set-me]");
+        if (me) {
+          const id = me.getAttribute("data-set-me");
+          if (id) { setDeviceMe(id); showToast("Lagret på denne enheten"); } else ovLocalSet(ME_KEY, "-");
+          renderMonthOverview();
+          return;
+        }
         const b = e.target.closest("[data-ov-scope]");
         if (!b) return;
         ovLocalSet(OV_SCOPE_KEY, b.getAttribute("data-ov-scope"));
@@ -9144,6 +9178,7 @@
 
     // Settings export/import + prominent backup
     $("#btnExportJson").addEventListener("click", exportJsonBackup);
+    window.__fbBackup = exportJsonBackup;
     const btnBackupTop = $("#btnBackupTop");
     if (btnBackupTop) btnBackupTop.addEventListener("click", exportJsonBackup);
     const btnBackupSettings = $("#btnBackupSettings");
@@ -9220,6 +9255,7 @@
       let html = "";
       if (st === 0) {
         html = '<p>Denne appen hjelper deg å se hva du tjener, hva du skulle bruke og hva du faktisk bruker. Det tar 2 minutter å komme i gang.</p>' +
+          '<button type="button" class="btn onb-join" data-wz-act="join">Jeg skal bli med i en husstand som finnes (logg inn)</button>' +
           '<label class="field"><span>Hva heter du?</span>' + wzInput("name", wz.name, 'type="text" maxlength="40" placeholder="Fornavn" autocomplete="given-name"') + "</label>";
       } else if (st === 1) {
         html = '<label class="onb-choice"><input type="radio" name="wzSolo" data-wz="solo" value="1"' + (wz.solo ? " checked" : "") + ' /> <span><strong>Bare meg</strong><br><small>Du styrer din egen økonomi. Delte regninger kan få «jeg betaler X %».</small></span></label>' +
@@ -9295,6 +9331,16 @@
         if (!act) return;
         wzRead();
         const k = act.getAttribute("data-wz-act");
+        if (k === "join") {
+          needsOnboarding = false;
+          closeDlg("#dlgOnboard");
+          applyMainTab("mer");
+          if (typeof applySyncAuthMode === "function") applySyncAuthMode("login");
+          const el = $("#sectionMerSync");
+          if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "start" });
+          showToast("Logg inn med husstandens brukernavn og passord");
+          return;
+        }
         if (k === "addPerson") wz.others.push("");
         if (k === "addFixed") wz.fixed.push({ on: true, name: "", amount: "", pct: 100 });
         if (k === "addBudget") wz.budgets.push({ on: true, name: "", amount: "" });
@@ -9303,6 +9349,18 @@
       });
       $("#onbBody").addEventListener("change", function (e) {
         if (e.target && e.target.name === "wzSolo") { wzRead(); wzRender(); }
+      });
+      const meSel = $("#meSelect");
+      if (meSel) meSel.addEventListener("change", function () {
+        if (meSel.value) setDeviceMe(meSel.value); else ovLocalSet(ME_KEY, "-");
+        render();
+      });
+      const goSync = $("#btnGoSync");
+      if (goSync) goSync.addEventListener("click", function () {
+        closeDlg("#dlgSettings");
+        applyMainTab("mer");
+        const el = $("#sectionMerSync");
+        if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "start" });
       });
       const rerun = $("#btnRerunWizard");
       if (rerun) rerun.addEventListener("click", function () {
@@ -9398,7 +9456,8 @@
       applyCloudState: applyCloudState,
       showToast: showToast,
       onMeta: function () { renderSyncUI(); },
-      confirmFn: function (msg) { return window.confirm(msg); }
+      confirmFn: function (msg) { return window.confirm(msg); },
+      backupFn: function () { if (!needsOnboarding && window.__fbBackup) window.__fbBackup(); }
     });
   }
   if (state.settings && state.settings.pendingBalancesMigrationToast) {

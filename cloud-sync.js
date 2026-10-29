@@ -49,8 +49,47 @@
       pendingPush: false,
       lastError: null,
       keepLocalOnce: false,
-      lastPushedFingerprint: null
+      lastPushedFingerprint: null,
+      pendingJoinCode: null
     };
+  }
+
+  var BASE_KEY = "familie-budsjett-sync-base-v1";
+  function loadBase() {
+    try { var raw = localStorage.getItem(BASE_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+  }
+  function saveBase(st) {
+    try {
+      var copy = JSON.parse(JSON.stringify(st || {}));
+      delete copy.archives; // arkiv flettes separat – sparer plass
+      localStorage.setItem(BASE_KEY, JSON.stringify(copy));
+    } catch (e) { /* full lagring: fletting faller tilbake til «begge beholdes» */ }
+  }
+  function isLocalDirty(meta) {
+    var lc = Sync.parseTs(meta.localChangeAt), sc = Sync.parseTs(meta.lastSyncedCloudAt), lp = Sync.parseTs(meta.lastPullAt);
+    if (meta.pendingPush) return true;
+    return lc > 0 && lc > sc && lc > lp;
+  }
+  /** Flett sky + lokal per post og bruk resultatet lokalt. */
+  function mergeIntoLocal(remoteState) {
+    var local = host.getState();
+    var base = loadBase();
+    var merged;
+    if (!base && loadMeta().lastSyncedCloudAt) {
+      // Enhet som har synket før denne versjonen: slå sammen, husstanden vinner ved konflikt, ingen poster forsvinner
+      merged = Sync.mergeStates({}, remoteState, local);
+      merged.view = local.view;
+    } else if (!base) {
+      // Første synk på denne enheten: husstandens data brukes. Det som lå lokalt lastes ned som backup.
+      if (Sync.hasMeaningfulLocalData(local) && !Sync.payloadsRoughlyEqual(local, remoteState) && host.backupFn) {
+        try { host.backupFn(); } catch (e) { /* */ }
+      }
+      merged = remoteState;
+    } else {
+      merged = Sync.mergeStates(base, local, remoteState);
+    }
+    host.applyCloudState(merged);
+    return host.getState();
   }
 
   function saveMeta(meta) {
@@ -450,6 +489,7 @@
     meta.lastPushedFingerprint = Sync.payloadFingerprint(state);
     clearError(meta);
     saveMeta(meta);
+    saveBase(state);
     return row;
   }
 
@@ -486,14 +526,36 @@
     if (host && host.onMeta) host.onMeta(meta);
 
     try {
-      var now = Sync.isoNow();
-      var encoded = await encodeCloudPayload(state);
-      var rows = await api(
-        "PATCH",
-        "/rest/v1/households?id=eq." + encodeURIComponent(meta.householdId),
-        { payload: encoded, updated_at: now },
-        { headers: { Prefer: "return=representation" } }
-      );
+      var now, rows, tries = 0;
+      while (true) {
+        tries++;
+        // Sjekk om noen andre har lagret siden sist – flett i så fall først (ingen overskriving)
+        var head = await api("GET", "/rest/v1/households?select=updated_at&id=eq." + encodeURIComponent(meta.householdId) + "&limit=1");
+        var cloudAt = head && head[0] ? head[0].updated_at : null;
+        var m0 = loadMeta();
+        if (cloudAt && m0.lastSyncedCloudAt && cloudAt !== m0.lastSyncedCloudAt) {
+          var full = await api("GET", "/rest/v1/households?select=payload,updated_at&id=eq." + encodeURIComponent(meta.householdId) + "&limit=1");
+          if (full && full[0]) {
+            var remote = await decodeCloudPayload(full[0].payload);
+            if (remote && typeof remote === "object") state = mergeIntoLocal(remote);
+            cloudAt = full[0].updated_at;
+          }
+        }
+        now = Sync.isoNow();
+        var encoded = await encodeCloudPayload(state);
+        var filter = "/rest/v1/households?id=eq." + encodeURIComponent(meta.householdId) +
+          (cloudAt ? "&updated_at=eq." + encodeURIComponent(cloudAt) : "");
+        rows = await api("PATCH", filter, { payload: encoded, updated_at: now }, { headers: { Prefer: "return=representation" } });
+        if (Array.isArray(rows) && rows.length === 0 && cloudAt) {
+          // Noen lagret akkurat nå – prøv igjen med fletting
+          var mm = loadMeta(); mm.lastSyncedCloudAt = "1970-01-01T00:00:00Z"; saveMeta(mm);
+          if (tries < 4) continue;
+          throw new Error("Kunne ikke lagre – prøv «Synk nå»");
+        }
+        break;
+      }
+      fp = Sync.payloadFingerprint(state);
+      saveBase(state);
       var row = Array.isArray(rows) ? rows[0] : rows;
       meta = loadMeta();
       meta.lastSyncedCloudAt = (row && row.updated_at) || now;
@@ -571,49 +633,52 @@
         return { ok: true, action: "noop" };
       }
 
-      if (decision.action === "push" || (decision.action === "conflict" && meta.keepLocalOnce)) {
-        meta.keepLocalOnce = false;
-        saveMeta(meta);
+      var dirty = isLocalDirty(meta);
+      if (decision.action === "push") {
         var pushed = await pushNow();
         return { ok: !!pushed.ok, action: "push", error: pushed.error };
       }
 
       if (decision.action === "pull" || decision.action === "conflict") {
-        var localState = host.getState();
         var cloudPayload = await decodeCloudPayload(row.payload);
-        var differs = !Sync.payloadsRoughlyEqual(localState, cloudPayload);
-        var localHas = Sync.hasMeaningfulLocalData(localState);
-        var confirmFn = (host && host.confirmFn) || function (msg) { return window.confirm(msg); };
-
-        if (decision.action === "conflict" && localHas && differs && !opts.silent) {
-          var takeCloud = confirmFn(
-            "Husstanden har andre data enn denne enheten.\n\nOK = hent fra husstanden (anbefalt)\nAvbryt = behold lokal og last opp"
-          );
-          if (!takeCloud) {
-            meta.keepLocalOnce = true;
-            saveMeta(meta);
-            var pushedLocal = await pushNow();
-            return { ok: !!pushedLocal.ok, action: "keep-local", error: pushedLocal.error };
-          }
-        } else if (localHas && differs && decision.action === "pull" && !opts.silent && meta.lastSyncedCloudAt) {
-          var okPull = confirmFn(
-            "Fant nyere data i husstanden. Erstatte det som ligger lokalt på denne enheten?"
-          );
-          if (!okPull) return { ok: true, action: "skipped-pull" };
-        }
-
         if (cloudPayload && typeof cloudPayload === "object") {
-          host.applyCloudState(cloudPayload);
+          var merged = false;
+          if (dirty || decision.action === "conflict") {
+            // Begge har endret: flett per post (ingen data går tapt), last deretter opp
+            mergeIntoLocal(cloudPayload);
+            merged = true;
+          } else {
+            if (!loadBase() && !meta.lastSyncedCloudAt && host.backupFn) {
+              var lc = host.getState();
+              if (Sync.hasMeaningfulLocalData(lc) && !Sync.payloadsRoughlyEqual(lc, cloudPayload)) {
+                try { host.backupFn(); } catch (e) { /* */ }
+              }
+            }
+            host.applyCloudState(cloudPayload);
+          }
           meta = loadMeta();
           meta.lastSyncedCloudAt = row.updated_at;
           meta.lastPullAt = Sync.isoNow();
           meta.lastSyncAt = Sync.isoNow();
+          meta.keepLocalOnce = false;
+          clearError(meta);
+          if (merged) {
+            meta.pendingPush = true;
+            meta.localChangeAt = Sync.isoNow();
+            meta.lastPushedFingerprint = null;
+            saveMeta(meta);
+            saveBase(cloudPayload);
+            var p2 = await pushNow();
+            if (host.showToast) host.showToast("Flettet med husstanden");
+            if (host.onMeta) host.onMeta(loadMeta());
+            return { ok: !!p2.ok, action: "merge", error: p2.error };
+          }
           meta.localChangeAt = meta.lastPullAt;
           meta.pendingPush = false;
           meta.lastPushedFingerprint = Sync.payloadFingerprint(cloudPayload);
-          clearError(meta);
           saveMeta(meta);
-          if (host.showToast) host.showToast("Hentet fra husstanden");
+          saveBase(cloudPayload);
+          if (host.showToast && !opts.quiet) host.showToast("Hentet fra husstanden");
           if (host.onMeta) host.onMeta(meta);
           return { ok: true, action: "pull" };
         }
@@ -645,6 +710,11 @@
     await ensureProfile(user, meta.username);
 
     var row = await fetchMembershipHousehold();
+    if (!row && meta.pendingJoinCode) {
+      var jr = await joinHouseholdFlow(meta.pendingJoinCode);
+      if (host && host.onMeta) host.onMeta(loadMeta());
+      return { loggedIn: true, joined: true, join: jr };
+    }
     if (!row) {
       if (host && host.showToast) host.showToast("Oppretter husstand…");
       await createHouseholdWithLocal();
@@ -673,16 +743,9 @@
     var cloudPayload = await decodeCloudPayload(row.payload);
     var differs = !Sync.payloadsRoughlyEqual(localState, cloudPayload);
     var localHas = Sync.hasMeaningfulLocalData(localState);
-    if (localHas && differs) {
-      var confirmFn = (host && host.confirmFn) || function (msg) { return window.confirm(msg); };
-      var takeCloud = confirmFn(
-        "Du har lokal data som skiller seg fra husstanden.\n\nOK = hent husstandens data\nAvbryt = behold lokal (lastes opp til husstanden)"
-      );
-      if (!takeCloud) {
-        await pushNow();
-        if (host.showToast) host.showToast("Lokal data lastet opp");
-        return { ok: true, action: "pushed-local" };
-      }
+    if (localHas && differs && host && host.backupFn) {
+      // Husstandens data vinner ved innmelding; det som lå på denne enheten lastes ned som backup
+      try { host.backupFn(); } catch (e) { /* */ }
     }
     if (cloudPayload && typeof cloudPayload === "object") {
       host.applyCloudState(cloudPayload);
@@ -692,8 +755,10 @@
       meta.lastSyncAt = Sync.isoNow();
       meta.localChangeAt = meta.lastPullAt;
       meta.lastPushedFingerprint = Sync.payloadFingerprint(cloudPayload);
+      meta.pendingJoinCode = null;
       clearError(meta);
       saveMeta(meta);
+      saveBase(cloudPayload);
       if (host.showToast) host.showToast("Hentet fra husstanden");
     }
     if (host && host.onMeta) host.onMeta(loadMeta());
@@ -750,6 +815,8 @@
     getStatus: getStatus,
     pagesRedirectUrl: pagesRedirectUrl,
     afterAuthReady: afterAuthReady,
+    loadBase: loadBase,
+    saveBase: saveBase,
     normalizeUsername: normalizeUsername,
     usernameToEmail: usernameToEmail,
     AUTH_EMAIL_DOMAIN: AUTH_EMAIL_DOMAIN

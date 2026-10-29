@@ -400,8 +400,82 @@
     };
   }
 
+  // ——— 3-veis fletting (per post) ———
+  // base = sist synkede versjon, local = denne enheten, remote = skyen nå.
+  // Endringer fra begge sider beholdes. Samme post endret begge steder → lokal vinner.
+  function isPlainObj(x) { return x !== null && typeof x === "object" && !Array.isArray(x); }
+  function jeq(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+  function isIdArray(a) {
+    return Array.isArray(a) && a.length > 0 && a.every(function (x) { return isPlainObj(x) && x.id != null; });
+  }
+  function mergeIdArrays(b, l, r) {
+    b = Array.isArray(b) ? b : []; l = Array.isArray(l) ? l : []; r = Array.isArray(r) ? r : [];
+    var bm = {}, lm = {}, rm = {};
+    b.forEach(function (x) { if (x && x.id != null) bm[x.id] = x; });
+    l.forEach(function (x) { if (x && x.id != null) lm[x.id] = x; });
+    r.forEach(function (x) { if (x && x.id != null) rm[x.id] = x; });
+    var order = [], seen = {};
+    r.concat(l).forEach(function (x) { if (x && x.id != null && !seen[x.id]) { seen[x.id] = 1; order.push(x.id); } });
+    var out = [];
+    order.forEach(function (id) {
+      var inB = id in bm, inL = id in lm, inR = id in rm;
+      if (inL && inR) { out.push(merge3(bm[id], lm[id], rm[id])); return; }
+      if (inL && !inR) {
+        // slettet i skyen? bare slett hvis lokal ikke er endret
+        if (inB && jeq(bm[id], lm[id])) return;
+        out.push(lm[id]); return;
+      }
+      if (inR && !inL) {
+        if (inB && jeq(bm[id], rm[id])) return; // slettet lokalt
+        out.push(rm[id]);
+      }
+    });
+    return out;
+  }
+  function merge3(b, l, r) {
+    if (jeq(l, r)) return l;
+    if (b !== undefined && jeq(l, b)) return r;
+    if (b !== undefined && jeq(r, b)) return l;
+    if (isPlainObj(l) && isPlainObj(r)) {
+      var bb = isPlainObj(b) ? b : {};
+      var out = {};
+      var keys = {};
+      Object.keys(l).concat(Object.keys(r)).forEach(function (k) { keys[k] = 1; });
+      Object.keys(keys).forEach(function (k) {
+        var lv = l[k], rv = r[k], bv = bb[k];
+        var inL = Object.prototype.hasOwnProperty.call(l, k), inR = Object.prototype.hasOwnProperty.call(r, k);
+        var v;
+        if (inL && inR) v = merge3(bv, lv, rv);
+        else if (inL) v = (bv !== undefined && jeq(bv, lv)) ? undefined : lv;
+        else v = (bv !== undefined && jeq(bv, rv)) ? undefined : rv;
+        if (v !== undefined) out[k] = v;
+      });
+      return out;
+    }
+    if ((isIdArray(l) || isIdArray(r) || isIdArray(b)) && Array.isArray(l) && Array.isArray(r)) {
+      return mergeIdArrays(b, l, r);
+    }
+    return l; // ekte konflikt på en enkeltverdi → denne enheten vinner
+  }
+  /** Flett hele budsjett-staten. Arkiv flettes med eksisterende arkiv-logikk. */
+  function mergeStates(base, local, remote) {
+    if (!isPlainObj(remote)) return local;
+    if (!isPlainObj(local)) return remote;
+    var b = isPlainObj(base) ? base : {};
+    var L = Object.assign({}, local), R = Object.assign({}, remote), B = Object.assign({}, b);
+    delete L.archives; delete R.archives; delete B.archives;
+    // view/ui er per enhet
+    delete B.view; var view = L.view; delete L.view; delete R.view;
+    var out = merge3(B, L, R);
+    if (view !== undefined) out.view = view;
+    out.archives = mergeArchivesPreservingMonths(local.archives || [], remote.archives || []);
+    return out;
+  }
+
   return {
     parseTs: parseTs,
+    merge3: merge3,
+    mergeStates: mergeStates,
     isoNow: isoNow,
     generateInviteCode: generateInviteCode,
     hasMeaningfulLocalData: hasMeaningfulLocalData,

@@ -4857,6 +4857,13 @@ body.solo #innUtTabs, body.solo #sparingTabs, body.solo #btnMerSplitWizard, body
 #dlgOnboard .onb-pct .input { width: 72px; flex: 0 0 72px; padding: 6px 8px; }
 #dlgOnboard .onb-pct { white-space: nowrap; }
 
+.me-ask { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 12px; margin-bottom: 10px; border-radius: 12px; background: rgba(47,111,219,.08); }
+.me-ask span { width: 100%; font-weight: 600; }
+.share-help { margin: 10px 0; padding: 10px 12px; border: 1px solid rgba(127,127,127,.2); border-radius: 12px; }
+.share-steps { padding-left: 20px; margin: 8px 0; }
+.share-steps li { margin-bottom: 6px; }
+.onb-join { width: 100%; margin-bottom: 14px; white-space: normal; }
+
 </style>
 </head>
 <body>
@@ -5943,6 +5950,22 @@ body.solo #innUtTabs, body.solo #sparingTabs, body.solo #btnMerSplitWizard, body
         </div>
         <button type="button" class="btn sm" id="btnRerunWizard">Kjør Velkommen-veiviseren på nytt</button>
         <p class="hint compact"><span id="modeStatus"></span>. «Bare meg» skjuler de andre personene – ingen tall slettes, og «Husstand» legger dem tilbake. Delte regninger kan fortsatt ha «Jeg betaler X %».</p>
+        <div id="meBlock" class="me-block" hidden>
+          <label class="field"><span>Dette er meg på denne enheten</span>
+            <select id="meSelect" class="input"></select></label>
+          <p class="hint compact">Lagres bare på denne telefonen/PC-en. Oversikten åpner da på deg – alle ser fortsatt hele husstanden.</p>
+        </div>
+        <details class="share-help" id="shareHelp">
+          <summary><strong>Bruke appen sammen på flere telefoner</strong></summary>
+          <ol class="share-steps">
+            <li>På enheten med budsjettet: gå til <strong>Mer → Synk</strong>, velg <strong>Opprett husstand</strong> og lag et brukernavn og passord for husstanden (gjøres én gang).</li>
+            <li>Gi samboeren brukernavnet og passordet.</li>
+            <li>Samboeren åpner appen på sin telefon, trykker <strong>«Jeg skal bli med i en husstand»</strong> i velkomstbildet (eller <strong>Mer → Synk</strong>), velger <strong>Logg inn</strong> og skriver inn det samme.</li>
+            <li>Velg <strong>Dette er meg</strong> på hver telefon.</li>
+          </ol>
+          <p class="hint compact">Dere kan føre kjøp samtidig – endringer flettes per post, så ingen overskriver hverandre. Har den nye telefonen egne data fra før, lastes de ned som backup før husstandens data hentes.</p>
+          <button type="button" class="btn sm" id="btnGoSync">Åpne synk</button>
+        </details>
         <h3 class="settings-people-title">Personer</h3>
         <p class="hint compact">Samme liste som under <strong>Mer → Familie / Personer</strong>. Felles er ikke en person.</p>
         <div id="peopleManageList" class="people-manage"></div>
@@ -12553,8 +12576,82 @@ window.FAMILIE_BUDGET_SUPABASE = {
     };
   }
 
+  // ——— 3-veis fletting (per post) ———
+  // base = sist synkede versjon, local = denne enheten, remote = skyen nå.
+  // Endringer fra begge sider beholdes. Samme post endret begge steder → lokal vinner.
+  function isPlainObj(x) { return x !== null && typeof x === "object" && !Array.isArray(x); }
+  function jeq(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+  function isIdArray(a) {
+    return Array.isArray(a) && a.length > 0 && a.every(function (x) { return isPlainObj(x) && x.id != null; });
+  }
+  function mergeIdArrays(b, l, r) {
+    b = Array.isArray(b) ? b : []; l = Array.isArray(l) ? l : []; r = Array.isArray(r) ? r : [];
+    var bm = {}, lm = {}, rm = {};
+    b.forEach(function (x) { if (x && x.id != null) bm[x.id] = x; });
+    l.forEach(function (x) { if (x && x.id != null) lm[x.id] = x; });
+    r.forEach(function (x) { if (x && x.id != null) rm[x.id] = x; });
+    var order = [], seen = {};
+    r.concat(l).forEach(function (x) { if (x && x.id != null && !seen[x.id]) { seen[x.id] = 1; order.push(x.id); } });
+    var out = [];
+    order.forEach(function (id) {
+      var inB = id in bm, inL = id in lm, inR = id in rm;
+      if (inL && inR) { out.push(merge3(bm[id], lm[id], rm[id])); return; }
+      if (inL && !inR) {
+        // slettet i skyen? bare slett hvis lokal ikke er endret
+        if (inB && jeq(bm[id], lm[id])) return;
+        out.push(lm[id]); return;
+      }
+      if (inR && !inL) {
+        if (inB && jeq(bm[id], rm[id])) return; // slettet lokalt
+        out.push(rm[id]);
+      }
+    });
+    return out;
+  }
+  function merge3(b, l, r) {
+    if (jeq(l, r)) return l;
+    if (b !== undefined && jeq(l, b)) return r;
+    if (b !== undefined && jeq(r, b)) return l;
+    if (isPlainObj(l) && isPlainObj(r)) {
+      var bb = isPlainObj(b) ? b : {};
+      var out = {};
+      var keys = {};
+      Object.keys(l).concat(Object.keys(r)).forEach(function (k) { keys[k] = 1; });
+      Object.keys(keys).forEach(function (k) {
+        var lv = l[k], rv = r[k], bv = bb[k];
+        var inL = Object.prototype.hasOwnProperty.call(l, k), inR = Object.prototype.hasOwnProperty.call(r, k);
+        var v;
+        if (inL && inR) v = merge3(bv, lv, rv);
+        else if (inL) v = (bv !== undefined && jeq(bv, lv)) ? undefined : lv;
+        else v = (bv !== undefined && jeq(bv, rv)) ? undefined : rv;
+        if (v !== undefined) out[k] = v;
+      });
+      return out;
+    }
+    if ((isIdArray(l) || isIdArray(r) || isIdArray(b)) && Array.isArray(l) && Array.isArray(r)) {
+      return mergeIdArrays(b, l, r);
+    }
+    return l; // ekte konflikt på en enkeltverdi → denne enheten vinner
+  }
+  /** Flett hele budsjett-staten. Arkiv flettes med eksisterende arkiv-logikk. */
+  function mergeStates(base, local, remote) {
+    if (!isPlainObj(remote)) return local;
+    if (!isPlainObj(local)) return remote;
+    var b = isPlainObj(base) ? base : {};
+    var L = Object.assign({}, local), R = Object.assign({}, remote), B = Object.assign({}, b);
+    delete L.archives; delete R.archives; delete B.archives;
+    // view/ui er per enhet
+    delete B.view; var view = L.view; delete L.view; delete R.view;
+    var out = merge3(B, L, R);
+    if (view !== undefined) out.view = view;
+    out.archives = mergeArchivesPreservingMonths(local.archives || [], remote.archives || []);
+    return out;
+  }
+
   return {
     parseTs: parseTs,
+    merge3: merge3,
+    mergeStates: mergeStates,
     isoNow: isoNow,
     generateInviteCode: generateInviteCode,
     hasMeaningfulLocalData: hasMeaningfulLocalData,
@@ -12630,8 +12727,47 @@ window.FAMILIE_BUDGET_SUPABASE = {
       pendingPush: false,
       lastError: null,
       keepLocalOnce: false,
-      lastPushedFingerprint: null
+      lastPushedFingerprint: null,
+      pendingJoinCode: null
     };
+  }
+
+  var BASE_KEY = "familie-budsjett-sync-base-v1";
+  function loadBase() {
+    try { var raw = localStorage.getItem(BASE_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+  }
+  function saveBase(st) {
+    try {
+      var copy = JSON.parse(JSON.stringify(st || {}));
+      delete copy.archives; // arkiv flettes separat – sparer plass
+      localStorage.setItem(BASE_KEY, JSON.stringify(copy));
+    } catch (e) { /* full lagring: fletting faller tilbake til «begge beholdes» */ }
+  }
+  function isLocalDirty(meta) {
+    var lc = Sync.parseTs(meta.localChangeAt), sc = Sync.parseTs(meta.lastSyncedCloudAt), lp = Sync.parseTs(meta.lastPullAt);
+    if (meta.pendingPush) return true;
+    return lc > 0 && lc > sc && lc > lp;
+  }
+  /** Flett sky + lokal per post og bruk resultatet lokalt. */
+  function mergeIntoLocal(remoteState) {
+    var local = host.getState();
+    var base = loadBase();
+    var merged;
+    if (!base && loadMeta().lastSyncedCloudAt) {
+      // Enhet som har synket før denne versjonen: slå sammen, husstanden vinner ved konflikt, ingen poster forsvinner
+      merged = Sync.mergeStates({}, remoteState, local);
+      merged.view = local.view;
+    } else if (!base) {
+      // Første synk på denne enheten: husstandens data brukes. Det som lå lokalt lastes ned som backup.
+      if (Sync.hasMeaningfulLocalData(local) && !Sync.payloadsRoughlyEqual(local, remoteState) && host.backupFn) {
+        try { host.backupFn(); } catch (e) { /* */ }
+      }
+      merged = remoteState;
+    } else {
+      merged = Sync.mergeStates(base, local, remoteState);
+    }
+    host.applyCloudState(merged);
+    return host.getState();
   }
 
   function saveMeta(meta) {
@@ -13031,6 +13167,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     meta.lastPushedFingerprint = Sync.payloadFingerprint(state);
     clearError(meta);
     saveMeta(meta);
+    saveBase(state);
     return row;
   }
 
@@ -13067,14 +13204,36 @@ window.FAMILIE_BUDGET_SUPABASE = {
     if (host && host.onMeta) host.onMeta(meta);
 
     try {
-      var now = Sync.isoNow();
-      var encoded = await encodeCloudPayload(state);
-      var rows = await api(
-        "PATCH",
-        "/rest/v1/households?id=eq." + encodeURIComponent(meta.householdId),
-        { payload: encoded, updated_at: now },
-        { headers: { Prefer: "return=representation" } }
-      );
+      var now, rows, tries = 0;
+      while (true) {
+        tries++;
+        // Sjekk om noen andre har lagret siden sist – flett i så fall først (ingen overskriving)
+        var head = await api("GET", "/rest/v1/households?select=updated_at&id=eq." + encodeURIComponent(meta.householdId) + "&limit=1");
+        var cloudAt = head && head[0] ? head[0].updated_at : null;
+        var m0 = loadMeta();
+        if (cloudAt && m0.lastSyncedCloudAt && cloudAt !== m0.lastSyncedCloudAt) {
+          var full = await api("GET", "/rest/v1/households?select=payload,updated_at&id=eq." + encodeURIComponent(meta.householdId) + "&limit=1");
+          if (full && full[0]) {
+            var remote = await decodeCloudPayload(full[0].payload);
+            if (remote && typeof remote === "object") state = mergeIntoLocal(remote);
+            cloudAt = full[0].updated_at;
+          }
+        }
+        now = Sync.isoNow();
+        var encoded = await encodeCloudPayload(state);
+        var filter = "/rest/v1/households?id=eq." + encodeURIComponent(meta.householdId) +
+          (cloudAt ? "&updated_at=eq." + encodeURIComponent(cloudAt) : "");
+        rows = await api("PATCH", filter, { payload: encoded, updated_at: now }, { headers: { Prefer: "return=representation" } });
+        if (Array.isArray(rows) && rows.length === 0 && cloudAt) {
+          // Noen lagret akkurat nå – prøv igjen med fletting
+          var mm = loadMeta(); mm.lastSyncedCloudAt = "1970-01-01T00:00:00Z"; saveMeta(mm);
+          if (tries < 4) continue;
+          throw new Error("Kunne ikke lagre – prøv «Synk nå»");
+        }
+        break;
+      }
+      fp = Sync.payloadFingerprint(state);
+      saveBase(state);
       var row = Array.isArray(rows) ? rows[0] : rows;
       meta = loadMeta();
       meta.lastSyncedCloudAt = (row && row.updated_at) || now;
@@ -13152,49 +13311,52 @@ window.FAMILIE_BUDGET_SUPABASE = {
         return { ok: true, action: "noop" };
       }
 
-      if (decision.action === "push" || (decision.action === "conflict" && meta.keepLocalOnce)) {
-        meta.keepLocalOnce = false;
-        saveMeta(meta);
+      var dirty = isLocalDirty(meta);
+      if (decision.action === "push") {
         var pushed = await pushNow();
         return { ok: !!pushed.ok, action: "push", error: pushed.error };
       }
 
       if (decision.action === "pull" || decision.action === "conflict") {
-        var localState = host.getState();
         var cloudPayload = await decodeCloudPayload(row.payload);
-        var differs = !Sync.payloadsRoughlyEqual(localState, cloudPayload);
-        var localHas = Sync.hasMeaningfulLocalData(localState);
-        var confirmFn = (host && host.confirmFn) || function (msg) { return window.confirm(msg); };
-
-        if (decision.action === "conflict" && localHas && differs && !opts.silent) {
-          var takeCloud = confirmFn(
-            "Husstanden har andre data enn denne enheten.\n\nOK = hent fra husstanden (anbefalt)\nAvbryt = behold lokal og last opp"
-          );
-          if (!takeCloud) {
-            meta.keepLocalOnce = true;
-            saveMeta(meta);
-            var pushedLocal = await pushNow();
-            return { ok: !!pushedLocal.ok, action: "keep-local", error: pushedLocal.error };
-          }
-        } else if (localHas && differs && decision.action === "pull" && !opts.silent && meta.lastSyncedCloudAt) {
-          var okPull = confirmFn(
-            "Fant nyere data i husstanden. Erstatte det som ligger lokalt på denne enheten?"
-          );
-          if (!okPull) return { ok: true, action: "skipped-pull" };
-        }
-
         if (cloudPayload && typeof cloudPayload === "object") {
-          host.applyCloudState(cloudPayload);
+          var merged = false;
+          if (dirty || decision.action === "conflict") {
+            // Begge har endret: flett per post (ingen data går tapt), last deretter opp
+            mergeIntoLocal(cloudPayload);
+            merged = true;
+          } else {
+            if (!loadBase() && !meta.lastSyncedCloudAt && host.backupFn) {
+              var lc = host.getState();
+              if (Sync.hasMeaningfulLocalData(lc) && !Sync.payloadsRoughlyEqual(lc, cloudPayload)) {
+                try { host.backupFn(); } catch (e) { /* */ }
+              }
+            }
+            host.applyCloudState(cloudPayload);
+          }
           meta = loadMeta();
           meta.lastSyncedCloudAt = row.updated_at;
           meta.lastPullAt = Sync.isoNow();
           meta.lastSyncAt = Sync.isoNow();
+          meta.keepLocalOnce = false;
+          clearError(meta);
+          if (merged) {
+            meta.pendingPush = true;
+            meta.localChangeAt = Sync.isoNow();
+            meta.lastPushedFingerprint = null;
+            saveMeta(meta);
+            saveBase(cloudPayload);
+            var p2 = await pushNow();
+            if (host.showToast) host.showToast("Flettet med husstanden");
+            if (host.onMeta) host.onMeta(loadMeta());
+            return { ok: !!p2.ok, action: "merge", error: p2.error };
+          }
           meta.localChangeAt = meta.lastPullAt;
           meta.pendingPush = false;
           meta.lastPushedFingerprint = Sync.payloadFingerprint(cloudPayload);
-          clearError(meta);
           saveMeta(meta);
-          if (host.showToast) host.showToast("Hentet fra husstanden");
+          saveBase(cloudPayload);
+          if (host.showToast && !opts.quiet) host.showToast("Hentet fra husstanden");
           if (host.onMeta) host.onMeta(meta);
           return { ok: true, action: "pull" };
         }
@@ -13226,6 +13388,11 @@ window.FAMILIE_BUDGET_SUPABASE = {
     await ensureProfile(user, meta.username);
 
     var row = await fetchMembershipHousehold();
+    if (!row && meta.pendingJoinCode) {
+      var jr = await joinHouseholdFlow(meta.pendingJoinCode);
+      if (host && host.onMeta) host.onMeta(loadMeta());
+      return { loggedIn: true, joined: true, join: jr };
+    }
     if (!row) {
       if (host && host.showToast) host.showToast("Oppretter husstand…");
       await createHouseholdWithLocal();
@@ -13254,16 +13421,9 @@ window.FAMILIE_BUDGET_SUPABASE = {
     var cloudPayload = await decodeCloudPayload(row.payload);
     var differs = !Sync.payloadsRoughlyEqual(localState, cloudPayload);
     var localHas = Sync.hasMeaningfulLocalData(localState);
-    if (localHas && differs) {
-      var confirmFn = (host && host.confirmFn) || function (msg) { return window.confirm(msg); };
-      var takeCloud = confirmFn(
-        "Du har lokal data som skiller seg fra husstanden.\n\nOK = hent husstandens data\nAvbryt = behold lokal (lastes opp til husstanden)"
-      );
-      if (!takeCloud) {
-        await pushNow();
-        if (host.showToast) host.showToast("Lokal data lastet opp");
-        return { ok: true, action: "pushed-local" };
-      }
+    if (localHas && differs && host && host.backupFn) {
+      // Husstandens data vinner ved innmelding; det som lå på denne enheten lastes ned som backup
+      try { host.backupFn(); } catch (e) { /* */ }
     }
     if (cloudPayload && typeof cloudPayload === "object") {
       host.applyCloudState(cloudPayload);
@@ -13273,8 +13433,10 @@ window.FAMILIE_BUDGET_SUPABASE = {
       meta.lastSyncAt = Sync.isoNow();
       meta.localChangeAt = meta.lastPullAt;
       meta.lastPushedFingerprint = Sync.payloadFingerprint(cloudPayload);
+      meta.pendingJoinCode = null;
       clearError(meta);
       saveMeta(meta);
+      saveBase(cloudPayload);
       if (host.showToast) host.showToast("Hentet fra husstanden");
     }
     if (host && host.onMeta) host.onMeta(loadMeta());
@@ -13331,6 +13493,8 @@ window.FAMILIE_BUDGET_SUPABASE = {
     getStatus: getStatus,
     pagesRedirectUrl: pagesRedirectUrl,
     afterAuthReady: afterAuthReady,
+    loadBase: loadBase,
+    saveBase: saveBase,
     normalizeUsername: normalizeUsername,
     usernameToEmail: usernameToEmail,
     AUTH_EMAIL_DOMAIN: AUTH_EMAIL_DOMAIN
@@ -14477,6 +14641,26 @@ window.FAMILIE_BUDGET_SUPABASE = {
     return '<div class="mo-bar mo-' + st + '" role="img" aria-label="' + pct + ' prosent brukt"><span style="width:' + pct + '%"></span></div>';
   }
 
+  const ME_KEY = "familie-budsjett-me";
+  function deviceMe() {
+    const id = ovLocalGet(ME_KEY);
+    return activePeopleList().some(function (p) { return p.id === id; }) ? id : null;
+  }
+  function setDeviceMe(id) {
+    ovLocalSet(ME_KEY, id);
+    ovLocalSet(OV_SCOPE_KEY, id);
+  }
+  function renderMeBlock() {
+    const people = activePeopleList();
+    const blk = $("#meBlock"), sel = $("#meSelect");
+    if (!blk || !sel) return;
+    blk.hidden = people.length < 2;
+    const me = deviceMe();
+    sel.innerHTML = '<option value="">Velg…</option>' + people.map(function (p) {
+      return '<option value="' + escapeAttr(p.id) + '"' + (p.id === me ? " selected" : "") + ">" + escapeHtml(p.name) + "</option>";
+    }).join("");
+  }
+
   function applySoloClass() {
     const solo = activePeopleList().length === 1;
     document.body.classList.toggle("solo", solo);
@@ -14498,6 +14682,13 @@ window.FAMILIE_BUDGET_SUPABASE = {
     const people = activePeopleList();
     const scope = overviewScope();
     const mName = (MONTHS[state.view.month] || "").toLowerCase();
+    renderMeBlock();
+    let meAsk = "";
+    if (people.length > 1 && !deviceMe() && ovLocalGet(ME_KEY) !== "-") {
+      meAsk = '<div class="me-ask"><span>Hvem er du på denne enheten?</span>' + people.map(function (p) {
+        return '<button type="button" class="btn sm" data-set-me="' + escapeAttr(p.id) + '">Dette er meg: ' + escapeHtml(p.name) + "</button>";
+      }).join("") + '<button type="button" class="btn sm ghost" data-set-me="">Ikke nå</button></div>';
+    }
     const o = Calc.monthOverview(m, scope, state.people, state.categories, state.view.month);
     function cls(n) { return n < -0.5 ? "neg" : "pos"; }
     const scopeName = scope === "alle" ? "Hele husstanden" : scope === "felles" ? "Felles" :
@@ -14613,13 +14804,20 @@ window.FAMILIE_BUDGET_SUPABASE = {
       "<li><b>Ved månedsslutt</b> = inntekt − alt som er planlagt (eller brukt, hvis det er mer).</li>" +
       "<li>Grønn = innenfor, gul = snart brukt opp (80 %), rød = over planen.</li></ul></details>";
 
-    host.innerHTML = seg +
+    host.innerHTML = meAsk + seg +
       '<h2 class="mo-title">' + escapeHtml(scopeName) + " – " + escapeHtml(mName) + " " + state.view.year + "</h2>" +
       '<div class="mo-grid">' + keys + "</div>" + pv + tipsHtml + cats + trend + help;
 
     if (!host._ovBound) {
       host._ovBound = true;
       host.addEventListener("click", function (e) {
+        const me = e.target.closest("[data-set-me]");
+        if (me) {
+          const id = me.getAttribute("data-set-me");
+          if (id) { setDeviceMe(id); showToast("Lagret på denne enheten"); } else ovLocalSet(ME_KEY, "-");
+          renderMonthOverview();
+          return;
+        }
         const b = e.target.closest("[data-ov-scope]");
         if (!b) return;
         ovLocalSet(OV_SCOPE_KEY, b.getAttribute("data-ov-scope"));
@@ -22462,6 +22660,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
 
     // Settings export/import + prominent backup
     $("#btnExportJson").addEventListener("click", exportJsonBackup);
+    window.__fbBackup = exportJsonBackup;
     const btnBackupTop = $("#btnBackupTop");
     if (btnBackupTop) btnBackupTop.addEventListener("click", exportJsonBackup);
     const btnBackupSettings = $("#btnBackupSettings");
@@ -22538,6 +22737,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
       let html = "";
       if (st === 0) {
         html = '<p>Denne appen hjelper deg å se hva du tjener, hva du skulle bruke og hva du faktisk bruker. Det tar 2 minutter å komme i gang.</p>' +
+          '<button type="button" class="btn onb-join" data-wz-act="join">Jeg skal bli med i en husstand som finnes (logg inn)</button>' +
           '<label class="field"><span>Hva heter du?</span>' + wzInput("name", wz.name, 'type="text" maxlength="40" placeholder="Fornavn" autocomplete="given-name"') + "</label>";
       } else if (st === 1) {
         html = '<label class="onb-choice"><input type="radio" name="wzSolo" data-wz="solo" value="1"' + (wz.solo ? " checked" : "") + ' /> <span><strong>Bare meg</strong><br><small>Du styrer din egen økonomi. Delte regninger kan få «jeg betaler X %».</small></span></label>' +
@@ -22613,6 +22813,16 @@ window.FAMILIE_BUDGET_SUPABASE = {
         if (!act) return;
         wzRead();
         const k = act.getAttribute("data-wz-act");
+        if (k === "join") {
+          needsOnboarding = false;
+          closeDlg("#dlgOnboard");
+          applyMainTab("mer");
+          if (typeof applySyncAuthMode === "function") applySyncAuthMode("login");
+          const el = $("#sectionMerSync");
+          if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "start" });
+          showToast("Logg inn med husstandens brukernavn og passord");
+          return;
+        }
         if (k === "addPerson") wz.others.push("");
         if (k === "addFixed") wz.fixed.push({ on: true, name: "", amount: "", pct: 100 });
         if (k === "addBudget") wz.budgets.push({ on: true, name: "", amount: "" });
@@ -22621,6 +22831,18 @@ window.FAMILIE_BUDGET_SUPABASE = {
       });
       $("#onbBody").addEventListener("change", function (e) {
         if (e.target && e.target.name === "wzSolo") { wzRead(); wzRender(); }
+      });
+      const meSel = $("#meSelect");
+      if (meSel) meSel.addEventListener("change", function () {
+        if (meSel.value) setDeviceMe(meSel.value); else ovLocalSet(ME_KEY, "-");
+        render();
+      });
+      const goSync = $("#btnGoSync");
+      if (goSync) goSync.addEventListener("click", function () {
+        closeDlg("#dlgSettings");
+        applyMainTab("mer");
+        const el = $("#sectionMerSync");
+        if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "start" });
       });
       const rerun = $("#btnRerunWizard");
       if (rerun) rerun.addEventListener("click", function () {
@@ -22716,7 +22938,8 @@ window.FAMILIE_BUDGET_SUPABASE = {
       applyCloudState: applyCloudState,
       showToast: showToast,
       onMeta: function () { renderSyncUI(); },
-      confirmFn: function (msg) { return window.confirm(msg); }
+      confirmFn: function (msg) { return window.confirm(msg); },
+      backupFn: function () { if (!needsOnboarding && window.__fbBackup) window.__fbBackup(); }
     });
   }
   if (state.settings && state.settings.pendingBalancesMigrationToast) {
