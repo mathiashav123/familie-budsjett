@@ -4811,3 +4811,10 @@ button.cat-group-header {
 .ov-simple #forwardPanelCard, .ov-simple .inn-ut-card, .ov-simple #personGrid, .ov-simple #chartTitle, .ov-simple section[aria-labelledby="chartTitle"] { display: none !important; }
 @media (prefers-color-scheme: dark) { .mo-seg-btn.active { background: #2b3445; color: #9cc0ff; } }
 @media (max-width: 640px) { .mo-grid { grid-template-columns: 1fr 1fr; } .mo-big { font-size: 1.2rem; } .mo-seg-btn { padding: 10px 4px; } }
+
+/* Bare meg (solo) */
+body.solo #innUtTabs, body.solo #sparingTabs, body.solo #btnMerSplitWizard, body.solo #personGrid, body.solo .people-card-felles { display: none !important; }
+.mode-pick { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
+.mode-pick .btn { flex: 1 1 140px; }
+.solo-share .fordeling-name { font-weight: 700; }
+#dlgOnboard .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }

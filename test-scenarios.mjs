@@ -173,5 +173,69 @@ if (fs.existsSync(EXP)) {
   ok(html.includes("monthOverview: monthOverview") && html.includes("renderMonthOverview") && html.includes("mo-seg-btn"), "mobile build up to date");
   ok(!/<script src="app\.js"><\/script>/.test(html), "mobile build is single-file");
 }
+
+// 12. SOLO: starter state
+{
+  const s = C.soloStarterState("Ola", 35000, new Date(2026, 10, 5));
+  ok(s.people.length === 1 && s.people[0].name === "Ola" && C.isSoloMode(s.people), "solo starter: one person");
+  ok(s.categories.length === 7 && s.categories.every(c => c.owner === s.people[0].id), "solo starter: 7 own categories");
+  ok(["Bolig","Mat","Transport","Abonnement","Fastfood","Sparing","Div"].every(n => s.categories.some(c => c.name === n)), "solo starter: default names");
+  const m = s.months["2026-11"];
+  ok(m && C.plannedIncomeFor(m, s.people[0].id, "lønn") === 35000, "solo starter: salary planned");
+  ok(Object.values(s.months).every(x => !(x.expenses || []).length), "solo starter: empty data");
+  const o = C.monthOverview(m, s.people[0].id, s.people, s.categories, 10);
+  ok(o.plannedIncome === 35000 && o.usedOut === 0, "solo overview works on clean start");
+}
+// 13. SOLO: «Jeg betaler X %» on shared post
+{
+  const pp = [{ id: "p1", name: "A", archived: false }];
+  const c1 = [{ id: "hus", name: "Husleie", type: "fast", owner: "felles" }, { id: "st", name: "Strøm", type: "variabel", owner: "felles" }];
+  const m = { budgets: { hus: { felles: 12000 }, st: { felles: 2000 } }, plannedIncome: { p1: { lønn: 30000 } },
+    incomes: [], expenses: [{ id: "e", owner: "felles", categoryId: "st", amount: 1500, date: "2026-11-02" }], savings: [], budgetLines: {} };
+  let o = C.monthOverview(m, "p1", pp, c1, 10);
+  ok(near(o.rows.find(r => r.id === "hus").planned, 12000), "solo default 100 %");
+  C.setSoloShare(c1[0], "p1", 50); C.setSoloShare(c1[1], "p1", 40);
+  o = C.monthOverview(m, "p1", pp, c1, 10);
+  const hus = o.rows.find(r => r.id === "hus"), st = o.rows.find(r => r.id === "st");
+  ok(near(hus.planned, 6000) && hus.sharePct === 50 && near(hus.fullPlanned, 12000), "solo 50 % of husleie, full shown");
+  ok(near(st.used, 600) && near(st.fullUsed, 1500), "solo 40 % of logged strøm");
+  ok(C.fellesSharePercent(c1[0], "p1", pp) === 50, "solo share percent");
+}
+// 14. Household -> solo -> household roundtrip loses nothing (incl. 70/30 split)
+{
+  const d = JSON.parse(fs.existsSync(EXP) ? fs.readFileSync(EXP, "utf8") : "null");
+  if (d) {
+    const st = C.migrateState(d);
+    const before = JSON.stringify({ months: st.months, plannedSpends: st.plannedSpends });
+    const netSplit = JSON.stringify(st.categories.find(c => c.name === "Internett").split);
+    const p1Oct = C.monthOverview(st.months["2026-10"], "p1", st.people, st.categories, 9);
+    ok(!C.isSoloMode(st.people), "his export defaults to household (2 persons)");
+    const hidden = C.switchToSolo(st, "p1");
+    ok(hidden.length === 1 && hidden[0] === "p2" && C.isSoloMode(st.people), "switch to solo hides Andrea");
+    const solo = C.monthOverview(st.months["2026-10"], "p1", st.people, st.categories, 9);
+    ok(near(solo.usedOut, p1Oct.usedOut) && near(solo.plannedOut, p1Oct.plannedOut), "solo keeps his shares (50 % / 70 %) – same numbers");
+    C.ensureCategorySplits(st.categories, st.people);
+    C.setSoloShare(st.categories.find(c => c.name === "Internett"), "p1", 70);
+    const mig = C.migrateState(JSON.parse(JSON.stringify(st)));
+    ok(mig.people.find(p => p.id === "p2").archived === true, "solo survives export/import");
+    const restored = C.restorePeople(mig);
+    C.ensureCategorySplits(mig.categories, mig.people);
+    ok(restored.length === 1 && !C.isSoloMode(mig.people), "restore Andrea -> household");
+    ok(JSON.stringify({ months: mig.months, plannedSpends: mig.plannedSpends }) === before, "remove->restore: months/planned identical");
+    ok(JSON.stringify(mig.categories.find(c => c.name === "Internett").split) === netSplit, "70/30 split preserved after roundtrip");
+    const back = C.monthOverview(mig.months["2026-10"], "p1", mig.people, mig.categories, 9);
+    ok(near(back.usedOut, p1Oct.usedOut) && near(back.plannedOut, p1Oct.plannedOut), "household numbers identical after roundtrip");
+    const a2 = C.monthOverview(mig.months["2026-10"], "p2", mig.people, mig.categories, 9);
+    const a1 = C.monthOverview(C.migrateState(d).months["2026-10"], "p2", C.migrateState(d).people, C.migrateState(d).categories, 9);
+    ok(near(a2.plannedOut, a1.plannedOut), "Andrea's numbers identical after restore");
+  }
+}
+// 15. Archived person data not reassigned/deleted by ensureCategorySplits
+{
+  const pp = [{ id: "p1", name: "A", archived: false }, { id: "p2", name: "B", archived: true }, { id: "p3", name: "C", archived: false }];
+  const cat = { id: "x", owner: "felles", split: { p1: 40, p2: 20, p3: 40 } };
+  C.ensureCategorySplits([cat], pp);
+  ok(cat.split.p2 === 20, "archived person's split key kept");
+}
 console.log("\n=== Scenarios: " + passed + " passed, " + failed + " failed ===");
 process.exit(failed ? 1 : 0);

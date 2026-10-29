@@ -286,6 +286,7 @@
   }
 
   // ——— State ———
+  let needsOnboarding = false;
   let state = load();
   let pickYear = state.view.year;
   let toastTimer = null;
@@ -301,7 +302,7 @@
   function load() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return DEFAULT_STATE();
+      if (!raw) { needsOnboarding = true; return DEFAULT_STATE(); }
       const parsed = JSON.parse(raw);
       const migrated = Calc.migrateState(parsed);
       if (!Array.isArray(migrated.savingsGoals)) migrated.savingsGoals = [];
@@ -1146,6 +1147,7 @@
       s = v && v !== "samlet" ? v : "alle";
     }
     if (s !== "alle" && s !== "felles" && !people.some(function (p) { return p.id === s; })) s = "alle";
+    if (people.length === 1) s = people[0].id;
     return s;
   }
 
@@ -1157,7 +1159,21 @@
     return '<div class="mo-bar mo-' + st + '" role="img" aria-label="' + pct + ' prosent brukt"><span style="width:' + pct + '%"></span></div>';
   }
 
+  function applySoloClass() {
+    const solo = activePeopleList().length === 1;
+    document.body.classList.toggle("solo", solo);
+    // Personlig Excel-mal: bare for husstanden den ble laget for
+    const excelOwn = (state.people || []).some(function (p) { return /^mathias$/i.test(String(p.name || "").trim()); });
+    ["#btnFillExcel", "#merExcelHint"].forEach(function (sel) { const el = $(sel); if (el) el.hidden = !excelOwn; });
+    const st = $("#modeStatus");
+    if (st) st.textContent = solo ? "Nå: Bare meg" : "Nå: Husstand (" + activePeopleList().length + " personer)";
+    $$("[data-mode-pick]").forEach(function (b) {
+      b.classList.toggle("primary", (b.getAttribute("data-mode-pick") === "solo") === solo);
+    });
+  }
+
   function renderMonthOverview() {
+    applySoloClass();
     const host = $("#monthOverview");
     if (!host || typeof Calc.monthOverview !== "function") return;
     const m = getMonth();
@@ -1169,7 +1185,7 @@
     const scopeName = scope === "alle" ? "Hele husstanden" : scope === "felles" ? "Felles" :
       ((people.filter(function (p) { return p.id === scope; })[0] || {}).name || "");
 
-    const seg = '<div class="mo-seg" role="tablist" aria-label="Velg hvem">' +
+    const seg = people.length === 1 ? "" : '<div class="mo-seg" role="tablist" aria-label="Velg hvem">' +
       people.map(function (p) { return { id: p.id, name: p.name }; })
         .concat([{ id: "felles", name: "Felles" }, { id: "alle", name: "Alle" }])
         .map(function (b) {
@@ -1218,7 +1234,7 @@
       const st = Calc.overviewRowStatus(r);
       let sub = "";
       if (scope === "alle" && r.ownerName) sub += '<span class="mo-tag">' + escapeHtml(r.ownerName) + "</span>";
-      else if (r.shared && scope !== "felles") sub += '<span class="mo-tag">felles – din del</span>';
+      else if (r.shared && scope !== "felles") sub += '<span class="mo-tag">' + (r.sharePct != null && r.fullPlanned != null ? "du betaler " + Math.round(r.sharePct) + " % av " + formatNOK(Math.max(r.fullPlanned, r.fullUsed || 0)) : "felles – din del") + "</span>";
       if (scope === "felles" && r.shares) {
         sub += r.shares.map(function (sh) { return '<span class="mo-tag">' + escapeHtml(sh.name) + " " + Math.round(sh.pct) + " %: " + formatNOK(sh.used) + "</span>"; }).join("");
       }
@@ -1234,7 +1250,7 @@
     });
     const fastRows = o.rows.filter(function (r) { return r.fast; }).sort(function (a, b) { return b.planned - a.planned; });
     let fastSum = 0; fastRows.forEach(function (r) { fastSum += Math.max(r.planned, r.used); });
-    const cats = '<div class="mo-h3">Kjøp per kategori</div>' + (varRows.map(rowHtml).join("") || '<p class="hint compact">Ingen kategorier.</p>') +
+    const cats = '<div class="mo-h3">Kjøp per kategori</div>' + (varRows.map(rowHtml).join("") || '<p class="hint compact">Ingen beløp ennå – sett hva du vil bruke per kategori under <strong>Plan</strong>.</p>') +
       (fastRows.length ? '<details class="mo-fast"><summary>Faste utgifter: ' + formatNOK(fastSum) + " (" + fastRows.length + " poster)</summary>" + fastRows.map(rowHtml).join("") + "</details>" : "");
 
     // Trend: last 6 months, variable categories
@@ -2442,7 +2458,7 @@
           actions =
             '<button type="button" class="btn people-action restore" data-people-archive="' +
             escapeAttr(person.id) +
-            '">Gjenopprett</button>' +
+            '">Legg tilbake</button>' +
             (!hasData
               ? '<button type="button" class="btn danger ghost people-action" data-people-delete="' +
                 escapeAttr(person.id) +
@@ -2469,7 +2485,7 @@
           '" maxlength="40" autocomplete="off" aria-label="Navn på person" /></label>' +
           (archived ? '<span class="tag people-tag">Arkivert</span>' : "") +
           (hasData && !archived
-            ? '<p class="people-card-hint">Har registrerte tall – fjerning arkiverer, flytter utgifter til Felles; inntekter blir i historikken.</p>'
+            ? '<p class="people-card-hint">Har registrerte tall – «Fjern» skjuler bare personen. Ingenting slettes, og «Legg tilbake» henter alt tilbake.</p>'
             : "") +
           '<div class="people-card-actions">' +
           actions +
@@ -4073,7 +4089,7 @@
         empty.innerHTML =
           '<span class="empty-icon" aria-hidden="true">✨</span>' +
           "<p><strong>Kom i gang med kategorier</strong></p>" +
-          "<p class=\"hint compact\">Trykk forslag under Mathias, Andrea eller Felles – eller «+ Ny kategori».</p>";
+          "<p class=\"hint compact\">Trykk et forslag – eller «+ Ny kategori».</p>";
       }
     }
 
@@ -4715,6 +4731,16 @@
 
   function renderFordelingBlock(cat, plannedFelles) {
     const people = activePeopleList();
+    if (people.length === 1) {
+      const me = people[0];
+      const pct = Calc.fellesSharePercent(cat, me.id, state.people);
+      return '<div class="fordeling-block solo-share" data-fordeling-cat="' + escapeAttr(cat.id) + '">' +
+        '<div class="fordeling-person"><label class="fordeling-name" for="split-' + escapeAttr(cat.id) + '">Jeg betaler</label>' +
+        '<input type="number" inputmode="decimal" min="0" max="100" step="1" class="fordeling-pct" data-split-cat="' + escapeAttr(cat.id) +
+        '" data-split-person="' + escapeAttr(me.id) + '" data-solo-share="1" id="split-' + escapeAttr(cat.id) + '" value="' + escapeAttr(String(pct)) + '" aria-label="Min andel i prosent" />' +
+        '<span class="unit">%</span><span class="fordeling-kr">' + formatNOK((plannedFelles * pct) / 100) + " av " + formatNOK(plannedFelles) + "</span></div>" +
+        '<p class="hint compact">Delt regning (f.eks. husleie eller strøm med noen utenfor appen). Skriv full sum som beløp – appen regner bare med din andel.</p></div>';
+    }
     const split = Calc.getCategorySplit(cat, state.people);
     const sum = Calc.splitSum(split, state.people);
     const sumOk = Math.abs(sum - 100) < 0.1;
@@ -8118,7 +8144,7 @@
           !confirm(
             "Fylle forventet inntekt og budsjett fra Excel for alle 12 måneder i " +
               state.view.year +
-              "?\n\nFelles: Lån/Strøm/Internett/Forsikring (summert). Personlige linjer under Mathias/Andrea. Mobil under Mathias.\n\nEksisterende plan-tall overskrives. Kjøp, inntekter og saldo endres ikke."
+              "?\n\nFelles: Lån/Strøm/Internett/Forsikring (summert). Personlige linjer under person 1/2.\n\nEksisterende plan-tall overskrives. Kjøp, inntekter og saldo endres ikke."
           )
         ) {
           return;
@@ -8408,6 +8434,14 @@
       const cat = catById(catId);
       if (!cat) return;
       const inputs = $$('#categoryList [data-split-cat="' + catId + '"]');
+      if (inputs.length === 1 && inputs[0].getAttribute("data-solo-share")) {
+        let n = Number(String(inputs[0].value || "").trim().replace(",", "."));
+        if (!Number.isFinite(n)) n = 100;
+        Calc.setSoloShare(cat, inputs[0].getAttribute("data-split-person"), n);
+        save();
+        render();
+        return;
+      }
       const split = {};
       inputs.forEach(function (inp) {
         const pid = inp.getAttribute("data-split-person");
@@ -8444,7 +8478,7 @@
     }
     $("#categoryList").addEventListener("input", function (e) {
       const inp = e.target.closest("[data-split-cat]");
-      if (!inp) return;
+      if (!inp || inp.getAttribute("data-solo-share")) return;
       updateFordelingSumHint(inp.getAttribute("data-split-cat"));
     });
     $("#categoryList").addEventListener("change", function (e) {
@@ -9023,26 +9057,14 @@
           }
           const hasData = Calc.personHasData(state, id);
           if (hasData) {
-            if (
-              !confirm(
-                "Fjerne " +
-                  person.name +
-                  "?\n\nPersonen arkiveres (skjules). Utgifter og kategorier flyttes til Felles. Inntekter blir stående på personen i historikken (synlig i Logg-filter)."
-              )
-            )
-              return;
-            Calc.reassignPersonData(state, id, "felles");
+            if (!confirm("Fjerne " + person.name + "?\n\nPersonen skjules. Ingen tall slettes – alt kommer tilbake med «Legg tilbake».")) return;
             person.archived = true;
             if (state.settings.innUtView === id) state.settings.innUtView = "samlet";
             if (state.settings.sparingView === id) state.settings.sparingView = "samlet";
-            Calc.ensureCategorySplits(state.categories, state.people);
             save();
             renderPeopleManage();
             render();
-            showToast(
-              person.name +
-                " arkivert – utgifter til Felles. Inntekter synes fortsatt i Logg."
-            );
+            showToast(person.name + " skjult" + (activePeopleList().length === 1 ? " – «Bare meg» er nå på" : ""));
           } else {
             if (!confirm("Fjerne " + person.name + " permanent? Ingen registrerte tall.")) return;
             state.people = state.people.filter(function (x) { return x.id !== id; });
@@ -9072,7 +9094,6 @@
                 )
               )
                 return;
-              Calc.reassignPersonData(state, id, "felles");
             } else if (!confirm("Arkivere " + person.name + "?")) {
               return;
             }
@@ -9082,7 +9103,7 @@
             showToast(person.name + " arkivert");
           } else {
             person.archived = false;
-            showToast(person.name + " gjenopprettet");
+            showToast(person.name + " er lagt tilbake – husstand-modus");
           }
           Calc.ensureCategorySplits(state.categories, state.people);
           save();
@@ -9131,6 +9152,59 @@
       exportCsv();
       showToast("CSV eksportert");
     });
+    // ——— Bare meg / Husstand ———
+    $$("[data-mode-pick]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        const want = b.getAttribute("data-mode-pick");
+        const act = activePeopleList();
+        if (want === "solo") {
+          if (act.length <= 1) { showToast("«Bare meg» er allerede på"); return; }
+          const view = state.settings.innUtView;
+          const keep = act.some(function (p) { return p.id === view; }) ? view : act[0].id;
+          const others = act.filter(function (p) { return p.id !== keep; }).map(function (p) { return p.name; });
+          if (!confirm("Bruke appen som «Bare meg» (" + nameOf(keep) + ")?\n\n" + others.join(", ") + " skjules. Ingen tall slettes – «Husstand» legger dem tilbake.")) return;
+          Calc.switchToSolo(state, keep);
+          try { localStorage.setItem("familie-budsjett-ov-scope", keep); } catch (e) { /* */ }
+          save(); renderPeopleManage(); render();
+          showToast("«Bare meg» er på");
+        } else {
+          const restored = Calc.restorePeople(state);
+          if (!restored.length) {
+            const name = (prompt("Navn på personen du vil legge til:") || "").trim();
+            if (!name) return;
+            state.people.push({ id: "p" + Date.now().toString(36), name: name.slice(0, 40), archived: false });
+          }
+          Calc.ensureCategorySplits(state.categories, state.people);
+          save(); renderPeopleManage(); render();
+          showToast("Husstand-modus: " + activePeopleList().map(function (p) { return p.name; }).join(" og "));
+        }
+      });
+    });
+
+    // ——— Første oppstart ———
+    if (needsOnboarding && $("#dlgOnboard")) {
+      const s1 = $("#onbStep1"), s2 = $("#onbStep2");
+      $$("[data-onb]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          if (b.getAttribute("data-onb") === "solo") { s1.hidden = true; s2.hidden = false; $("#onbName").focus(); }
+          else { closeDlg("#dlgOnboard"); needsOnboarding = false; showToast("Skriv inn navn under Innstillinger → Personer"); }
+        });
+      });
+      $("#onbBack").addEventListener("click", function () { s1.hidden = false; s2.hidden = true; });
+      $("#onbStart").addEventListener("click", function () {
+        const name = ($("#onbName").value || "").trim();
+        if (!name) { $("#onbName").focus(); showToast("Skriv navnet ditt"); return; }
+        state = Calc.soloStarterState(name, Number($("#onbSalary").value) || 0, new Date());
+        ensureCategoryOrders(state);
+        needsOnboarding = false;
+        save();
+        closeDlg("#dlgOnboard");
+        render();
+        showToast("Klar! Sett beløp per kategori under Plan.");
+      });
+      setTimeout(function () { if (needsOnboarding) openDlg("#dlgOnboard"); }, 50);
+    }
+
     $("#importFile").addEventListener("change", function (e) {
       const file = e.target.files && e.target.files[0];
       if (!file) return;
@@ -9222,7 +9296,7 @@
     showToast(
       "Gammel saldo lagt på " +
         ((state.people && state.people[0] && state.people[0].name) || "første person") +
-        " (bruk). Andrea/andre startet på 0."
+        " (bruk). Andre startet på 0."
     );
   }
 })();
