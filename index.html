@@ -1050,25 +1050,16 @@
     </div>
   </dialog>
 
-  <dialog id="dlgOnboard" class="modal">
+  <dialog id="dlgOnboard" class="modal onb-modal">
     <div class="modal-card">
-      <header class="modal-head"><h2>Velkommen til Familiebudsjett</h2></header>
-      <div class="modal-body stack">
-        <div id="onbStep1">
-          <p><strong>Hvem skal bruke appen?</strong></p>
-          <div class="mode-pick">
-            <button type="button" class="btn primary" data-onb="solo">Bare meg</button>
-            <button type="button" class="btn" data-onb="household">Husstand (flere personer)</button>
-          </div>
-          <p class="hint compact">Du kan bytte senere under Innstillinger.</p>
-        </div>
-        <div id="onbStep2" hidden>
-          <label class="field"><span>Navnet ditt</span><input type="text" id="onbName" class="input lg" maxlength="40" placeholder="F.eks. Ola" autocomplete="given-name" /></label>
-          <label class="field"><span>Lønn utbetalt per måned (netto, kr)</span><input type="number" id="onbSalary" class="input lg" inputmode="numeric" min="0" placeholder="F.eks. 35000" /></label>
-          <p class="hint compact">Du får disse kategoriene, som du kan endre: Bolig, Mat, Transport, Abonnement, Fastfood, Sparing, Div. Sett beløp per kategori under <strong>Plan</strong>.</p>
-          <div class="mode-pick"><button type="button" class="btn ghost" id="onbBack">Tilbake</button><button type="button" class="btn primary" id="onbStart">Start</button></div>
-        </div>
-      </div>
+      <header class="modal-head"><h2 id="onbTitle">Velkommen</h2><span class="onb-step" id="onbStepNo"></span></header>
+      <div class="onb-progress"><span id="onbProgress"></span></div>
+      <div class="modal-body stack" id="onbBody"></div>
+      <footer class="onb-foot">
+        <button type="button" class="btn ghost" id="onbBack">Tilbake</button>
+        <button type="button" class="btn ghost" id="onbSkip">Hopp over</button>
+        <button type="button" class="btn primary" id="onbNext">Neste</button>
+      </footer>
     </div>
   </dialog>
   <dialog id="dlgSettings" class="modal">
@@ -1106,6 +1097,7 @@
           <button type="button" class="btn" data-mode-pick="solo">Bare meg</button>
           <button type="button" class="btn" data-mode-pick="household">Husstand (flere personer)</button>
         </div>
+        <button type="button" class="btn sm" id="btnRerunWizard">Kjør Velkommen-veiviseren på nytt</button>
         <p class="hint compact"><span id="modeStatus"></span>. «Bare meg» skjuler de andre personene – ingen tall slettes, og «Husstand» legger dem tilbake. Delte regninger kan fortsatt ha «Jeg betaler X %».</p>
         <h3 class="settings-people-title">Personer</h3>
         <p class="hint compact">Samme liste som under <strong>Mer → Familie / Personer</strong>. Felles er ikke en person.</p>
