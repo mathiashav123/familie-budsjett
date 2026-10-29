@@ -4835,6 +4835,28 @@ body.solo #innUtTabs, body.solo #sparingTabs, body.solo #btnMerSplitWizard, body
 .solo-share .fordeling-name { font-weight: 700; }
 #dlgOnboard .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
 
+/* Velkommen-veiviser */
+.onb-modal .modal-card { max-width: 520px; }
+.onb-step { font-size: .8rem; opacity: .7; }
+.onb-progress { height: 4px; background: rgba(127,127,127,.18); margin: 0 16px; border-radius: 4px; overflow: hidden; }
+.onb-progress span { display: block; height: 100%; background: #2f6fdb; transition: width .2s; }
+.onb-foot { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid rgba(127,127,127,.15); }
+.onb-foot #onbNext { margin-left: auto; min-width: 110px; }
+.onb-choice { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border: 1px solid rgba(127,127,127,.25); border-radius: 12px; margin-bottom: 8px; cursor: pointer; }
+.onb-choice input { margin-top: 4px; transform: scale(1.3); }
+.onb-row { display: grid; grid-template-columns: 28px 1fr 90px; gap: 6px; align-items: center; margin-bottom: 8px; }
+.onb-row .onb-pct { grid-column: 2 / 4; font-size: .8rem; display: flex; align-items: center; gap: 6px; opacity: .85; }
+.onb-row .onb-pct input { width: 70px; }
+.onb-row-plan { grid-template-columns: 1fr 90px 130px; }
+.onb-row > span { font-size: .85rem; }
+.onb-check input { transform: scale(1.3); }
+.onb-amt { display: flex; gap: 6px; align-items: center; }
+.onb-list { margin-top: 8px; }
+#dlgOnboard .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+#dlgOnboard .input { width: 100%; box-sizing: border-box; }
+#dlgOnboard .onb-pct .input { width: 72px; flex: 0 0 72px; padding: 6px 8px; }
+#dlgOnboard .onb-pct { white-space: nowrap; }
+
 </style>
 </head>
 <body>
@@ -5872,25 +5894,16 @@ body.solo #innUtTabs, body.solo #sparingTabs, body.solo #btnMerSplitWizard, body
     </div>
   </dialog>
 
-  <dialog id="dlgOnboard" class="modal">
+  <dialog id="dlgOnboard" class="modal onb-modal">
     <div class="modal-card">
-      <header class="modal-head"><h2>Velkommen til Familiebudsjett</h2></header>
-      <div class="modal-body stack">
-        <div id="onbStep1">
-          <p><strong>Hvem skal bruke appen?</strong></p>
-          <div class="mode-pick">
-            <button type="button" class="btn primary" data-onb="solo">Bare meg</button>
-            <button type="button" class="btn" data-onb="household">Husstand (flere personer)</button>
-          </div>
-          <p class="hint compact">Du kan bytte senere under Innstillinger.</p>
-        </div>
-        <div id="onbStep2" hidden>
-          <label class="field"><span>Navnet ditt</span><input type="text" id="onbName" class="input lg" maxlength="40" placeholder="F.eks. Ola" autocomplete="given-name" /></label>
-          <label class="field"><span>Lønn utbetalt per måned (netto, kr)</span><input type="number" id="onbSalary" class="input lg" inputmode="numeric" min="0" placeholder="F.eks. 35000" /></label>
-          <p class="hint compact">Du får disse kategoriene, som du kan endre: Bolig, Mat, Transport, Abonnement, Fastfood, Sparing, Div. Sett beløp per kategori under <strong>Plan</strong>.</p>
-          <div class="mode-pick"><button type="button" class="btn ghost" id="onbBack">Tilbake</button><button type="button" class="btn primary" id="onbStart">Start</button></div>
-        </div>
-      </div>
+      <header class="modal-head"><h2 id="onbTitle">Velkommen</h2><span class="onb-step" id="onbStepNo"></span></header>
+      <div class="onb-progress"><span id="onbProgress"></span></div>
+      <div class="modal-body stack" id="onbBody"></div>
+      <footer class="onb-foot">
+        <button type="button" class="btn ghost" id="onbBack">Tilbake</button>
+        <button type="button" class="btn ghost" id="onbSkip">Hopp over</button>
+        <button type="button" class="btn primary" id="onbNext">Neste</button>
+      </footer>
     </div>
   </dialog>
   <dialog id="dlgSettings" class="modal">
@@ -5928,6 +5941,7 @@ body.solo #innUtTabs, body.solo #sparingTabs, body.solo #btnMerSplitWizard, body
           <button type="button" class="btn" data-mode-pick="solo">Bare meg</button>
           <button type="button" class="btn" data-mode-pick="household">Husstand (flere personer)</button>
         </div>
+        <button type="button" class="btn sm" id="btnRerunWizard">Kjør Velkommen-veiviseren på nytt</button>
         <p class="hint compact"><span id="modeStatus"></span>. «Bare meg» skjuler de andre personene – ingen tall slettes, og «Husstand» legger dem tilbake. Delte regninger kan fortsatt ha «Jeg betaler X %».</p>
         <h3 class="settings-people-title">Personer</h3>
         <p class="hint compact">Samme liste som under <strong>Mer → Familie / Personer</strong>. Felles er ikke en person.</p>
@@ -8498,6 +8512,74 @@ window.FAMILIE_BUDGET_SUPABASE = {
       if (p.archived && (!onlyId || p.id === onlyId)) { p.archived = false; restored.push(p.id); }
     });
     return restored;
+  }
+
+  /**
+   * Velkommen-veiviser → ny state. opts:
+   * { people:[{name,salary}], fixed:[{name,amount,pct}], budgets:[{name,amount}],
+   *   planned:[{note,amount,monthKey}], now }
+   * pct = «jeg betaler X %» (av full sum) for første person. Tom historikk.
+   */
+  function wizardState(opts) {
+    opts = opts || {};
+    var now = opts.now || new Date();
+    var key = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+    var ppl = (opts.people || []).filter(function (p) { return p && String(p.name || "").trim(); });
+    if (!ppl.length) ppl = [{ name: "Meg", salary: 0 }];
+    var people = ppl.map(function (p, i) {
+      return { id: i === 0 ? ID_A : i === 1 ? ID_B : "p" + (i + 1), name: String(p.name).trim().slice(0, 40), archived: false };
+    });
+    var solo = people.length === 1;
+    var me = people[0].id;
+    var rnd = function () { return Math.random().toString(36).slice(2, 8); };
+    var cats = [], budgets = {}, order = 0;
+    function num(v) { var n = Number(String(v == null ? "" : v).replace(/\s/g, "").replace(",", ".")); return Number.isFinite(n) && n > 0 ? n : 0; }
+    (opts.fixed || []).forEach(function (f) {
+      if (!f || !String(f.name || "").trim()) return;
+      var pct = f.pct == null || f.pct === "" ? 100 : Math.max(0, Math.min(100, Number(f.pct) || 0));
+      var shared = !solo || pct < 100;
+      var cat = { id: "wf" + order + "_" + rnd(), name: String(f.name).trim().slice(0, 40), type: "fast",
+        owner: shared ? "felles" : me, autoFill: true, archived: false, order: order++ };
+      if (shared && pct < 100) {
+        var sp = {}; sp[me] = pct;
+        if (!solo) {
+          var rest = (100 - pct) / (people.length - 1);
+          people.slice(1).forEach(function (p) { sp[p.id] = Math.round(rest * 100) / 100; });
+        }
+        cat.split = sp;
+      }
+      cats.push(cat);
+      var a = num(f.amount);
+      if (a > 0) { budgets[cat.id] = {}; budgets[cat.id][cat.owner] = a; }
+    });
+    (opts.budgets || []).forEach(function (b) {
+      if (!b || !String(b.name || "").trim()) return;
+      var owner = solo ? me : "felles";
+      var cat = { id: "wb" + order + "_" + rnd(), name: String(b.name).trim().slice(0, 40), type: "variabel",
+        owner: owner, autoFill: false, archived: false, order: order++ };
+      cats.push(cat);
+      var a = num(b.amount);
+      if (a > 0) { budgets[cat.id] = {}; budgets[cat.id][owner] = a; }
+    });
+    var plannedIncome = {};
+    people.forEach(function (p, i) {
+      var sal = num(ppl[i].salary);
+      plannedIncome[p.id] = { "lønn": sal > 0 ? sal : null, ekstra: null, sparing: null };
+    });
+    var months = {};
+    months[key] = { budgets: budgets, plannedIncome: plannedIncome, incomes: [], expenses: [], savings: [], budgetLines: {} };
+    var planned = (opts.planned || []).filter(function (p) { return p && num(p.amount) > 0; }).map(function (p) {
+      var mk = /^\d{4}-\d{2}$/.test(String(p.monthKey || "")) ? String(p.monthKey) : key;
+      return { id: "wp_" + rnd(), amount: num(p.amount), categoryId: null, owner: solo ? me : "felles",
+        monthKey: mk, note: String(p.note || "Planlagt").slice(0, 120), done: false, doneExpenseId: null, reflectedInBalance: false };
+    });
+    var st = migrateState({
+      version: 2, people: people, view: { year: now.getFullYear(), month: now.getMonth() },
+      categories: cats, months: months,
+      settings: { innUtView: solo ? me : "samlet", sparingView: solo ? me : "samlet", mainTab: "oversikt" },
+      savingsGoals: [], archives: [], plannedSpends: planned
+    });
+    return st;
   }
 
   function plannedUtFelles(m, categories, monthIndex) {
@@ -11920,6 +12002,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     monthOverviewForPerson: monthOverviewForPerson,
     monthOverview: monthOverview,
     isSoloMode: isSoloMode,
+    wizardState: wizardState,
     setSoloShare: setSoloShare,
     soloStarterState: soloStarterState,
     switchToSolo: switchToSolo,
@@ -22416,28 +22499,139 @@ window.FAMILIE_BUDGET_SUPABASE = {
       });
     });
 
-    // ——— Første oppstart ———
-    if (needsOnboarding && $("#dlgOnboard")) {
-      const s1 = $("#onbStep1"), s2 = $("#onbStep2");
-      $$("[data-onb]").forEach(function (b) {
-        b.addEventListener("click", function () {
-          if (b.getAttribute("data-onb") === "solo") { s1.hidden = true; s2.hidden = false; $("#onbName").focus(); }
-          else { closeDlg("#dlgOnboard"); needsOnboarding = false; showToast("Skriv inn navn under Innstillinger → Personer"); }
-        });
+    // ——— Velkommen-veiviser ———
+    const WZ_FIXED = [["Husleie / lån", ""], ["Strøm", ""], ["Mobil", ""], ["Forsikring", ""], ["Abonnement", ""], ["Internett", ""]];
+    const WZ_BUDGETS = [["Mat", 4000], ["Transport", 1500], ["Fastfood", 800], ["Klær", 500], ["Gøy", 500], ["Div", 1000]];
+    let wz = null;
+    function wzNew() {
+      return { step: 0, name: "", solo: true, others: [""], salaries: {},
+        fixed: WZ_FIXED.map(function (f) { return { on: false, name: f[0], amount: "", pct: 100 }; }),
+        budgets: WZ_BUDGETS.map(function (b) { return { on: true, name: b[0], amount: b[1] }; }),
+        planned: [{ note: "", amount: "", month: "" }, { note: "", amount: "", month: "" }] };
+    }
+    const WZ_TITLES = ["Ditt navn", "Hvem bruker appen?", "Månedlig lønn (netto)", "Faste utgifter", "Budsjett per kategori", "Planlagte utgifter og sparing"];
+    function wzPeople() {
+      const list = [wz.name.trim() || "Meg"];
+      if (!wz.solo) wz.others.forEach(function (n) { if (String(n).trim()) list.push(String(n).trim()); });
+      return list;
+    }
+    function wzRead() {
+      const b = $("#onbBody");
+      b.querySelectorAll("[data-wz]").forEach(function (el) {
+        const path = el.getAttribute("data-wz").split(".");
+        let obj = wz;
+        for (let i = 0; i < path.length - 1; i++) obj = obj[path[i]];
+        const k = path[path.length - 1];
+        obj[k] = el.type === "checkbox" ? el.checked : el.type === "radio" ? (el.checked ? el.value === "1" : obj[k]) : el.value;
       });
-      $("#onbBack").addEventListener("click", function () { s1.hidden = false; s2.hidden = true; });
-      $("#onbStart").addEventListener("click", function () {
-        const name = ($("#onbName").value || "").trim();
-        if (!name) { $("#onbName").focus(); showToast("Skriv navnet ditt"); return; }
-        state = Calc.soloStarterState(name, Number($("#onbSalary").value) || 0, new Date());
-        ensureCategoryOrders(state);
-        needsOnboarding = false;
-        save();
-        closeDlg("#dlgOnboard");
-        render();
-        showToast("Klar! Sett beløp per kategori under Plan.");
+    }
+    function wzInput(path, val, attrs) {
+      return '<input class="input" data-wz="' + path + '" value="' + escapeAttr(val == null ? "" : String(val)) + '" ' + (attrs || "") + " />";
+    }
+    function wzRender() {
+      const st = wz.step, b = $("#onbBody");
+      $("#onbTitle").textContent = st === 0 ? "Velkommen! 👋" : WZ_TITLES[st];
+      $("#onbStepNo").textContent = "Steg " + (st + 1) + " av 6";
+      $("#onbProgress").style.width = Math.round(((st + 1) / 6) * 100) + "%";
+      $("#onbBack").style.visibility = st === 0 ? "hidden" : "";
+      $("#onbNext").textContent = st === 5 ? "Ferdig" : "Neste";
+      let html = "";
+      if (st === 0) {
+        html = '<p>Denne appen hjelper deg å se hva du tjener, hva du skulle bruke og hva du faktisk bruker. Det tar 2 minutter å komme i gang.</p>' +
+          '<label class="field"><span>Hva heter du?</span>' + wzInput("name", wz.name, 'type="text" maxlength="40" placeholder="Fornavn" autocomplete="given-name"') + "</label>";
+      } else if (st === 1) {
+        html = '<label class="onb-choice"><input type="radio" name="wzSolo" data-wz="solo" value="1"' + (wz.solo ? " checked" : "") + ' /> <span><strong>Bare meg</strong><br><small>Du styrer din egen økonomi. Delte regninger kan få «jeg betaler X %».</small></span></label>' +
+          '<label class="onb-choice"><input type="radio" name="wzSolo" data-wz="solo" value="0"' + (!wz.solo ? " checked" : "") + ' /> <span><strong>Legg til flere personer</strong><br><small>F.eks. partner – dere deler felles utgifter.</small></span></label>' +
+          (wz.solo ? "" : '<div class="onb-list">' + wz.others.map(function (n, i) {
+            return '<label class="field"><span>Person ' + (i + 2) + "</span>" + wzInput("others." + i, n, 'type="text" maxlength="40" placeholder="Navn"') + "</label>";
+          }).join("") + '<button type="button" class="btn sm" data-wz-act="addPerson">+ Legg til person</button></div>');
+      } else if (st === 2) {
+        html = '<p class="hint compact">Det som kommer inn på konto hver måned, etter skatt.</p>' + wzPeople().map(function (n, i) {
+          return '<label class="field"><span>' + escapeHtml(n) + "</span><div class=\"onb-amt\">" + wzInput("salaries." + i, wz.salaries[i], 'type="number" inputmode="numeric" min="0" placeholder="F.eks. 35000"') + "<span>kr</span></div></label>";
+        }).join("");
+      } else if (st === 3) {
+        html = '<p class="hint compact">Huk av det du betaler hver måned. Skriv full sum – deler du regningen, skriv hvor mange prosent ' + (wzPeople().length > 1 ? escapeHtml(wzPeople()[0]) + " betaler" : "du betaler") + ".</p>" +
+          wz.fixed.map(function (f, i) {
+            return '<div class="onb-row"><label class="onb-check"><input type="checkbox" data-wz="fixed.' + i + '.on"' + (f.on ? " checked" : "") + " /></label>" +
+              wzInput("fixed." + i + ".name", f.name, 'type="text" maxlength="40" aria-label="Navn"') +
+              wzInput("fixed." + i + ".amount", f.amount, 'type="number" inputmode="numeric" min="0" placeholder="kr/mnd" aria-label="Beløp"') +
+              '<span class="onb-pct">' + (wzPeople().length > 1 ? escapeHtml(wzPeople()[0]) : "Jeg") + " betaler " + wzInput("fixed." + i + ".pct", f.pct, 'type="number" inputmode="numeric" min="0" max="100" aria-label="Prosent"') + " %</span></div>";
+          }).join("") + '<button type="button" class="btn sm" data-wz-act="addFixed">+ Annen fast utgift</button>';
+      } else if (st === 4) {
+        html = '<p class="hint compact">Hvor mye vil du bruke per måned? Forslagene kan endres – og du kan endre alt senere under Plan.</p>' +
+          wz.budgets.map(function (bd, i) {
+            return '<div class="onb-row"><label class="onb-check"><input type="checkbox" data-wz="budgets.' + i + '.on"' + (bd.on ? " checked" : "") + " /></label>" +
+              wzInput("budgets." + i + ".name", bd.name, 'type="text" maxlength="40" aria-label="Kategori"') +
+              wzInput("budgets." + i + ".amount", bd.amount, 'type="number" inputmode="numeric" min="0" aria-label="Beløp"') + "</div>";
+          }).join("") + '<button type="button" class="btn sm" data-wz-act="addBudget">+ Annen kategori</button>';
+      } else {
+        html = '<p class="hint compact">Valgfritt: større ting du planlegger, f.eks. ferie, bil eller buffer. Appen setter av pengene i riktig måned.</p>' +
+          wz.planned.map(function (p, i) {
+            return '<div class="onb-row onb-row-plan">' + wzInput("planned." + i + ".note", p.note, 'type="text" maxlength="60" placeholder="' + (i === 0 ? "F.eks. Ferie" : "F.eks. Bil") + '" aria-label="Hva"') +
+              wzInput("planned." + i + ".amount", p.amount, 'type="number" inputmode="numeric" min="0" placeholder="kr" aria-label="Beløp"') +
+              wzInput("planned." + i + ".month", p.month, 'type="month" aria-label="Måned"') + "</div>";
+          }).join("") + '<button type="button" class="btn sm" data-wz-act="addPlanned">+ Legg til</button>';
+      }
+      b.innerHTML = html;
+      const first = b.querySelector("input[type=text], input[type=number]");
+      if (first && st !== 3 && st !== 4) try { first.focus({ preventScroll: true }); } catch (e) { /* */ }
+    }
+    function wzFinish() {
+      const names = wzPeople();
+      state = Calc.wizardState({
+        people: names.map(function (n, i) { return { name: n, salary: wz.salaries[i] }; }),
+        fixed: wz.fixed.filter(function (f) { return f.on || Number(f.amount) > 0; }),
+        budgets: wz.budgets.filter(function (x) { return x.on; }),
+        planned: wz.planned.map(function (p) { return { note: p.note, amount: p.amount, monthKey: p.month }; }),
+        now: new Date()
       });
-      setTimeout(function () { if (needsOnboarding) openDlg("#dlgOnboard"); }, 50);
+      ensureCategoryOrders(state);
+      needsOnboarding = false;
+      try { localStorage.setItem("familie-budsjett-ov-scope", names.length === 1 ? "p1" : "alle"); } catch (e) { /* */ }
+      save();
+      closeDlg("#dlgOnboard");
+      render();
+      showToast("Ferdig! Her er oversikten din.");
+    }
+    function wzStart() { wz = wzNew(); wzRender(); openDlg("#dlgOnboard"); }
+    if ($("#dlgOnboard")) {
+      $("#onbNext").addEventListener("click", function () {
+        wzRead();
+        if (wz.step === 5) { wzFinish(); return; }
+        wz.step++; wzRender();
+      });
+      $("#onbBack").addEventListener("click", function () { wzRead(); if (wz.step > 0) { wz.step--; wzRender(); } });
+      $("#onbSkip").addEventListener("click", function () {
+        wzRead();
+        if (wz.step === 3) wz.fixed.forEach(function (f) { f.on = false; f.amount = ""; });
+        if (wz.step === 4) wz.budgets.forEach(function (x) { x.on = false; });
+        if (wz.step === 5) { wz.planned = []; wzFinish(); return; }
+        wz.step++; wzRender();
+      });
+      $("#onbBody").addEventListener("click", function (e) {
+        const act = e.target.closest("[data-wz-act]");
+        if (!act) return;
+        wzRead();
+        const k = act.getAttribute("data-wz-act");
+        if (k === "addPerson") wz.others.push("");
+        if (k === "addFixed") wz.fixed.push({ on: true, name: "", amount: "", pct: 100 });
+        if (k === "addBudget") wz.budgets.push({ on: true, name: "", amount: "" });
+        if (k === "addPlanned") wz.planned.push({ note: "", amount: "", month: "" });
+        wzRender();
+      });
+      $("#onbBody").addEventListener("change", function (e) {
+        if (e.target && e.target.name === "wzSolo") { wzRead(); wzRender(); }
+      });
+      const rerun = $("#btnRerunWizard");
+      if (rerun) rerun.addEventListener("click", function () {
+        if ((Object.keys(state.months || {}).length || (state.categories || []).length)) {
+          if (!confirm("Veiviseren lager et nytt, tomt budsjett og erstatter dataene på denne enheten.\n\nEn backup (JSON) lastes ned først. Fortsette?")) return;
+          try { exportJsonBackup(); } catch (e) { /* */ }
+        }
+        closeDlg("#dlgSettings");
+        wzStart();
+      });
+      if (needsOnboarding) setTimeout(function () { if (needsOnboarding) wzStart(); }, 50);
     }
 
     $("#importFile").addEventListener("change", function (e) {

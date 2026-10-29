@@ -9181,28 +9181,139 @@
       });
     });
 
-    // ——— Første oppstart ———
-    if (needsOnboarding && $("#dlgOnboard")) {
-      const s1 = $("#onbStep1"), s2 = $("#onbStep2");
-      $$("[data-onb]").forEach(function (b) {
-        b.addEventListener("click", function () {
-          if (b.getAttribute("data-onb") === "solo") { s1.hidden = true; s2.hidden = false; $("#onbName").focus(); }
-          else { closeDlg("#dlgOnboard"); needsOnboarding = false; showToast("Skriv inn navn under Innstillinger → Personer"); }
-        });
+    // ——— Velkommen-veiviser ———
+    const WZ_FIXED = [["Husleie / lån", ""], ["Strøm", ""], ["Mobil", ""], ["Forsikring", ""], ["Abonnement", ""], ["Internett", ""]];
+    const WZ_BUDGETS = [["Mat", 4000], ["Transport", 1500], ["Fastfood", 800], ["Klær", 500], ["Gøy", 500], ["Div", 1000]];
+    let wz = null;
+    function wzNew() {
+      return { step: 0, name: "", solo: true, others: [""], salaries: {},
+        fixed: WZ_FIXED.map(function (f) { return { on: false, name: f[0], amount: "", pct: 100 }; }),
+        budgets: WZ_BUDGETS.map(function (b) { return { on: true, name: b[0], amount: b[1] }; }),
+        planned: [{ note: "", amount: "", month: "" }, { note: "", amount: "", month: "" }] };
+    }
+    const WZ_TITLES = ["Ditt navn", "Hvem bruker appen?", "Månedlig lønn (netto)", "Faste utgifter", "Budsjett per kategori", "Planlagte utgifter og sparing"];
+    function wzPeople() {
+      const list = [wz.name.trim() || "Meg"];
+      if (!wz.solo) wz.others.forEach(function (n) { if (String(n).trim()) list.push(String(n).trim()); });
+      return list;
+    }
+    function wzRead() {
+      const b = $("#onbBody");
+      b.querySelectorAll("[data-wz]").forEach(function (el) {
+        const path = el.getAttribute("data-wz").split(".");
+        let obj = wz;
+        for (let i = 0; i < path.length - 1; i++) obj = obj[path[i]];
+        const k = path[path.length - 1];
+        obj[k] = el.type === "checkbox" ? el.checked : el.type === "radio" ? (el.checked ? el.value === "1" : obj[k]) : el.value;
       });
-      $("#onbBack").addEventListener("click", function () { s1.hidden = false; s2.hidden = true; });
-      $("#onbStart").addEventListener("click", function () {
-        const name = ($("#onbName").value || "").trim();
-        if (!name) { $("#onbName").focus(); showToast("Skriv navnet ditt"); return; }
-        state = Calc.soloStarterState(name, Number($("#onbSalary").value) || 0, new Date());
-        ensureCategoryOrders(state);
-        needsOnboarding = false;
-        save();
-        closeDlg("#dlgOnboard");
-        render();
-        showToast("Klar! Sett beløp per kategori under Plan.");
+    }
+    function wzInput(path, val, attrs) {
+      return '<input class="input" data-wz="' + path + '" value="' + escapeAttr(val == null ? "" : String(val)) + '" ' + (attrs || "") + " />";
+    }
+    function wzRender() {
+      const st = wz.step, b = $("#onbBody");
+      $("#onbTitle").textContent = st === 0 ? "Velkommen! 👋" : WZ_TITLES[st];
+      $("#onbStepNo").textContent = "Steg " + (st + 1) + " av 6";
+      $("#onbProgress").style.width = Math.round(((st + 1) / 6) * 100) + "%";
+      $("#onbBack").style.visibility = st === 0 ? "hidden" : "";
+      $("#onbNext").textContent = st === 5 ? "Ferdig" : "Neste";
+      let html = "";
+      if (st === 0) {
+        html = '<p>Denne appen hjelper deg å se hva du tjener, hva du skulle bruke og hva du faktisk bruker. Det tar 2 minutter å komme i gang.</p>' +
+          '<label class="field"><span>Hva heter du?</span>' + wzInput("name", wz.name, 'type="text" maxlength="40" placeholder="Fornavn" autocomplete="given-name"') + "</label>";
+      } else if (st === 1) {
+        html = '<label class="onb-choice"><input type="radio" name="wzSolo" data-wz="solo" value="1"' + (wz.solo ? " checked" : "") + ' /> <span><strong>Bare meg</strong><br><small>Du styrer din egen økonomi. Delte regninger kan få «jeg betaler X %».</small></span></label>' +
+          '<label class="onb-choice"><input type="radio" name="wzSolo" data-wz="solo" value="0"' + (!wz.solo ? " checked" : "") + ' /> <span><strong>Legg til flere personer</strong><br><small>F.eks. partner – dere deler felles utgifter.</small></span></label>' +
+          (wz.solo ? "" : '<div class="onb-list">' + wz.others.map(function (n, i) {
+            return '<label class="field"><span>Person ' + (i + 2) + "</span>" + wzInput("others." + i, n, 'type="text" maxlength="40" placeholder="Navn"') + "</label>";
+          }).join("") + '<button type="button" class="btn sm" data-wz-act="addPerson">+ Legg til person</button></div>');
+      } else if (st === 2) {
+        html = '<p class="hint compact">Det som kommer inn på konto hver måned, etter skatt.</p>' + wzPeople().map(function (n, i) {
+          return '<label class="field"><span>' + escapeHtml(n) + "</span><div class=\"onb-amt\">" + wzInput("salaries." + i, wz.salaries[i], 'type="number" inputmode="numeric" min="0" placeholder="F.eks. 35000"') + "<span>kr</span></div></label>";
+        }).join("");
+      } else if (st === 3) {
+        html = '<p class="hint compact">Huk av det du betaler hver måned. Skriv full sum – deler du regningen, skriv hvor mange prosent ' + (wzPeople().length > 1 ? escapeHtml(wzPeople()[0]) + " betaler" : "du betaler") + ".</p>" +
+          wz.fixed.map(function (f, i) {
+            return '<div class="onb-row"><label class="onb-check"><input type="checkbox" data-wz="fixed.' + i + '.on"' + (f.on ? " checked" : "") + " /></label>" +
+              wzInput("fixed." + i + ".name", f.name, 'type="text" maxlength="40" aria-label="Navn"') +
+              wzInput("fixed." + i + ".amount", f.amount, 'type="number" inputmode="numeric" min="0" placeholder="kr/mnd" aria-label="Beløp"') +
+              '<span class="onb-pct">' + (wzPeople().length > 1 ? escapeHtml(wzPeople()[0]) : "Jeg") + " betaler " + wzInput("fixed." + i + ".pct", f.pct, 'type="number" inputmode="numeric" min="0" max="100" aria-label="Prosent"') + " %</span></div>";
+          }).join("") + '<button type="button" class="btn sm" data-wz-act="addFixed">+ Annen fast utgift</button>';
+      } else if (st === 4) {
+        html = '<p class="hint compact">Hvor mye vil du bruke per måned? Forslagene kan endres – og du kan endre alt senere under Plan.</p>' +
+          wz.budgets.map(function (bd, i) {
+            return '<div class="onb-row"><label class="onb-check"><input type="checkbox" data-wz="budgets.' + i + '.on"' + (bd.on ? " checked" : "") + " /></label>" +
+              wzInput("budgets." + i + ".name", bd.name, 'type="text" maxlength="40" aria-label="Kategori"') +
+              wzInput("budgets." + i + ".amount", bd.amount, 'type="number" inputmode="numeric" min="0" aria-label="Beløp"') + "</div>";
+          }).join("") + '<button type="button" class="btn sm" data-wz-act="addBudget">+ Annen kategori</button>';
+      } else {
+        html = '<p class="hint compact">Valgfritt: større ting du planlegger, f.eks. ferie, bil eller buffer. Appen setter av pengene i riktig måned.</p>' +
+          wz.planned.map(function (p, i) {
+            return '<div class="onb-row onb-row-plan">' + wzInput("planned." + i + ".note", p.note, 'type="text" maxlength="60" placeholder="' + (i === 0 ? "F.eks. Ferie" : "F.eks. Bil") + '" aria-label="Hva"') +
+              wzInput("planned." + i + ".amount", p.amount, 'type="number" inputmode="numeric" min="0" placeholder="kr" aria-label="Beløp"') +
+              wzInput("planned." + i + ".month", p.month, 'type="month" aria-label="Måned"') + "</div>";
+          }).join("") + '<button type="button" class="btn sm" data-wz-act="addPlanned">+ Legg til</button>';
+      }
+      b.innerHTML = html;
+      const first = b.querySelector("input[type=text], input[type=number]");
+      if (first && st !== 3 && st !== 4) try { first.focus({ preventScroll: true }); } catch (e) { /* */ }
+    }
+    function wzFinish() {
+      const names = wzPeople();
+      state = Calc.wizardState({
+        people: names.map(function (n, i) { return { name: n, salary: wz.salaries[i] }; }),
+        fixed: wz.fixed.filter(function (f) { return f.on || Number(f.amount) > 0; }),
+        budgets: wz.budgets.filter(function (x) { return x.on; }),
+        planned: wz.planned.map(function (p) { return { note: p.note, amount: p.amount, monthKey: p.month }; }),
+        now: new Date()
       });
-      setTimeout(function () { if (needsOnboarding) openDlg("#dlgOnboard"); }, 50);
+      ensureCategoryOrders(state);
+      needsOnboarding = false;
+      try { localStorage.setItem("familie-budsjett-ov-scope", names.length === 1 ? "p1" : "alle"); } catch (e) { /* */ }
+      save();
+      closeDlg("#dlgOnboard");
+      render();
+      showToast("Ferdig! Her er oversikten din.");
+    }
+    function wzStart() { wz = wzNew(); wzRender(); openDlg("#dlgOnboard"); }
+    if ($("#dlgOnboard")) {
+      $("#onbNext").addEventListener("click", function () {
+        wzRead();
+        if (wz.step === 5) { wzFinish(); return; }
+        wz.step++; wzRender();
+      });
+      $("#onbBack").addEventListener("click", function () { wzRead(); if (wz.step > 0) { wz.step--; wzRender(); } });
+      $("#onbSkip").addEventListener("click", function () {
+        wzRead();
+        if (wz.step === 3) wz.fixed.forEach(function (f) { f.on = false; f.amount = ""; });
+        if (wz.step === 4) wz.budgets.forEach(function (x) { x.on = false; });
+        if (wz.step === 5) { wz.planned = []; wzFinish(); return; }
+        wz.step++; wzRender();
+      });
+      $("#onbBody").addEventListener("click", function (e) {
+        const act = e.target.closest("[data-wz-act]");
+        if (!act) return;
+        wzRead();
+        const k = act.getAttribute("data-wz-act");
+        if (k === "addPerson") wz.others.push("");
+        if (k === "addFixed") wz.fixed.push({ on: true, name: "", amount: "", pct: 100 });
+        if (k === "addBudget") wz.budgets.push({ on: true, name: "", amount: "" });
+        if (k === "addPlanned") wz.planned.push({ note: "", amount: "", month: "" });
+        wzRender();
+      });
+      $("#onbBody").addEventListener("change", function (e) {
+        if (e.target && e.target.name === "wzSolo") { wzRead(); wzRender(); }
+      });
+      const rerun = $("#btnRerunWizard");
+      if (rerun) rerun.addEventListener("click", function () {
+        if ((Object.keys(state.months || {}).length || (state.categories || []).length)) {
+          if (!confirm("Veiviseren lager et nytt, tomt budsjett og erstatter dataene på denne enheten.\n\nEn backup (JSON) lastes ned først. Fortsette?")) return;
+          try { exportJsonBackup(); } catch (e) { /* */ }
+        }
+        closeDlg("#dlgSettings");
+        wzStart();
+      });
+      if (needsOnboarding) setTimeout(function () { if (needsOnboarding) wzStart(); }, 50);
     }
 
     $("#importFile").addEventListener("change", function (e) {

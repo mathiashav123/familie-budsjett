@@ -2534,6 +2534,74 @@
     return restored;
   }
 
+  /**
+   * Velkommen-veiviser → ny state. opts:
+   * { people:[{name,salary}], fixed:[{name,amount,pct}], budgets:[{name,amount}],
+   *   planned:[{note,amount,monthKey}], now }
+   * pct = «jeg betaler X %» (av full sum) for første person. Tom historikk.
+   */
+  function wizardState(opts) {
+    opts = opts || {};
+    var now = opts.now || new Date();
+    var key = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+    var ppl = (opts.people || []).filter(function (p) { return p && String(p.name || "").trim(); });
+    if (!ppl.length) ppl = [{ name: "Meg", salary: 0 }];
+    var people = ppl.map(function (p, i) {
+      return { id: i === 0 ? ID_A : i === 1 ? ID_B : "p" + (i + 1), name: String(p.name).trim().slice(0, 40), archived: false };
+    });
+    var solo = people.length === 1;
+    var me = people[0].id;
+    var rnd = function () { return Math.random().toString(36).slice(2, 8); };
+    var cats = [], budgets = {}, order = 0;
+    function num(v) { var n = Number(String(v == null ? "" : v).replace(/\s/g, "").replace(",", ".")); return Number.isFinite(n) && n > 0 ? n : 0; }
+    (opts.fixed || []).forEach(function (f) {
+      if (!f || !String(f.name || "").trim()) return;
+      var pct = f.pct == null || f.pct === "" ? 100 : Math.max(0, Math.min(100, Number(f.pct) || 0));
+      var shared = !solo || pct < 100;
+      var cat = { id: "wf" + order + "_" + rnd(), name: String(f.name).trim().slice(0, 40), type: "fast",
+        owner: shared ? "felles" : me, autoFill: true, archived: false, order: order++ };
+      if (shared && pct < 100) {
+        var sp = {}; sp[me] = pct;
+        if (!solo) {
+          var rest = (100 - pct) / (people.length - 1);
+          people.slice(1).forEach(function (p) { sp[p.id] = Math.round(rest * 100) / 100; });
+        }
+        cat.split = sp;
+      }
+      cats.push(cat);
+      var a = num(f.amount);
+      if (a > 0) { budgets[cat.id] = {}; budgets[cat.id][cat.owner] = a; }
+    });
+    (opts.budgets || []).forEach(function (b) {
+      if (!b || !String(b.name || "").trim()) return;
+      var owner = solo ? me : "felles";
+      var cat = { id: "wb" + order + "_" + rnd(), name: String(b.name).trim().slice(0, 40), type: "variabel",
+        owner: owner, autoFill: false, archived: false, order: order++ };
+      cats.push(cat);
+      var a = num(b.amount);
+      if (a > 0) { budgets[cat.id] = {}; budgets[cat.id][owner] = a; }
+    });
+    var plannedIncome = {};
+    people.forEach(function (p, i) {
+      var sal = num(ppl[i].salary);
+      plannedIncome[p.id] = { "lønn": sal > 0 ? sal : null, ekstra: null, sparing: null };
+    });
+    var months = {};
+    months[key] = { budgets: budgets, plannedIncome: plannedIncome, incomes: [], expenses: [], savings: [], budgetLines: {} };
+    var planned = (opts.planned || []).filter(function (p) { return p && num(p.amount) > 0; }).map(function (p) {
+      var mk = /^\d{4}-\d{2}$/.test(String(p.monthKey || "")) ? String(p.monthKey) : key;
+      return { id: "wp_" + rnd(), amount: num(p.amount), categoryId: null, owner: solo ? me : "felles",
+        monthKey: mk, note: String(p.note || "Planlagt").slice(0, 120), done: false, doneExpenseId: null, reflectedInBalance: false };
+    });
+    var st = migrateState({
+      version: 2, people: people, view: { year: now.getFullYear(), month: now.getMonth() },
+      categories: cats, months: months,
+      settings: { innUtView: solo ? me : "samlet", sparingView: solo ? me : "samlet", mainTab: "oversikt" },
+      savingsGoals: [], archives: [], plannedSpends: planned
+    });
+    return st;
+  }
+
   function plannedUtFelles(m, categories, monthIndex) {
     var sum = 0;
     (categories || []).forEach(function (cat) {
@@ -5954,6 +6022,7 @@
     monthOverviewForPerson: monthOverviewForPerson,
     monthOverview: monthOverview,
     isSoloMode: isSoloMode,
+    wizardState: wizardState,
     setSoloShare: setSoloShare,
     soloStarterState: soloStarterState,
     switchToSolo: switchToSolo,

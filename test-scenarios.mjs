@@ -237,5 +237,28 @@ if (fs.existsSync(EXP)) {
   C.ensureCategorySplits([cat], pp);
   ok(cat.split.p2 === 20, "archived person's split key kept");
 }
+// 16. Velkommen-veiviser
+{
+  const now = new Date(2026, 10, 5);
+  const s = C.wizardState({ people: [{ name: "Ola", salary: "35000" }],
+    fixed: [{ name: "Husleie", amount: 12000, pct: 50 }, { name: "Mobil", amount: 400 }],
+    budgets: [{ name: "Mat", amount: 3000 }], planned: [{ note: "Ferie", amount: 8000, monthKey: "2027-06" }, { note: "", amount: "" }], now });
+  ok(C.isSoloMode(s.people), "wizard solo → solo mode");
+  ok(s.people[0].name === "Ola", "wizard name");
+  const o = C.monthOverview(s.months["2026-11"], "p1", s.people, s.categories, 10);
+  ok(o.plannedIncome === 35000, "wizard salary");
+  ok(near(o.plannedOut, 6000 + 400 + 3000), "wizard fixed with 50% + budget");
+  ok(s.plannedSpends.length === 1 && s.plannedSpends[0].monthKey === "2027-06", "wizard planned, empty rows dropped");
+  const rt = C.migrateState(JSON.parse(JSON.stringify(s)));
+  ok(JSON.stringify(rt.categories) === JSON.stringify(s.categories), "wizard state survives export/import");
+  const h = C.wizardState({ people: [{ name: "A", salary: 30000 }, { name: "B", salary: 20000 }, { name: "C" }],
+    fixed: [{ name: "Lån", amount: 20000, pct: 50 }], budgets: [{ name: "Mat", amount: 6000 }], now });
+  ok(!C.isSoloMode(h.people) && h.people.length === 3, "wizard household 3 people");
+  const sum = ["p1", "p2", "p3"].reduce((a, id) => a + C.monthOverview(h.months["2026-11"], id, h.people, h.categories, 10).plannedOut, 0);
+  ok(near(sum, 26000), "household shares sum to full amount");
+  const e = C.wizardState({ now });
+  ok(e.people.length === 1 && e.categories.length === 0, "wizard all skipped → empty solo");
+  ok(!JSON.stringify(e).includes("Mathias") && !JSON.stringify(e).includes("Andrea"), "no hardcoded names");
+}
 console.log("\n=== Scenarios: " + passed + " passed, " + failed + " failed ===");
 process.exit(failed ? 1 : 0);
