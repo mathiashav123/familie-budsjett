@@ -1,0 +1,12 @@
+# Private data – never commit
+*export*.json
+*.backup.json
+backups/
+*.tar.gz
+SIM-*
+sim-*
+start.sh
+test-browser.py
+q*.json
+d.json
+*.png
