@@ -4828,6 +4828,13 @@ button.cat-group-header {
 @media (prefers-color-scheme: dark) { .mo-seg-btn.active { background: #2b3445; color: #9cc0ff; } }
 @media (max-width: 640px) { .mo-grid { grid-template-columns: 1fr 1fr; } .mo-big { font-size: 1.2rem; } .mo-seg-btn { padding: 10px 4px; } }
 
+/* Bare meg (solo) */
+body.solo #innUtTabs, body.solo #sparingTabs, body.solo #btnMerSplitWizard, body.solo #personGrid, body.solo .people-card-felles { display: none !important; }
+.mode-pick { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
+.mode-pick .btn { flex: 1 1 140px; }
+.solo-share .fordeling-name { font-weight: 700; }
+#dlgOnboard .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+
 </style>
 </head>
 <body>
@@ -4975,7 +4982,7 @@ button.cat-group-header {
           <div id="categoryEmpty" class="empty empty-encourage" hidden>
             <span class="empty-icon" aria-hidden="true">✨</span>
             <p><strong>Kom i gang med kategorier</strong></p>
-            <p class="hint compact">Forslag ligger under Mathias, Andrea og Felles – trykk for å legge til.</p>
+            <p class="hint compact">Forslag ligger under hver person og Felles – trykk for å legge til.</p>
           </div>
           <div id="catQuickAdd" class="cat-quick-add" hidden></div>
         </div>
@@ -5339,7 +5346,7 @@ button.cat-group-header {
           <button type="button" class="btn danger ghost mer-btn" id="btnClearCategories">Fjern alle kategorier</button>
           <button type="button" class="btn danger ghost mer-btn" id="btnMerReset">Nullstill alt</button>
         </div>
-        <p class="hint compact" id="merExcelHint">«Fyll budsjett fra Excel» oppretter manglende kategorier (med riktig eier) og setter forventet inntekt/utgifter for alle 12 måneder: <strong>Felles</strong> = Lån/Strøm/Internett/Forsikring, personlige variable under Mathias/Andrea, Mobil under Mathias. Lager ikke fake kjøp eller saldo.</p>
+        <p class="hint compact" id="merExcelHint">«Fyll budsjett fra Excel» oppretter manglende kategorier (med riktig eier) og setter forventet inntekt/utgifter for alle 12 måneder: <strong>Felles</strong> = Lån/Strøm/Internett/Forsikring, personlige variable under person 1/2. Lager ikke fake kjøp eller saldo.</p>
         <p class="hint compact">Hold ⠿ og dra for å endre kategori-rekkefølge på Plan (velg «Egen rekkefølge») eller under Administrer.</p>
       </section>
 
@@ -5369,7 +5376,7 @@ button.cat-group-header {
           </p>
           <label class="field">
             <span>Brukernavn</span>
-            <input type="text" id="syncUsername" class="input lg" maxlength="32" autocomplete="username" placeholder="f.eks. mathias" spellcheck="false" />
+            <input type="text" id="syncUsername" class="input lg" maxlength="32" autocomplete="username" placeholder="f.eks. ola" spellcheck="false" />
           </label>
           <label class="field">
             <span>Passord</span>
@@ -5450,7 +5457,7 @@ button.cat-group-header {
         <div class="card-head">
           <h2 id="merPeopleTitle">Familie / Personer</h2>
         </div>
-        <p class="hint compact">Gi nytt navn direkte i feltet. Felles er ikke en person og kan ikke fjernes. Standard er Mathias &amp; Andrea – endre eller legg til etter behov.</p>
+        <p class="hint compact">Gi nytt navn direkte i feltet. Felles er ikke en person og kan ikke fjernes. Endre eller legg til etter behov.</p>
         <div id="merPeopleManageList" class="people-manage"></div>
         <div class="add-person-block">
           <label class="field">
@@ -5865,6 +5872,27 @@ button.cat-group-header {
     </div>
   </dialog>
 
+  <dialog id="dlgOnboard" class="modal">
+    <div class="modal-card">
+      <header class="modal-head"><h2>Velkommen til Familiebudsjett</h2></header>
+      <div class="modal-body stack">
+        <div id="onbStep1">
+          <p><strong>Hvem skal bruke appen?</strong></p>
+          <div class="mode-pick">
+            <button type="button" class="btn primary" data-onb="solo">Bare meg</button>
+            <button type="button" class="btn" data-onb="household">Husstand (flere personer)</button>
+          </div>
+          <p class="hint compact">Du kan bytte senere under Innstillinger.</p>
+        </div>
+        <div id="onbStep2" hidden>
+          <label class="field"><span>Navnet ditt</span><input type="text" id="onbName" class="input lg" maxlength="40" placeholder="F.eks. Ola" autocomplete="given-name" /></label>
+          <label class="field"><span>Lønn utbetalt per måned (netto, kr)</span><input type="number" id="onbSalary" class="input lg" inputmode="numeric" min="0" placeholder="F.eks. 35000" /></label>
+          <p class="hint compact">Du får disse kategoriene, som du kan endre: Bolig, Mat, Transport, Abonnement, Fastfood, Sparing, Div. Sett beløp per kategori under <strong>Plan</strong>.</p>
+          <div class="mode-pick"><button type="button" class="btn ghost" id="onbBack">Tilbake</button><button type="button" class="btn primary" id="onbStart">Start</button></div>
+        </div>
+      </div>
+    </div>
+  </dialog>
   <dialog id="dlgSettings" class="modal">
     <div class="modal-card">
       <header class="modal-head">
@@ -5895,6 +5923,12 @@ button.cat-group-header {
           </div>
         </label>
         <p class="hint compact">Valgfritt husstandsbeløp (standard 0). Trekkes fra trygg-å-bruke når saldo-formel er på.</p>
+        <h3 class="settings-people-title">Hvem bruker appen?</h3>
+        <div class="mode-pick">
+          <button type="button" class="btn" data-mode-pick="solo">Bare meg</button>
+          <button type="button" class="btn" data-mode-pick="household">Husstand (flere personer)</button>
+        </div>
+        <p class="hint compact"><span id="modeStatus"></span>. «Bare meg» skjuler de andre personene – ingen tall slettes, og «Husstand» legger dem tilbake. Delte regninger kan fortsatt ha «Jeg betaler X %».</p>
         <h3 class="settings-people-title">Personer</h3>
         <p class="hint compact">Samme liste som under <strong>Mer → Familie / Personer</strong>. Felles er ikke en person.</p>
         <div id="peopleManageList" class="people-manage"></div>
@@ -5955,8 +5989,8 @@ window.FAMILIE_BUDGET_SUPABASE = {
 
   function defaultPeople() {
     return [
-      { id: ID_A, name: "Mathias", archived: false },
-      { id: ID_B, name: "Andrea", archived: false }
+      { id: ID_A, name: "Person 1", archived: false },
+      { id: ID_B, name: "Person 2", archived: false }
     ];
   }
 
@@ -6048,6 +6082,14 @@ window.FAMILIE_BUDGET_SUPABASE = {
   function getCategorySplit(cat, people) {
     var active = activePeople(people);
     if (!active.length) return {};
+    if (active.length === 1) {
+      // Bare meg (solo): «Jeg betaler X %» – lagret i split[id], ellers 100 %
+      var solo = {};
+      var sv = cat && cat.split && cat.split[active[0].id];
+      var sn = sv == null || sv === "" ? NaN : Number(sv);
+      solo[active[0].id] = Number.isFinite(sn) && sn >= 0 && sn <= 100 ? sn : 100;
+      return solo;
+    }
     var raw = cat && cat.split;
     if (!raw || typeof raw !== "object" || isEqualSplit(raw, people)) {
       return equalSplit(people);
@@ -6118,13 +6160,34 @@ window.FAMILIE_BUDGET_SUPABASE = {
       return;
     }
     var active = activePeople(people);
-    var next = {};
+    var next = keepArchivedSplitKeys(cat.split, people);
     active.forEach(function (p) {
       next[p.id] =
         cleaned[p.id] == null || cleaned[p.id] === ""
           ? 0
           : Number(cleaned[p.id]) || 0;
     });
+    cat.split = next;
+  }
+
+  /** Behold andeler for arkiverte personer (skjult, ikke slettet). */
+  function keepArchivedSplitKeys(split, people) {
+    var out = {};
+    if (!split || typeof split !== "object") return out;
+    (people || []).forEach(function (p) {
+      if (p && p.archived && split[p.id] != null) out[p.id] = split[p.id];
+    });
+    return out;
+  }
+
+  /** Solo: «Jeg betaler X %». Endrer bare egen nøkkel. */
+  function setSoloShare(cat, personId, pct) {
+    if (!cat || !personId) return;
+    var n = Number(pct);
+    if (!Number.isFinite(n)) n = 100;
+    n = Math.max(0, Math.min(100, Math.round(n * 100) / 100));
+    var next = Object.assign({}, cat.split && typeof cat.split === "object" ? cat.split : {});
+    next[personId] = n;
     cat.split = next;
   }
 
@@ -6136,16 +6199,18 @@ window.FAMILIE_BUDGET_SUPABASE = {
     var active = activePeople(people);
     (categories || []).forEach(function (cat) {
       if (!cat || !cat.split || typeof cat.split !== "object") return;
-      if (isEqualSplit(cat.split, people)) {
+      if (active.length < 2) return; // solo: behold alt urørt
+      var hasArchivedKeys = Object.keys(keepArchivedSplitKeys(cat.split, people)).length > 0;
+      if (!hasArchivedKeys && isEqualSplit(cat.split, people)) {
         delete cat.split;
         return;
       }
-      var next = {};
+      var next = keepArchivedSplitKeys(cat.split, people);
       active.forEach(function (p) {
         var v = cat.split[p.id];
         next[p.id] = v == null || v === "" ? 0 : Number(v) || 0;
       });
-      if (isEqualSplit(next, people)) {
+      if (!hasArchivedKeys && isEqualSplit(next, people)) {
         delete cat.split;
       } else {
         cat.split = next;
@@ -8216,20 +8281,23 @@ window.FAMILIE_BUDGET_SUPABASE = {
     var rows = [];
     (categories || []).forEach(function (cat) {
       if (!cat || cat.archived) return;
-      var planned = 0, used = 0, shared = false;
+      var planned = 0, used = 0, shared = false, sharePct = null, fullPlanned = null, fullUsed = null;
       if (cat.owner === personId) {
         planned = budgetForOwner(m, cat.id, personId, monthIndex) || 0;
         used = effectiveActualForCategoryOwner(m, cat, personId, monthIndex) || 0;
       } else if (cat.owner === "felles") {
         var pct = fellesSharePercent(cat, personId, people);
         if (!(pct > 0)) return;
-        shared = true;
-        planned = fellesShare(cat, personId, people, budgetForOwner(m, cat.id, "felles", monthIndex) || 0);
-        used = fellesShare(cat, personId, people, effectiveActualForCategoryOwner(m, cat, "felles", monthIndex) || 0);
+        shared = true; sharePct = pct;
+        fullPlanned = budgetForOwner(m, cat.id, "felles", monthIndex) || 0;
+        fullUsed = effectiveActualForCategoryOwner(m, cat, "felles", monthIndex) || 0;
+        planned = fellesShare(cat, personId, people, fullPlanned);
+        used = fellesShare(cat, personId, people, fullUsed);
       } else return;
       if (!(planned > 0) && !(used > 0)) return;
       rows.push({
         id: cat.id, name: cat.name, fast: cat.type === "fast", shared: shared,
+        sharePct: sharePct, fullPlanned: fullPlanned, fullUsed: fullUsed,
         planned: planned, used: used, remain: planned - used, over: used > planned
       });
     });
@@ -8362,6 +8430,74 @@ window.FAMILIE_BUDGET_SUPABASE = {
       tips.push({ kind: "good", text: "Bra! Du ligger innenfor planen. Sett gjerne overskuddet rett i sparing." });
     }
     return tips;
+  }
+
+  /** Solo («Bare meg») = nøyaktig én aktiv person. Avledet, ingen lagret flagg. */
+  function isSoloMode(people) {
+    return activePeople(people).length === 1;
+  }
+
+  /**
+   * Ny ren start for én person. Returnerer migrert state (tom historikk).
+   */
+  function soloStarterState(name, salary, now) {
+    now = now || new Date();
+    var pid = ID_A;
+    var key = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+    var defs = [
+      ["Bolig", "fast"], ["Mat", "variabel"], ["Transport", "variabel"], ["Abonnement", "fast"],
+      ["Fastfood", "variabel"], ["Sparing", "fast"], ["Div", "variabel"]
+    ];
+    var cats = defs.map(function (d, i) {
+      return { id: "solo" + i + "_" + Math.random().toString(36).slice(2, 8), name: d[0], type: d[1],
+        owner: pid, autoFill: d[1] === "fast", archived: false, order: i };
+    });
+    var months = {};
+    var sal = Number(salary);
+    months[key] = { budgets: {}, incomes: [], expenses: [], savings: [], budgetLines: {},
+      plannedIncome: {} };
+    months[key].plannedIncome[pid] = { "lønn": Number.isFinite(sal) && sal > 0 ? sal : null, ekstra: null, sparing: null };
+    return migrateState({
+      version: 2,
+      people: [{ id: pid, name: String(name || "").trim().slice(0, 40) || "Meg", archived: false }],
+      view: { year: now.getFullYear(), month: now.getMonth() },
+      categories: cats, months: months,
+      settings: { innUtView: pid, sparingView: pid, mainTab: "oversikt" },
+      savingsGoals: [], archives: [], plannedSpends: []
+    });
+  }
+
+  /** «Bare meg»: arkiver (skjul) alle andre aktive personer. Sletter ingenting. */
+  function switchToSolo(state, keepId) {
+    var act = activePeople(state && state.people);
+    if (!act.length) return [];
+    var keep = keepId && act.some(function (p) { return p.id === keepId; }) ? keepId : act[0].id;
+    var hidden = [];
+    if (act.length > 1) {
+      (state.categories || []).forEach(function (cat) {
+        if (!cat || cat.owner !== "felles") return;
+        var cur = getCategorySplit(cat, state.people);
+        var merged = Object.assign({}, cat.split || {}, cur);
+        cat.split = merged;
+      });
+    }
+    state.people.forEach(function (p) {
+      if (!p.archived && p.id !== keep) { p.archived = true; hidden.push(p.id); }
+    });
+    if (state.settings) {
+      if (state.settings.innUtView && state.settings.innUtView !== keep) state.settings.innUtView = keep;
+      if (state.settings.sparingView && state.settings.sparingView !== keep) state.settings.sparingView = keep;
+    }
+    return hidden;
+  }
+
+  /** «Husstand»: legg tilbake arkiverte personer (eller én bestemt). */
+  function restorePeople(state, onlyId) {
+    var restored = [];
+    ((state && state.people) || []).forEach(function (p) {
+      if (p.archived && (!onlyId || p.id === onlyId)) { p.archived = false; restored.push(p.id); }
+    });
+    return restored;
   }
 
   function plannedUtFelles(m, categories, monthIndex) {
@@ -11783,6 +11919,11 @@ window.FAMILIE_BUDGET_SUPABASE = {
     plannedIncomeFor: plannedIncomeFor,
     monthOverviewForPerson: monthOverviewForPerson,
     monthOverview: monthOverview,
+    isSoloMode: isSoloMode,
+    setSoloShare: setSoloShare,
+    soloStarterState: soloStarterState,
+    switchToSolo: switchToSolo,
+    restorePeople: restorePeople,
     overviewRowStatus: overviewRowStatus,
     overviewTips: overviewTips,
     plannedSparingFor: plannedSparingFor,
@@ -13380,6 +13521,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
   }
 
   // ——— State ———
+  let needsOnboarding = false;
   let state = load();
   let pickYear = state.view.year;
   let toastTimer = null;
@@ -13395,7 +13537,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
   function load() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return DEFAULT_STATE();
+      if (!raw) { needsOnboarding = true; return DEFAULT_STATE(); }
       const parsed = JSON.parse(raw);
       const migrated = Calc.migrateState(parsed);
       if (!Array.isArray(migrated.savingsGoals)) migrated.savingsGoals = [];
@@ -14240,6 +14382,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
       s = v && v !== "samlet" ? v : "alle";
     }
     if (s !== "alle" && s !== "felles" && !people.some(function (p) { return p.id === s; })) s = "alle";
+    if (people.length === 1) s = people[0].id;
     return s;
   }
 
@@ -14251,7 +14394,21 @@ window.FAMILIE_BUDGET_SUPABASE = {
     return '<div class="mo-bar mo-' + st + '" role="img" aria-label="' + pct + ' prosent brukt"><span style="width:' + pct + '%"></span></div>';
   }
 
+  function applySoloClass() {
+    const solo = activePeopleList().length === 1;
+    document.body.classList.toggle("solo", solo);
+    // Personlig Excel-mal: bare for husstanden den ble laget for
+    const excelOwn = (state.people || []).some(function (p) { return /^mathias$/i.test(String(p.name || "").trim()); });
+    ["#btnFillExcel", "#merExcelHint"].forEach(function (sel) { const el = $(sel); if (el) el.hidden = !excelOwn; });
+    const st = $("#modeStatus");
+    if (st) st.textContent = solo ? "Nå: Bare meg" : "Nå: Husstand (" + activePeopleList().length + " personer)";
+    $$("[data-mode-pick]").forEach(function (b) {
+      b.classList.toggle("primary", (b.getAttribute("data-mode-pick") === "solo") === solo);
+    });
+  }
+
   function renderMonthOverview() {
+    applySoloClass();
     const host = $("#monthOverview");
     if (!host || typeof Calc.monthOverview !== "function") return;
     const m = getMonth();
@@ -14263,7 +14420,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     const scopeName = scope === "alle" ? "Hele husstanden" : scope === "felles" ? "Felles" :
       ((people.filter(function (p) { return p.id === scope; })[0] || {}).name || "");
 
-    const seg = '<div class="mo-seg" role="tablist" aria-label="Velg hvem">' +
+    const seg = people.length === 1 ? "" : '<div class="mo-seg" role="tablist" aria-label="Velg hvem">' +
       people.map(function (p) { return { id: p.id, name: p.name }; })
         .concat([{ id: "felles", name: "Felles" }, { id: "alle", name: "Alle" }])
         .map(function (b) {
@@ -14312,7 +14469,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
       const st = Calc.overviewRowStatus(r);
       let sub = "";
       if (scope === "alle" && r.ownerName) sub += '<span class="mo-tag">' + escapeHtml(r.ownerName) + "</span>";
-      else if (r.shared && scope !== "felles") sub += '<span class="mo-tag">felles – din del</span>';
+      else if (r.shared && scope !== "felles") sub += '<span class="mo-tag">' + (r.sharePct != null && r.fullPlanned != null ? "du betaler " + Math.round(r.sharePct) + " % av " + formatNOK(Math.max(r.fullPlanned, r.fullUsed || 0)) : "felles – din del") + "</span>";
       if (scope === "felles" && r.shares) {
         sub += r.shares.map(function (sh) { return '<span class="mo-tag">' + escapeHtml(sh.name) + " " + Math.round(sh.pct) + " %: " + formatNOK(sh.used) + "</span>"; }).join("");
       }
@@ -14328,7 +14485,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     });
     const fastRows = o.rows.filter(function (r) { return r.fast; }).sort(function (a, b) { return b.planned - a.planned; });
     let fastSum = 0; fastRows.forEach(function (r) { fastSum += Math.max(r.planned, r.used); });
-    const cats = '<div class="mo-h3">Kjøp per kategori</div>' + (varRows.map(rowHtml).join("") || '<p class="hint compact">Ingen kategorier.</p>') +
+    const cats = '<div class="mo-h3">Kjøp per kategori</div>' + (varRows.map(rowHtml).join("") || '<p class="hint compact">Ingen beløp ennå – sett hva du vil bruke per kategori under <strong>Plan</strong>.</p>') +
       (fastRows.length ? '<details class="mo-fast"><summary>Faste utgifter: ' + formatNOK(fastSum) + " (" + fastRows.length + " poster)</summary>" + fastRows.map(rowHtml).join("") + "</details>" : "");
 
     // Trend: last 6 months, variable categories
@@ -15536,7 +15693,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
           actions =
             '<button type="button" class="btn people-action restore" data-people-archive="' +
             escapeAttr(person.id) +
-            '">Gjenopprett</button>' +
+            '">Legg tilbake</button>' +
             (!hasData
               ? '<button type="button" class="btn danger ghost people-action" data-people-delete="' +
                 escapeAttr(person.id) +
@@ -15563,7 +15720,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
           '" maxlength="40" autocomplete="off" aria-label="Navn på person" /></label>' +
           (archived ? '<span class="tag people-tag">Arkivert</span>' : "") +
           (hasData && !archived
-            ? '<p class="people-card-hint">Har registrerte tall – fjerning arkiverer, flytter utgifter til Felles; inntekter blir i historikken.</p>'
+            ? '<p class="people-card-hint">Har registrerte tall – «Fjern» skjuler bare personen. Ingenting slettes, og «Legg tilbake» henter alt tilbake.</p>'
             : "") +
           '<div class="people-card-actions">' +
           actions +
@@ -17167,7 +17324,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
         empty.innerHTML =
           '<span class="empty-icon" aria-hidden="true">✨</span>' +
           "<p><strong>Kom i gang med kategorier</strong></p>" +
-          "<p class=\"hint compact\">Trykk forslag under Mathias, Andrea eller Felles – eller «+ Ny kategori».</p>";
+          "<p class=\"hint compact\">Trykk et forslag – eller «+ Ny kategori».</p>";
       }
     }
 
@@ -17809,6 +17966,16 @@ window.FAMILIE_BUDGET_SUPABASE = {
 
   function renderFordelingBlock(cat, plannedFelles) {
     const people = activePeopleList();
+    if (people.length === 1) {
+      const me = people[0];
+      const pct = Calc.fellesSharePercent(cat, me.id, state.people);
+      return '<div class="fordeling-block solo-share" data-fordeling-cat="' + escapeAttr(cat.id) + '">' +
+        '<div class="fordeling-person"><label class="fordeling-name" for="split-' + escapeAttr(cat.id) + '">Jeg betaler</label>' +
+        '<input type="number" inputmode="decimal" min="0" max="100" step="1" class="fordeling-pct" data-split-cat="' + escapeAttr(cat.id) +
+        '" data-split-person="' + escapeAttr(me.id) + '" data-solo-share="1" id="split-' + escapeAttr(cat.id) + '" value="' + escapeAttr(String(pct)) + '" aria-label="Min andel i prosent" />' +
+        '<span class="unit">%</span><span class="fordeling-kr">' + formatNOK((plannedFelles * pct) / 100) + " av " + formatNOK(plannedFelles) + "</span></div>" +
+        '<p class="hint compact">Delt regning (f.eks. husleie eller strøm med noen utenfor appen). Skriv full sum som beløp – appen regner bare med din andel.</p></div>';
+    }
     const split = Calc.getCategorySplit(cat, state.people);
     const sum = Calc.splitSum(split, state.people);
     const sumOk = Math.abs(sum - 100) < 0.1;
@@ -21212,7 +21379,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
           !confirm(
             "Fylle forventet inntekt og budsjett fra Excel for alle 12 måneder i " +
               state.view.year +
-              "?\n\nFelles: Lån/Strøm/Internett/Forsikring (summert). Personlige linjer under Mathias/Andrea. Mobil under Mathias.\n\nEksisterende plan-tall overskrives. Kjøp, inntekter og saldo endres ikke."
+              "?\n\nFelles: Lån/Strøm/Internett/Forsikring (summert). Personlige linjer under person 1/2.\n\nEksisterende plan-tall overskrives. Kjøp, inntekter og saldo endres ikke."
           )
         ) {
           return;
@@ -21502,6 +21669,14 @@ window.FAMILIE_BUDGET_SUPABASE = {
       const cat = catById(catId);
       if (!cat) return;
       const inputs = $$('#categoryList [data-split-cat="' + catId + '"]');
+      if (inputs.length === 1 && inputs[0].getAttribute("data-solo-share")) {
+        let n = Number(String(inputs[0].value || "").trim().replace(",", "."));
+        if (!Number.isFinite(n)) n = 100;
+        Calc.setSoloShare(cat, inputs[0].getAttribute("data-split-person"), n);
+        save();
+        render();
+        return;
+      }
       const split = {};
       inputs.forEach(function (inp) {
         const pid = inp.getAttribute("data-split-person");
@@ -21538,7 +21713,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     }
     $("#categoryList").addEventListener("input", function (e) {
       const inp = e.target.closest("[data-split-cat]");
-      if (!inp) return;
+      if (!inp || inp.getAttribute("data-solo-share")) return;
       updateFordelingSumHint(inp.getAttribute("data-split-cat"));
     });
     $("#categoryList").addEventListener("change", function (e) {
@@ -22117,26 +22292,14 @@ window.FAMILIE_BUDGET_SUPABASE = {
           }
           const hasData = Calc.personHasData(state, id);
           if (hasData) {
-            if (
-              !confirm(
-                "Fjerne " +
-                  person.name +
-                  "?\n\nPersonen arkiveres (skjules). Utgifter og kategorier flyttes til Felles. Inntekter blir stående på personen i historikken (synlig i Logg-filter)."
-              )
-            )
-              return;
-            Calc.reassignPersonData(state, id, "felles");
+            if (!confirm("Fjerne " + person.name + "?\n\nPersonen skjules. Ingen tall slettes – alt kommer tilbake med «Legg tilbake».")) return;
             person.archived = true;
             if (state.settings.innUtView === id) state.settings.innUtView = "samlet";
             if (state.settings.sparingView === id) state.settings.sparingView = "samlet";
-            Calc.ensureCategorySplits(state.categories, state.people);
             save();
             renderPeopleManage();
             render();
-            showToast(
-              person.name +
-                " arkivert – utgifter til Felles. Inntekter synes fortsatt i Logg."
-            );
+            showToast(person.name + " skjult" + (activePeopleList().length === 1 ? " – «Bare meg» er nå på" : ""));
           } else {
             if (!confirm("Fjerne " + person.name + " permanent? Ingen registrerte tall.")) return;
             state.people = state.people.filter(function (x) { return x.id !== id; });
@@ -22166,7 +22329,6 @@ window.FAMILIE_BUDGET_SUPABASE = {
                 )
               )
                 return;
-              Calc.reassignPersonData(state, id, "felles");
             } else if (!confirm("Arkivere " + person.name + "?")) {
               return;
             }
@@ -22176,7 +22338,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
             showToast(person.name + " arkivert");
           } else {
             person.archived = false;
-            showToast(person.name + " gjenopprettet");
+            showToast(person.name + " er lagt tilbake – husstand-modus");
           }
           Calc.ensureCategorySplits(state.categories, state.people);
           save();
@@ -22225,6 +22387,59 @@ window.FAMILIE_BUDGET_SUPABASE = {
       exportCsv();
       showToast("CSV eksportert");
     });
+    // ——— Bare meg / Husstand ———
+    $$("[data-mode-pick]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        const want = b.getAttribute("data-mode-pick");
+        const act = activePeopleList();
+        if (want === "solo") {
+          if (act.length <= 1) { showToast("«Bare meg» er allerede på"); return; }
+          const view = state.settings.innUtView;
+          const keep = act.some(function (p) { return p.id === view; }) ? view : act[0].id;
+          const others = act.filter(function (p) { return p.id !== keep; }).map(function (p) { return p.name; });
+          if (!confirm("Bruke appen som «Bare meg» (" + nameOf(keep) + ")?\n\n" + others.join(", ") + " skjules. Ingen tall slettes – «Husstand» legger dem tilbake.")) return;
+          Calc.switchToSolo(state, keep);
+          try { localStorage.setItem("familie-budsjett-ov-scope", keep); } catch (e) { /* */ }
+          save(); renderPeopleManage(); render();
+          showToast("«Bare meg» er på");
+        } else {
+          const restored = Calc.restorePeople(state);
+          if (!restored.length) {
+            const name = (prompt("Navn på personen du vil legge til:") || "").trim();
+            if (!name) return;
+            state.people.push({ id: "p" + Date.now().toString(36), name: name.slice(0, 40), archived: false });
+          }
+          Calc.ensureCategorySplits(state.categories, state.people);
+          save(); renderPeopleManage(); render();
+          showToast("Husstand-modus: " + activePeopleList().map(function (p) { return p.name; }).join(" og "));
+        }
+      });
+    });
+
+    // ——— Første oppstart ———
+    if (needsOnboarding && $("#dlgOnboard")) {
+      const s1 = $("#onbStep1"), s2 = $("#onbStep2");
+      $$("[data-onb]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          if (b.getAttribute("data-onb") === "solo") { s1.hidden = true; s2.hidden = false; $("#onbName").focus(); }
+          else { closeDlg("#dlgOnboard"); needsOnboarding = false; showToast("Skriv inn navn under Innstillinger → Personer"); }
+        });
+      });
+      $("#onbBack").addEventListener("click", function () { s1.hidden = false; s2.hidden = true; });
+      $("#onbStart").addEventListener("click", function () {
+        const name = ($("#onbName").value || "").trim();
+        if (!name) { $("#onbName").focus(); showToast("Skriv navnet ditt"); return; }
+        state = Calc.soloStarterState(name, Number($("#onbSalary").value) || 0, new Date());
+        ensureCategoryOrders(state);
+        needsOnboarding = false;
+        save();
+        closeDlg("#dlgOnboard");
+        render();
+        showToast("Klar! Sett beløp per kategori under Plan.");
+      });
+      setTimeout(function () { if (needsOnboarding) openDlg("#dlgOnboard"); }, 50);
+    }
+
     $("#importFile").addEventListener("change", function (e) {
       const file = e.target.files && e.target.files[0];
       if (!file) return;
@@ -22316,7 +22531,7 @@ window.FAMILIE_BUDGET_SUPABASE = {
     showToast(
       "Gammel saldo lagt på " +
         ((state.people && state.people[0] && state.people[0].name) || "første person") +
-        " (bruk). Andrea/andre startet på 0."
+        " (bruk). Andre startet på 0."
     );
   }
 })();

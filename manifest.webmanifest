@@ -1,7 +1,7 @@
 {
-  "name": "Familiebudsjett – Mathias & Andrea",
+  "name": "Familiebudsjett",
   "short_name": "Budsjett",
-  "description": "Familiebudsjett med budsjett mot faktisk for Mathias og Andrea",
+  "description": "Budsjett mot faktisk – for deg alene eller hele husstanden",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f0f4f3",

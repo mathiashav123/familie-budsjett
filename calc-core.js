@@ -23,8 +23,8 @@
 
   function defaultPeople() {
     return [
-      { id: ID_A, name: "Mathias", archived: false },
-      { id: ID_B, name: "Andrea", archived: false }
+      { id: ID_A, name: "Person 1", archived: false },
+      { id: ID_B, name: "Person 2", archived: false }
     ];
   }
 
@@ -116,6 +116,14 @@
   function getCategorySplit(cat, people) {
     var active = activePeople(people);
     if (!active.length) return {};
+    if (active.length === 1) {
+      // Bare meg (solo): «Jeg betaler X %» – lagret i split[id], ellers 100 %
+      var solo = {};
+      var sv = cat && cat.split && cat.split[active[0].id];
+      var sn = sv == null || sv === "" ? NaN : Number(sv);
+      solo[active[0].id] = Number.isFinite(sn) && sn >= 0 && sn <= 100 ? sn : 100;
+      return solo;
+    }
     var raw = cat && cat.split;
     if (!raw || typeof raw !== "object" || isEqualSplit(raw, people)) {
       return equalSplit(people);
@@ -186,13 +194,34 @@
       return;
     }
     var active = activePeople(people);
-    var next = {};
+    var next = keepArchivedSplitKeys(cat.split, people);
     active.forEach(function (p) {
       next[p.id] =
         cleaned[p.id] == null || cleaned[p.id] === ""
           ? 0
           : Number(cleaned[p.id]) || 0;
     });
+    cat.split = next;
+  }
+
+  /** Behold andeler for arkiverte personer (skjult, ikke slettet). */
+  function keepArchivedSplitKeys(split, people) {
+    var out = {};
+    if (!split || typeof split !== "object") return out;
+    (people || []).forEach(function (p) {
+      if (p && p.archived && split[p.id] != null) out[p.id] = split[p.id];
+    });
+    return out;
+  }
+
+  /** Solo: «Jeg betaler X %». Endrer bare egen nøkkel. */
+  function setSoloShare(cat, personId, pct) {
+    if (!cat || !personId) return;
+    var n = Number(pct);
+    if (!Number.isFinite(n)) n = 100;
+    n = Math.max(0, Math.min(100, Math.round(n * 100) / 100));
+    var next = Object.assign({}, cat.split && typeof cat.split === "object" ? cat.split : {});
+    next[personId] = n;
     cat.split = next;
   }
 
@@ -204,16 +233,18 @@
     var active = activePeople(people);
     (categories || []).forEach(function (cat) {
       if (!cat || !cat.split || typeof cat.split !== "object") return;
-      if (isEqualSplit(cat.split, people)) {
+      if (active.length < 2) return; // solo: behold alt urørt
+      var hasArchivedKeys = Object.keys(keepArchivedSplitKeys(cat.split, people)).length > 0;
+      if (!hasArchivedKeys && isEqualSplit(cat.split, people)) {
         delete cat.split;
         return;
       }
-      var next = {};
+      var next = keepArchivedSplitKeys(cat.split, people);
       active.forEach(function (p) {
         var v = cat.split[p.id];
         next[p.id] = v == null || v === "" ? 0 : Number(v) || 0;
       });
-      if (isEqualSplit(next, people)) {
+      if (!hasArchivedKeys && isEqualSplit(next, people)) {
         delete cat.split;
       } else {
         cat.split = next;
@@ -2284,20 +2315,23 @@
     var rows = [];
     (categories || []).forEach(function (cat) {
       if (!cat || cat.archived) return;
-      var planned = 0, used = 0, shared = false;
+      var planned = 0, used = 0, shared = false, sharePct = null, fullPlanned = null, fullUsed = null;
       if (cat.owner === personId) {
         planned = budgetForOwner(m, cat.id, personId, monthIndex) || 0;
         used = effectiveActualForCategoryOwner(m, cat, personId, monthIndex) || 0;
       } else if (cat.owner === "felles") {
         var pct = fellesSharePercent(cat, personId, people);
         if (!(pct > 0)) return;
-        shared = true;
-        planned = fellesShare(cat, personId, people, budgetForOwner(m, cat.id, "felles", monthIndex) || 0);
-        used = fellesShare(cat, personId, people, effectiveActualForCategoryOwner(m, cat, "felles", monthIndex) || 0);
+        shared = true; sharePct = pct;
+        fullPlanned = budgetForOwner(m, cat.id, "felles", monthIndex) || 0;
+        fullUsed = effectiveActualForCategoryOwner(m, cat, "felles", monthIndex) || 0;
+        planned = fellesShare(cat, personId, people, fullPlanned);
+        used = fellesShare(cat, personId, people, fullUsed);
       } else return;
       if (!(planned > 0) && !(used > 0)) return;
       rows.push({
         id: cat.id, name: cat.name, fast: cat.type === "fast", shared: shared,
+        sharePct: sharePct, fullPlanned: fullPlanned, fullUsed: fullUsed,
         planned: planned, used: used, remain: planned - used, over: used > planned
       });
     });
@@ -2430,6 +2464,74 @@
       tips.push({ kind: "good", text: "Bra! Du ligger innenfor planen. Sett gjerne overskuddet rett i sparing." });
     }
     return tips;
+  }
+
+  /** Solo («Bare meg») = nøyaktig én aktiv person. Avledet, ingen lagret flagg. */
+  function isSoloMode(people) {
+    return activePeople(people).length === 1;
+  }
+
+  /**
+   * Ny ren start for én person. Returnerer migrert state (tom historikk).
+   */
+  function soloStarterState(name, salary, now) {
+    now = now || new Date();
+    var pid = ID_A;
+    var key = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+    var defs = [
+      ["Bolig", "fast"], ["Mat", "variabel"], ["Transport", "variabel"], ["Abonnement", "fast"],
+      ["Fastfood", "variabel"], ["Sparing", "fast"], ["Div", "variabel"]
+    ];
+    var cats = defs.map(function (d, i) {
+      return { id: "solo" + i + "_" + Math.random().toString(36).slice(2, 8), name: d[0], type: d[1],
+        owner: pid, autoFill: d[1] === "fast", archived: false, order: i };
+    });
+    var months = {};
+    var sal = Number(salary);
+    months[key] = { budgets: {}, incomes: [], expenses: [], savings: [], budgetLines: {},
+      plannedIncome: {} };
+    months[key].plannedIncome[pid] = { "lønn": Number.isFinite(sal) && sal > 0 ? sal : null, ekstra: null, sparing: null };
+    return migrateState({
+      version: 2,
+      people: [{ id: pid, name: String(name || "").trim().slice(0, 40) || "Meg", archived: false }],
+      view: { year: now.getFullYear(), month: now.getMonth() },
+      categories: cats, months: months,
+      settings: { innUtView: pid, sparingView: pid, mainTab: "oversikt" },
+      savingsGoals: [], archives: [], plannedSpends: []
+    });
+  }
+
+  /** «Bare meg»: arkiver (skjul) alle andre aktive personer. Sletter ingenting. */
+  function switchToSolo(state, keepId) {
+    var act = activePeople(state && state.people);
+    if (!act.length) return [];
+    var keep = keepId && act.some(function (p) { return p.id === keepId; }) ? keepId : act[0].id;
+    var hidden = [];
+    if (act.length > 1) {
+      (state.categories || []).forEach(function (cat) {
+        if (!cat || cat.owner !== "felles") return;
+        var cur = getCategorySplit(cat, state.people);
+        var merged = Object.assign({}, cat.split || {}, cur);
+        cat.split = merged;
+      });
+    }
+    state.people.forEach(function (p) {
+      if (!p.archived && p.id !== keep) { p.archived = true; hidden.push(p.id); }
+    });
+    if (state.settings) {
+      if (state.settings.innUtView && state.settings.innUtView !== keep) state.settings.innUtView = keep;
+      if (state.settings.sparingView && state.settings.sparingView !== keep) state.settings.sparingView = keep;
+    }
+    return hidden;
+  }
+
+  /** «Husstand»: legg tilbake arkiverte personer (eller én bestemt). */
+  function restorePeople(state, onlyId) {
+    var restored = [];
+    ((state && state.people) || []).forEach(function (p) {
+      if (p.archived && (!onlyId || p.id === onlyId)) { p.archived = false; restored.push(p.id); }
+    });
+    return restored;
   }
 
   function plannedUtFelles(m, categories, monthIndex) {
@@ -5851,6 +5953,11 @@
     plannedIncomeFor: plannedIncomeFor,
     monthOverviewForPerson: monthOverviewForPerson,
     monthOverview: monthOverview,
+    isSoloMode: isSoloMode,
+    setSoloShare: setSoloShare,
+    soloStarterState: soloStarterState,
+    switchToSolo: switchToSolo,
+    restorePeople: restorePeople,
     overviewRowStatus: overviewRowStatus,
     overviewTips: overviewTips,
     plannedSparingFor: plannedSparingFor,

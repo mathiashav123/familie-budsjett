@@ -160,7 +160,7 @@
           <div id="categoryEmpty" class="empty empty-encourage" hidden>
             <span class="empty-icon" aria-hidden="true">✨</span>
             <p><strong>Kom i gang med kategorier</strong></p>
-            <p class="hint compact">Forslag ligger under Mathias, Andrea og Felles – trykk for å legge til.</p>
+            <p class="hint compact">Forslag ligger under hver person og Felles – trykk for å legge til.</p>
           </div>
           <div id="catQuickAdd" class="cat-quick-add" hidden></div>
         </div>
@@ -524,7 +524,7 @@
           <button type="button" class="btn danger ghost mer-btn" id="btnClearCategories">Fjern alle kategorier</button>
           <button type="button" class="btn danger ghost mer-btn" id="btnMerReset">Nullstill alt</button>
         </div>
-        <p class="hint compact" id="merExcelHint">«Fyll budsjett fra Excel» oppretter manglende kategorier (med riktig eier) og setter forventet inntekt/utgifter for alle 12 måneder: <strong>Felles</strong> = Lån/Strøm/Internett/Forsikring, personlige variable under Mathias/Andrea, Mobil under Mathias. Lager ikke fake kjøp eller saldo.</p>
+        <p class="hint compact" id="merExcelHint">«Fyll budsjett fra Excel» oppretter manglende kategorier (med riktig eier) og setter forventet inntekt/utgifter for alle 12 måneder: <strong>Felles</strong> = Lån/Strøm/Internett/Forsikring, personlige variable under person 1/2. Lager ikke fake kjøp eller saldo.</p>
         <p class="hint compact">Hold ⠿ og dra for å endre kategori-rekkefølge på Plan (velg «Egen rekkefølge») eller under Administrer.</p>
       </section>
 
@@ -554,7 +554,7 @@
           </p>
           <label class="field">
             <span>Brukernavn</span>
-            <input type="text" id="syncUsername" class="input lg" maxlength="32" autocomplete="username" placeholder="f.eks. mathias" spellcheck="false" />
+            <input type="text" id="syncUsername" class="input lg" maxlength="32" autocomplete="username" placeholder="f.eks. ola" spellcheck="false" />
           </label>
           <label class="field">
             <span>Passord</span>
@@ -635,7 +635,7 @@
         <div class="card-head">
           <h2 id="merPeopleTitle">Familie / Personer</h2>
         </div>
-        <p class="hint compact">Gi nytt navn direkte i feltet. Felles er ikke en person og kan ikke fjernes. Standard er Mathias &amp; Andrea – endre eller legg til etter behov.</p>
+        <p class="hint compact">Gi nytt navn direkte i feltet. Felles er ikke en person og kan ikke fjernes. Endre eller legg til etter behov.</p>
         <div id="merPeopleManageList" class="people-manage"></div>
         <div class="add-person-block">
           <label class="field">
@@ -1050,6 +1050,27 @@
     </div>
   </dialog>
 
+  <dialog id="dlgOnboard" class="modal">
+    <div class="modal-card">
+      <header class="modal-head"><h2>Velkommen til Familiebudsjett</h2></header>
+      <div class="modal-body stack">
+        <div id="onbStep1">
+          <p><strong>Hvem skal bruke appen?</strong></p>
+          <div class="mode-pick">
+            <button type="button" class="btn primary" data-onb="solo">Bare meg</button>
+            <button type="button" class="btn" data-onb="household">Husstand (flere personer)</button>
+          </div>
+          <p class="hint compact">Du kan bytte senere under Innstillinger.</p>
+        </div>
+        <div id="onbStep2" hidden>
+          <label class="field"><span>Navnet ditt</span><input type="text" id="onbName" class="input lg" maxlength="40" placeholder="F.eks. Ola" autocomplete="given-name" /></label>
+          <label class="field"><span>Lønn utbetalt per måned (netto, kr)</span><input type="number" id="onbSalary" class="input lg" inputmode="numeric" min="0" placeholder="F.eks. 35000" /></label>
+          <p class="hint compact">Du får disse kategoriene, som du kan endre: Bolig, Mat, Transport, Abonnement, Fastfood, Sparing, Div. Sett beløp per kategori under <strong>Plan</strong>.</p>
+          <div class="mode-pick"><button type="button" class="btn ghost" id="onbBack">Tilbake</button><button type="button" class="btn primary" id="onbStart">Start</button></div>
+        </div>
+      </div>
+    </div>
+  </dialog>
   <dialog id="dlgSettings" class="modal">
     <div class="modal-card">
       <header class="modal-head">
@@ -1080,6 +1101,12 @@
           </div>
         </label>
         <p class="hint compact">Valgfritt husstandsbeløp (standard 0). Trekkes fra trygg-å-bruke når saldo-formel er på.</p>
+        <h3 class="settings-people-title">Hvem bruker appen?</h3>
+        <div class="mode-pick">
+          <button type="button" class="btn" data-mode-pick="solo">Bare meg</button>
+          <button type="button" class="btn" data-mode-pick="household">Husstand (flere personer)</button>
+        </div>
+        <p class="hint compact"><span id="modeStatus"></span>. «Bare meg» skjuler de andre personene – ingen tall slettes, og «Husstand» legger dem tilbake. Delte regninger kan fortsatt ha «Jeg betaler X %».</p>
         <h3 class="settings-people-title">Personer</h3>
         <p class="hint compact">Samme liste som under <strong>Mer → Familie / Personer</strong>. Felles er ikke en person.</p>
         <div id="peopleManageList" class="people-manage"></div>
