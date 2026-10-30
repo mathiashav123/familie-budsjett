@@ -13,7 +13,7 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icon-192.png" />
   <title>Familiebudsjett</title>
-  <link rel="stylesheet" href="styles.css?v=20261030b" />
+  <link rel="stylesheet" href="styles.css?v=20261030c" />
 </head>
 <body>
   <a class="skip-link" href="#main">Hopp til innhold</a>
@@ -94,6 +94,7 @@
       <div id="planMissingIncome" class="ux-nudge" hidden role="status"></div>
 
       <div class="toolbar plan-toolbar">
+        <button type="button" class="btn secondary" id="btnBudgetProposal" title="Lag et forslag ut fra sparemål og faktisk forbruk">💡 Lag budsjettforslag</button>
         <button type="button" class="btn secondary" id="btnCopyBudget" title="Kopier budsjettbeløp og forventet inntekt fra forrige måned">
           📋 Kopier budsjett fra forrige måned
         </button>
@@ -1000,6 +1001,30 @@
   </dialog>
 
   <!-- Modal: kategorier -->
+  <dialog id="dlgBudgetProposal" class="modal">
+    <div class="modal-card wide">
+      <header class="modal-head">
+        <h2>Lag budsjettforslag</h2>
+        <button type="button" class="icon-btn" id="bpClose" aria-label="Lukk">×</button>
+      </header>
+      <div class="modal-body">
+        <div class="bp-form">
+          <label id="bpPersonWrap">Hvem<select id="bpPerson" class="select"></select></label>
+          <label>Måned<select id="bpMonth" class="select"></select></label>
+          <label>Spare per måned<input id="bpSaving" class="input" inputmode="numeric" placeholder="f.eks. 3000" /></label>
+          <label>Forventet inntekt<input id="bpIncome" class="input" inputmode="numeric" /></label>
+        </div>
+        <label class="bp-check"><input type="checkbox" id="bpOnward" /> Gjelder også månedene etter</label>
+        <button type="button" class="btn primary" id="bpRun">Lag forslag</button>
+        <div id="bpResult"></div>
+        <div class="modal-actions bp-actions">
+          <button type="button" class="btn ghost" id="bpCancel">Avbryt</button>
+          <button type="button" class="btn primary" id="bpApply" hidden>Bruk denne planen</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
   <dialog id="dlgCats" class="modal">
     <div class="modal-card wide">
       <header class="modal-head">
@@ -1139,9 +1164,9 @@
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="supabase-config.js"></script>
-  <script src="calc-core.js?v=20261030b"></script>
+  <script src="calc-core.js?v=20261030c"></script>
   <script src="sync-core.js"></script>
   <script src="cloud-sync.js"></script>
-  <script src="app.js?v=20261030b"></script>
+  <script src="app.js?v=20261030c"></script>
 </body>
 </html>

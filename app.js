@@ -1224,6 +1224,213 @@
     } else { catOpen.add(id); insertCatEntries(row); }
   }
 
+  // ——— Insights helpers ———
+  function appToday() { return new Date(); }
+  const SUGG_KEY = "familie-budsjett-sugg-dismiss";
+  function suggDismissed() {
+    try { return JSON.parse(ovLocalGet(SUGG_KEY) || "{}") || {}; } catch (e) { return {}; }
+  }
+  /** Set a category plan for a month and carry forward to later months that still had the old value. */
+  function applyPlanAmount(key, catId, owner, amount) {
+    const m = getMonth(key);
+    const prev = Calc.budgetForOwner(m, catId, owner, ovMonthIndexFromKey(key));
+    setBudgetForOwner(m, catId, owner, amount);
+    if (state.settings.copyExpectedToNewMonths !== false && Calc.propagateBudgetSlotForward) {
+      Calc.propagateBudgetSlotForward(state.months, key, catId, owner, amount, { onlyIfMatches: prev });
+    }
+  }
+  function handleSuggestion(btn) {
+    const key = monthKey(state.view.year, state.view.month);
+    if (btn.hasAttribute("data-sugg-keep")) {
+      const d = suggDismissed();
+      d[btn.getAttribute("data-sugg-keep") + "|" + btn.getAttribute("data-sugg-owner")] = key;
+      ovLocalSet(SUGG_KEY, JSON.stringify(d));
+      showToast("Ok – planen beholdes. Forslaget skjules ut måneden.");
+      renderMonthOverview();
+      return;
+    }
+    const catId = btn.getAttribute("data-sugg-apply") || btn.getAttribute("data-sugg-pick");
+    const owner = btn.getAttribute("data-sugg-owner");
+    let amt = Number(btn.getAttribute("data-sugg-amt"));
+    if (btn.hasAttribute("data-sugg-pick")) {
+      const v = window.prompt("Ny plan for " + btn.getAttribute("data-sugg-name") + " (kr per måned):", String(amt));
+      if (v == null) return;
+      amt = parseAmount(v);
+      if (!(amt >= 0)) { showToast("Ugyldig beløp"); return; }
+    }
+    applyPlanAmount(key, catId, owner, amt);
+    save();
+    render();
+    showToast("Planen er oppdatert til " + formatNOK(amt));
+  }
+
+  // ——— Lag budsjettforslag (Plan) ———
+  let bpLast = null;
+  function openBudgetProposal() {
+    const people = activePeopleList();
+    const sel = $("#bpPerson");
+    const me = deviceMe() || (overviewScope() !== "felles" && overviewScope() !== "alle" ? overviewScope() : (people[0] || {}).id);
+    sel.innerHTML = people.map(function (p) { return '<option value="' + escapeAttr(p.id) + '"' + (p.id === me ? " selected" : "") + ">" + escapeHtml(p.name) + "</option>"; }).join("");
+    $("#bpPersonWrap").hidden = people.length < 2;
+    const ms = $("#bpMonth");
+    const opts = [];
+    const now = appToday();
+    for (let i = 0; i < 13; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      opts.push('<option value="' + monthKey(d.getFullYear(), d.getMonth()) + '">' + escapeHtml(MONTHS[d.getMonth()] + " " + d.getFullYear()) + "</option>");
+    }
+    ms.innerHTML = opts.join("");
+    const vk = monthKey(state.view.year, state.view.month);
+    if (ms.querySelector('option[value="' + vk + '"]')) ms.value = vk;
+    $("#bpIncome").value = "";
+    $("#bpResult").innerHTML = "";
+    $("#bpApply").hidden = true;
+    bpLast = null;
+    bpPrefillIncome();
+    openDlg("#dlgBudgetProposal");
+  }
+  function bpPrefillIncome() {
+    const key = $("#bpMonth").value, pid = $("#bpPerson").value;
+    const m = state.months[key];
+    const inc = m ? Calc.monthOverview(m, pid, state.people, state.categories, ovMonthIndexFromKey(key)).plannedIncome : 0;
+    $("#bpIncome").placeholder = inc ? String(Math.round(inc)) : "f.eks. 35000";
+  }
+  // Shared editable proposal table (Plan dialog + Velkommen-veiviser)
+  // model: { items, available, locked:{i:v}, off:{i:true}, values:[], offValue(i), host, onChange }
+  function bpCompute(model) {
+    const locked = {};
+    Object.keys(model.locked).forEach(function (k) { if (!model.off[k]) locked[k] = model.locked[k]; });
+    Object.keys(model.off).forEach(function (k) { if (model.off[k]) locked[k] = model.offValue(Number(k)); });
+    const rb = Calc.rebalanceProposal(model.items, model.available, locked);
+    model.values = rb.values;
+    model.rb = rb;
+    return rb;
+  }
+  function bpTableHtml(model) {
+    const hasPlan = model.showPlan;
+    return '<div class="mo-table-wrap"><table class="mo-table bp-table"><thead><tr><th></th><th>Kategori</th>' + (hasPlan ? "<th>Nå</th>" : "") +
+      "<th>" + escapeHtml(model.avgLabel || "Snitt") + "</th><th>Forslag</th></tr></thead><tbody>" +
+      model.items.map(function (it, i) {
+        const off = !!model.off[i], lk = Object.prototype.hasOwnProperty.call(model.locked, i);
+        return '<tr class="' + (off ? "bp-off" : "") + '"><td><input type="checkbox" data-bp-on="' + i + '"' + (off ? "" : " checked") + (it.hasLines ? " disabled" : "") + ' aria-label="Bruk ' + escapeAttr(it.name) + '" /></td>' +
+          "<td>" + escapeHtml(it.name) + (it.hasLines ? ' <small title="Har underposter – endres ikke">*</small>' : "") +
+          (it.tip ? '<div class="bp-tip">' + escapeHtml(it.tip) + "</div>" : "") + "</td>" +
+          (hasPlan ? "<td>" + formatNOK(it.currentPlan).replace(" kr", "") + "</td>" : "") +
+          "<td>" + formatNOK(Math.round(it.avg)).replace(" kr", "") + '</td><td class="bp-cell"><input class="input bp-in" inputmode="numeric" data-bp-i="' + i + '" value="' + (off ? "" : model.values[i]) + '"' + (off || it.hasLines ? " disabled" : "") + " />" +
+          '<button type="button" class="bp-lock" data-bp-lock="' + i + '"' + (lk && !off ? "" : " hidden") + ' title="Låst – trykk for å låse opp" aria-label="Lås opp">🔒</button></td></tr>';
+      }).join("") + "</tbody></table></div>" +
+      '<p class="bp-live" data-bp-live></p>' +
+      '<div class="bp-tools"><button type="button" class="btn sm ghost" data-bp-reset>Nullstill</button></div>';
+  }
+  function bpRefresh(model) {
+    const rb = bpCompute(model);
+    const host = model.host;
+    host.querySelectorAll("[data-bp-i]").forEach(function (inp) {
+      const i = Number(inp.getAttribute("data-bp-i"));
+      if (document.activeElement !== inp) inp.value = model.off[i] ? "" : model.values[i];
+    });
+    host.querySelectorAll("[data-bp-lock]").forEach(function (b) {
+      const i = b.getAttribute("data-bp-lock");
+      b.hidden = !(Object.prototype.hasOwnProperty.call(model.locked, i) && !model.off[i]);
+    });
+    let used = 0;
+    model.items.forEach(function (it, i) { if (!model.off[i]) used += model.values[i] || 0; });
+    const live = host.querySelector("[data-bp-live]");
+    if (live) {
+      live.className = "bp-live" + (rb.fits ? "" : " bad");
+      live.innerHTML = "Fordelt <b>" + formatNOK(used) + "</b> av " + formatNOK(Math.max(0, Math.round(model.available))) + (model.offSum ? " (uten avhukede)" : "") +
+        (rb.fits ? (model.available - used >= 100 ? " · " + formatNOK(Math.floor(model.available - used)) + " til overs" : "") :
+          ' · <b>mangler ' + formatNOK(Math.ceil(rb.missing)) + "</b> – senk et låst beløp, sparemålet eller fjern en kategori");
+    }
+    if (model.onChange) model.onChange(model);
+  }
+  function bpBind(model) {
+    const host = model.host;
+    host.innerHTML = (model.headHtml || "") + bpTableHtml(model) + (model.footHtml || "");
+    host.oninput = function (e) {
+      const inp = e.target.closest("[data-bp-i]");
+      if (!inp) return;
+      const i = inp.getAttribute("data-bp-i");
+      model.locked[i] = parseAmount(inp.value) || 0;
+      bpRefresh(model);
+    };
+    host.onchange = function (e) {
+      const cb = e.target.closest("[data-bp-on]");
+      if (!cb) return;
+      const i = Number(cb.getAttribute("data-bp-on"));
+      model.off[i] = !cb.checked;
+      const inp = host.querySelector('[data-bp-i="' + i + '"]');
+      if (inp) inp.disabled = !cb.checked || !!model.items[i].hasLines;
+      cb.closest("tr").classList.toggle("bp-off", !cb.checked);
+      bpRefresh(model);
+    };
+    host.onclick = function (e) {
+      const lk = e.target.closest("[data-bp-lock]");
+      if (lk) { delete model.locked[lk.getAttribute("data-bp-lock")]; bpRefresh(model); return; }
+      if (e.target.closest("[data-bp-reset]")) {
+        model.locked = {}; model.off = {};
+        host.querySelectorAll("[data-bp-on]").forEach(function (cb) { cb.checked = true; cb.closest("tr").classList.remove("bp-off"); });
+        host.querySelectorAll("[data-bp-i]").forEach(function (inp) { inp.disabled = !!model.items[Number(inp.getAttribute("data-bp-i"))].hasLines; });
+        host.querySelectorAll("[data-bp-i]").forEach(function (inp) { inp.blur(); });
+        bpRefresh(model);
+      }
+    };
+    bpRefresh(model);
+  }
+
+  let bpModel = null;
+  function runBudgetProposal() {
+    const key = $("#bpMonth").value, pid = $("#bpPerson").value;
+    const saving = parseAmount($("#bpSaving").value) || 0;
+    const incRaw = $("#bpIncome").value.trim();
+    const r = Calc.budgetProposal(state.months, key, pid, state.people, state.categories, { saving: saving, income: incRaw ? parseAmount(incRaw) : null });
+    bpLast = r;
+    const kr = function (n) { return formatNOK(Math.round(n)); };
+    let msg;
+    if (r.impossible) msg = '<p class="bp-msg bad">Inntekten (' + kr(r.income) + ") dekker ikke faste utgifter (" + kr(r.fixed + r.fellesVariable) + ") + sparing (" + kr(r.saving) + "). Du mangler " + kr(-r.available) + " før variable kjøp.</p>";
+    else if (!r.fits && r.mode === "history") msg = '<p class="bp-msg warn">For å spare ' + kr(r.saving) + " må du kutte " + kr(Calc.roundTo100(r.cutTotal)) + " under det du faktisk brukte" + (r.biggestCuts.length ? " – størst kutt: " + r.biggestCuts.map(escapeHtml).join(", ") : "") + ".</p>";
+    else if (!r.fits) msg = '<p class="bp-msg warn">Typiske beløp får ikke plass – forslaget er skalert ned. Størst kutt: ' + r.biggestCuts.map(escapeHtml).join(", ") + ".</p>";
+    else msg = '<p class="bp-msg ok">Det går! ' + (r.mode === "history" ? "Med snittet ditt" : "Med typiske beløp") + " har du " + kr(r.leftover) + " til overs i tillegg til sparingen.</p>";
+    const hist = r.historyKeys.map(function (k) { return (MONTHS[ovMonthIndexFromKey(k)] || "").slice(0, 3).toLowerCase(); }).join(", ");
+    const label = r.mode === "starter"
+      ? '<p class="bp-label">Startforslag – justeres etter hvert som du fører kjøp</p><p class="hint compact">Tommelfingerregel 50/30/20: ca. 50 % til nødvendige ting, 30 % til ønsker og 20 % til sparing. Buffermål: ca. én måneds utgifter (' + kr(r.bufferGoal) + ")" + (r.saving > 0 ? " – nås på ca. " + Math.ceil(r.bufferGoal / r.saving) + " mnd" : "") + ".</p>"
+      : '<p class="bp-label">Basert på snitt fra ' + escapeHtml(hist) + "</p>";
+    const head = '<div class="bp-sum"><span>Inntekt</span><b>' + kr(r.income) + "</b><span>Faste (din del)</span><b>−" + kr(r.fixed) + "</b>" +
+      (r.fellesVariable ? "<span>Felles variable (din del, uendret)</span><b>−" + kr(r.fellesVariable) + "</b>" : "") +
+      "<span>Sparing</span><b>−" + kr(r.saving) + "</b><span>Til variable kjøp</span><b>" + kr(r.available) + "</b></div>" + label + msg;
+    bpModel = {
+      items: r.items, available: r.available, locked: {}, off: {}, values: r.items.map(function (it) { return it.suggested; }),
+      offValue: function (i) { return r.items[i].currentPlan; }, showPlan: true, avgLabel: r.mode === "starter" ? "Typisk" : "Snitt",
+      host: $("#bpResult"), headHtml: head,
+      footHtml: '<p class="hint compact">Endrer du et beløp, låses det 🔒 og resten fordeles på nytt. Avhuk = behold nåværende plan. Bare dine egne variable kategorier endres.</p>'
+    };
+    // History mode: keep the original (possibly unscaled) suggestion as start values
+    r.items.forEach(function (it, i) { if (it.hasLines) { bpModel.off[i] = true; } });
+    bpBind(bpModel);
+    $("#bpApply").hidden = !r.items.length;
+  }
+  function applyBudgetProposal() {
+    if (!bpLast || !bpModel) return;
+    const onward = $("#bpOnward").checked;
+    const keys = [bpLast.targetKey];
+    if (onward) Object.keys(state.months).filter(function (k) { return k > bpLast.targetKey; }).sort().forEach(function (k) { keys.push(k); });
+    let n = 0;
+    bpModel.items.forEach(function (it, i) {
+      if (bpModel.off[i] || it.hasLines) return;
+      const v = Math.max(0, Math.round(bpModel.values[i] || 0));
+      keys.forEach(function (k) {
+        const m = getMonth(k);
+        if (Calc.getBudgetLines(m, it.catId, it.owner).length) return;
+        if (Calc.budgetForOwner(m, it.catId, it.owner, ovMonthIndexFromKey(k)) === v) return;
+        setBudgetForOwner(m, it.catId, it.owner, v); n++;
+      });
+    });
+    save();
+    closeDlg("#dlgBudgetProposal");
+    render();
+    showToast(n ? "Planen er oppdatert (" + keys.length + (keys.length === 1 ? " måned" : " måneder") + ")" : "Ingen endringer");
+  }
+
   function renderMonthOverview() {
     applySoloClass();
     const host = $("#monthOverview");
@@ -1276,6 +1483,22 @@
         '<div class="mo-box"><div class="mo-lbl">Ved månedsslutt</div><div class="mo-big ' + cls(o.expectedEndBudget) + '">' + formatNOKSigned(o.expectedEndBudget) + '</div><div class="mo-sub">hvis resten av planen brukes<br>' + formatNOKSigned(o.expectedEndNoMore) + " hvis du ikke kjøper mer</div></div>";
     }
 
+    // Igjen per dag (only current month); past month: final result
+    const dayInfo = Calc.monthDayInfo(state.view.year, state.view.month, appToday());
+    let dayLine = "";
+    if (dayInfo.state === "current") {
+      const vt = Calc.variableLeftPerDay(o, dayInfo.daysLeft);
+      if (vt.planned > 0 || vt.used > 0) {
+        dayLine = '<p class="mo-day">' + (vt.over ? 'Variable kjøp: <b class="neg">over med ' + formatNOK(vt.overBy) + "</b>" :
+          "Igjen til variable kjøp: <b>" + formatNOK(Math.floor(vt.perDay)) + "/dag</b> (" + dayInfo.daysLeft + (dayInfo.daysLeft === 1 ? " dag" : " dager") + ")") + "</p>";
+      }
+    } else if (dayInfo.state === "past") {
+      const vt = Calc.variableLeftPerDay(o, 0);
+      if (vt.planned > 0 || vt.used > 0) {
+        dayLine = '<p class="mo-day">Variable kjøp endte ' + (vt.over ? '<b class="neg">' + formatNOK(vt.overBy) + " over planen</b>" : '<b class="pos">' + formatNOK(vt.left) + " under planen</b>") + "</p>";
+      }
+    }
+
     // Plan vs faktisk summary bar
     const pvPct = o.plannedOut > 0 ? Math.round((o.usedOut / o.plannedOut) * 100) : 0;
     const pv = '<div class="mo-pv"><div class="mo-pv-head"><strong>Denne måneden: plan vs faktisk</strong><span>' +
@@ -1288,10 +1511,41 @@
     const tipsHtml = tips.length ? '<div class="mo-tips"><div class="mo-h3">Tips og varsler</div><ul>' +
       tips.map(function (t) { return '<li class="mo-tip-' + t.kind + '">' + escapeHtml(t.text) + "</li>"; }).join("") + "</ul></div>" : "";
 
+    // Plan suggestions (current month only; nothing changes without a click)
+    let suggHtml = "";
+    const viewKey = monthKey(state.view.year, state.view.month);
+    if (dayInfo.state === "current" && typeof Calc.planSuggestions === "function") {
+      const dis = suggDismissed();
+      const sugg = Calc.planSuggestions(state.months, scope, state.people, state.categories, { today: appToday(), targetKey: viewKey })
+        .filter(function (x) { return dis[x.catId + "|" + x.owner] !== viewKey; });
+      if (sugg.length) {
+        suggHtml = '<details class="mo-sugg"' + (ovLocalGet("familie-budsjett-sugg-open") === "0" ? "" : " open") + '><summary>Forslag til plan (' + sugg.length + ")</summary>" +
+          sugg.map(function (x) {
+            const owner = scope === "alle" || (x.owner === "felles" && scope !== "felles") ? " (" + escapeHtml(x.ownerName) + ")" : "";
+            const share = x.sharePct !== 100 ? " (din del " + Math.round(x.sharePct) + " %)" : "";
+            return '<div class="mo-sugg-item"><p><b>' + escapeHtml(x.name) + "</b>" + owner + ": snitt siste " + x.months.length + " mnd " + formatNOK(Calc.roundTo100(x.avg)) +
+              ", plan " + formatNOK(x.currentPlan) + ". Øk planen til " + formatNOK(x.suggested) + "? Dette reduserer pluss/minus med " +
+              formatNOK(Math.round(x.pmImpact)) + "/mnd" + share + ".</p>" +
+              (x.hasLines ? '<p class="hint compact">Har underposter – endre i Plan.</p>' : "") +
+              '<div class="mo-sugg-btns">' +
+              (x.hasLines ? "" : '<button type="button" class="btn sm primary" data-sugg-apply="' + escapeAttr(x.catId) + '" data-sugg-owner="' + escapeAttr(x.owner) + '" data-sugg-amt="' + x.suggested + '">Øk planen</button>') +
+              '<button type="button" class="btn sm ghost" data-sugg-keep="' + escapeAttr(x.catId) + '" data-sugg-owner="' + escapeAttr(x.owner) + '">Behold og stram inn</button>' +
+              (x.hasLines ? "" : '<button type="button" class="btn sm ghost" data-sugg-pick="' + escapeAttr(x.catId) + '" data-sugg-owner="' + escapeAttr(x.owner) + '" data-sugg-amt="' + x.suggested + '" data-sugg-name="' + escapeAttr(x.name) + '">Velg beløp</button>') +
+              "</div></div>";
+          }).join("") + "</details>";
+      }
+    }
+
     // Category list: variable first (most at risk), then fast
     function rowHtml(r) {
       const st = Calc.overviewRowStatus(r);
       let sub = "";
+      let dayRow = "";
+      if (!r.fast && dayInfo.state === "current") {
+        const pd = Calc.perDayLeft(r.planned, r.used, dayInfo.daysLeft);
+        dayRow = '<div class="mo-row-day">' + (pd.over ? "Over med " + formatNOK(pd.overBy) :
+          "Igjen: " + formatNOK(Math.floor(pd.perDay)) + "/dag (" + dayInfo.daysLeft + (dayInfo.daysLeft === 1 ? " dag" : " dager") + ")") + "</div>";
+      }
       if (scope === "alle" && r.ownerName) sub += '<span class="mo-tag">' + escapeHtml(r.ownerName) + "</span>";
       else if (r.shared && scope !== "felles") sub += '<span class="mo-tag">' + (r.sharePct != null && r.fullPlanned != null ? "du betaler " + Math.round(r.sharePct) + " % av " + formatNOK(Math.max(r.fullPlanned, r.fullUsed || 0)) : "felles – din del") + "</span>";
       if (scope === "felles" && r.shares) {
@@ -1301,7 +1555,7 @@
         '<span class="mo-row-nums">' + formatNOK(r.used) + ' <small>av ' + formatNOK(r.planned) + "</small></span></div>" +
         ovBar(r) +
         '<div class="mo-row-bot"><span>' + sub + '</span><span class="' + cls(r.remain) + '">' +
-        (r.remain < -0.5 ? formatNOK(-r.remain) + " over" : formatNOK(r.remain) + " igjen") + "</span></div></div>";
+        (r.remain < -0.5 ? formatNOK(-r.remain) + " over" : formatNOK(r.remain) + " igjen") + "</span></div>" + dayRow + "</div>";
     }
     const varRows = o.rows.filter(function (r) { return !r.fast; }).sort(function (a, b) {
       const ra = a.planned > 0 ? a.used / a.planned : 9, rb = b.planned > 0 ? b.used / b.planned : 9;
@@ -1356,7 +1610,7 @@
 
     host.innerHTML = meAsk + seg +
       '<h2 class="mo-title">' + escapeHtml(scopeName) + " – " + escapeHtml(mName) + " " + state.view.year + "</h2>" +
-      '<div class="mo-grid">' + keys + "</div>" + pv + tipsHtml + cats + trend + help;
+      '<div class="mo-grid">' + keys + "</div>" + dayLine + pv + tipsHtml + suggHtml + cats + trend + help;
     host.querySelectorAll("[data-ov-cat]").forEach(function (row) {
       if (catOpen.has(row.getAttribute("data-ov-cat") + "|" + row.getAttribute("data-ov-owner"))) insertCatEntries(row);
     });
@@ -1370,7 +1624,12 @@
         e.preventDefault();
         toggleCatEntries(row);
       });
+      host.addEventListener("toggle", function (e) {
+        if (e.target.classList && e.target.classList.contains("mo-sugg")) ovLocalSet("familie-budsjett-sugg-open", e.target.open ? "1" : "0");
+      }, true);
       host.addEventListener("click", function (e) {
+        const sa = e.target.closest("[data-sugg-apply], [data-sugg-pick], [data-sugg-keep]");
+        if (sa) { handleSuggestion(sa); return; }
         const row = e.target.closest("[data-ov-cat]");
         if (row) { toggleCatEntries(row); return; }
         const me = e.target.closest("[data-set-me]");
@@ -8244,6 +8503,15 @@
       openNewCatDialog();
     });
     $("#catsClose").addEventListener("click", function () { closeDlg("#dlgCats"); });
+    if ($("#btnBudgetProposal")) {
+      $("#btnBudgetProposal").addEventListener("click", openBudgetProposal);
+      $("#bpClose").addEventListener("click", function () { closeDlg("#dlgBudgetProposal"); });
+      $("#bpCancel").addEventListener("click", function () { closeDlg("#dlgBudgetProposal"); });
+      $("#bpRun").addEventListener("click", runBudgetProposal);
+      $("#bpApply").addEventListener("click", applyBudgetProposal);
+      $("#bpPerson").addEventListener("change", bpPrefillIncome);
+      $("#bpMonth").addEventListener("change", bpPrefillIncome);
+    }
 
     // Quick-add chips + Ny kategori (Plan / Mer / manage) — event delegation
     document.addEventListener("click", function (e) {
@@ -9320,7 +9588,11 @@
               '<span class="onb-pct">' + (wzPeople().length > 1 ? escapeHtml(wzPeople()[0]) : "Jeg") + " betaler " + wzInput("fixed." + i + ".pct", f.pct, 'type="number" inputmode="numeric" min="0" max="100" aria-label="Prosent"') + " %</span></div>";
           }).join("") + '<button type="button" class="btn sm" data-wz-act="addFixed">+ Annen fast utgift</button>';
       } else if (st === 4) {
-        html = '<p class="hint compact">Hvor mye vil du bruke per måned? Forslagene kan endres – og du kan endre alt senere under Plan.</p>' +
+        html = '<details class="onb-bp"' + (wz.bpOpen ? " open" : "") + '><summary>💡 Vil du ha et forslag til budsjett?</summary>' +
+          '<p class="hint compact">Ut fra lønna og de faste utgiftene dine. Skriv hvor mye du vil spare – eller la feltet stå tomt for 20 %.</p>' +
+          '<div class="onb-amt"><input class="input" id="wzBpSaving" type="number" inputmode="numeric" min="0" placeholder="Spare per mnd" value="' + escapeAttr(wz.bpSaving || "") + '" /><span>kr</span></div>' +
+          '<button type="button" class="btn sm primary" data-wz-act="bpMake">Lag startforslag</button><div id="wzBpHost"></div></details>' +
+          '<p class="hint compact">Hvor mye vil du bruke per måned? Forslagene kan endres – og du kan endre alt senere under Plan.</p>' +
           wz.budgets.map(function (bd, i) {
             return '<div class="onb-row"><label class="onb-check"><input type="checkbox" data-wz="budgets.' + i + '.on"' + (bd.on ? " checked" : "") + " /></label>" +
               wzInput("budgets." + i + ".name", bd.name, 'type="text" maxlength="40" aria-label="Kategori"') +
@@ -9355,6 +9627,24 @@
       render();
       showToast("Ferdig! Her er oversikten din.");
     }
+    function wzStarter() {
+      const income = Number(wz.salaries[0]) || 0;
+      let fixed = 0;
+      wz.fixed.forEach(function (f) { if (f.on || Number(f.amount) > 0) fixed += (Number(f.amount) || 0) * (f.pct === "" || f.pct == null ? 100 : Number(f.pct)) / 100; });
+      const r = Calc.starterBudget({ income: income, fixed: fixed, saving: wz.bpSaving === "" ? null : Number(wz.bpSaving) });
+      const kr = function (n) { return formatNOK(Math.round(n)); };
+      const head = '<p class="bp-label">Startforslag – justeres etter hvert som du fører kjøp</p>' +
+        '<div class="bp-sum"><span>Lønn</span><b>' + kr(r.income) + "</b><span>Faste (din del)</span><b>−" + kr(r.fixed) + "</b><span>Sparing" + (r.savingDefaulted ? " (20 %)" : "") + "</span><b>−" + kr(r.saving) + "</b><span>Til variable kjøp</span><b>" + kr(r.available) + "</b></div>" +
+        '<p class="hint compact">50/30/20: ca. 50 % nødvendig, 30 % ønsker, 20 % sparing. Ditt forslag: ' + r.needsPct + " / " + r.wantsPct + " / " + r.savingsPct + " %. " +
+        "Bygg en buffer på ca. én måneds utgifter (" + kr(r.bufferGoal) + ")" + (r.bufferMonths ? " – ca. " + r.bufferMonths + " mnd med denne sparingen" : "") + ".</p>" +
+        (income ? "" : '<p class="bp-msg warn">Fyll inn lønn i steg 3 for et bedre forslag.</p>');
+      wz.bpModel = {
+        items: r.items, available: r.available, locked: {}, off: {}, values: r.items.map(function (it) { return it.suggested; }),
+        offValue: function () { return 0; }, showPlan: false, avgLabel: "Typisk", host: $("#wzBpHost"), headHtml: head,
+        footHtml: '<button type="button" class="btn sm primary" data-wz-act="bpUse">Bruk forslaget</button>'
+      };
+      bpBind(wz.bpModel);
+    }
     function wzStart() { wz = wzNew(); wzRender(); openDlg("#dlgOnboard"); }
     if ($("#dlgOnboard")) {
       $("#onbNext").addEventListener("click", function () {
@@ -9383,6 +9673,16 @@
           const el = $("#sectionMerSync");
           if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "start" });
           showToast("Logg inn med husstandens brukernavn og passord");
+          return;
+        }
+        if (k === "bpMake") { wz.bpOpen = true; wz.bpSaving = ($("#wzBpSaving") || {}).value || ""; wzStarter(); return; }
+        if (k === "bpUse") {
+          const md = wz.bpModel;
+          if (!md) return;
+          wz.budgets = md.items.map(function (it, i) { return { on: !md.off[i], name: it.name, amount: md.off[i] ? "" : md.values[i] }; });
+          wz.bpModel = null; wz.bpOpen = false;
+          wzRender();
+          showToast("Forslaget er fylt inn – du kan fortsatt endre beløpene");
           return;
         }
         if (k === "addPerson") wz.others.push("");

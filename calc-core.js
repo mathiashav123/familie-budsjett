@@ -2560,6 +2560,294 @@
     return { kind: kind, total: total, entries: entries, plannedTotal: plannedTotal, plannedEntries: planned };
   }
 
+  /**
+   * Days left in month (incl. today) for a view month, relative to `today` (Date).
+   * Returns { state: "current"|"past"|"future", daysLeft, daysInMonth }.
+   */
+  function monthDayInfo(year, monthIndex, today) {
+    var t = today || new Date();
+    var dim = new Date(year, monthIndex + 1, 0).getDate();
+    var ty = t.getFullYear(), tm = t.getMonth();
+    if (ty === year && tm === monthIndex) return { state: "current", daysLeft: dim - t.getDate() + 1, daysInMonth: dim };
+    if (ty > year || (ty === year && tm > monthIndex)) return { state: "past", daysLeft: 0, daysInMonth: dim };
+    return { state: "future", daysLeft: dim, daysInMonth: dim };
+  }
+
+  /** Money left per day for one amount pair. Read-only. */
+  function perDayLeft(planned, used, daysLeft) {
+    var left = (Number(planned) || 0) - (Number(used) || 0);
+    if (left < -0.5) return { over: true, overBy: -left, left: left, perDay: 0, daysLeft: daysLeft };
+    return { over: false, overBy: 0, left: Math.max(0, left), perDay: daysLeft > 0 ? Math.max(0, left) / daysLeft : 0, daysLeft: daysLeft };
+  }
+
+  /** Total for variable rows of a monthOverview result. */
+  function variableLeftPerDay(ov, daysLeft) {
+    var p = 0, u = 0;
+    ((ov && ov.rows) || []).forEach(function (r) { if (!r.fast) { p += r.planned; u += r.used; } });
+    var res = perDayLeft(p, u, daysLeft);
+    res.planned = p; res.used = u;
+    return res;
+  }
+
+  function roundTo100(n) { return Math.round((Number(n) || 0) / 100) * 100; }
+
+  function monthHasRealData(m) {
+    return !!(m && ((m.expenses && m.expenses.length) || (m.incomes && m.incomes.length)));
+  }
+
+  /**
+   * Plan suggestions: variable categories over plan in each of the last (up to 3)
+   * completed months with real data (min 2). Read-only; amounts are full (owner level).
+   * opts: { today: Date, targetKey: "YYYY-MM" (month whose plan would change), lookback: 3, minMonths: 2 }
+   * Returns [{ catId, name, owner, ownerName, months:[{key,planned,used}], avg, suggested,
+   *            currentPlan, increase, sharePct, pmImpact, hasLines }]
+   */
+  function planSuggestions(months, scope, people, categories, opts) {
+    opts = opts || {};
+    var today = opts.today || new Date();
+    var lookback = opts.lookback || 3, minMonths = opts.minMonths || 2;
+    var curKey = today.getFullYear() + "-" + String(today.getMonth() + 1).padStart(2, "0");
+    var targetKey = opts.targetKey || curKey;
+    var keys = Object.keys(months || {}).filter(function (k) {
+      return /^\d{4}-\d{2}$/.test(k) && k < curKey && monthHasRealData(months[k]);
+    }).sort().slice(-lookback);
+    if (keys.length < minMonths) return [];
+    var target = months && months[targetKey];
+    if (!target) return [];
+    var act = activePeople(people);
+    var personScope = scope !== "felles" && scope !== "alle";
+    var out = [];
+    (categories || []).forEach(function (cat) {
+      if (!cat || cat.archived || cat.type === "fast" || categoryAutoSpends(cat)) return;
+      var owners = personScope ? [scope, "felles"] : scope === "felles" ? ["felles"] : ["felles"].concat(act.map(function (p) { return p.id; }));
+      if (owners.indexOf(cat.owner) < 0) return;
+      var pct = 100;
+      if (personScope && cat.owner === "felles") { pct = fellesSharePercent(cat, scope, people); if (!(pct > 0)) return; }
+      var hist = [], allOver = true, sum = 0;
+      keys.forEach(function (k) {
+        var mi = parseInt(k.slice(5, 7), 10) - 1;
+        var pl = budgetForOwner(months[k], cat.id, cat.owner, mi) || 0;
+        var us = actualForCategoryOwner(months[k], cat.id, cat.name, cat.owner) || 0;
+        if (!(pl > 0) || !(us > pl + 0.5)) allOver = false;
+        hist.push({ key: k, planned: pl, used: us }); sum += us;
+      });
+      if (!allOver) return;
+      var avg = sum / keys.length;
+      var suggested = roundTo100(avg);
+      var tmi = parseInt(targetKey.slice(5, 7), 10) - 1;
+      var currentPlan = budgetForOwner(target, cat.id, cat.owner, tmi) || 0;
+      var increase = suggested - currentPlan;
+      if (!(increase > 0)) return;
+      out.push({
+        catId: cat.id, name: cat.name, owner: cat.owner,
+        ownerName: cat.owner === "felles" ? "Felles" : ((act.filter(function (p) { return p.id === cat.owner; })[0] || {}).name || ""),
+        months: hist, avg: avg, suggested: suggested, currentPlan: currentPlan, increase: increase,
+        sharePct: pct, pmImpact: (increase * pct) / 100,
+        hasLines: getBudgetLines(target, cat.id, cat.owner).length > 0, targetKey: targetKey
+      });
+    });
+    out.sort(function (a, b) { return b.pmImpact - a.pmImpact; });
+    return out;
+  }
+
+  function isEssentialCategory(name) {
+    return /\b(mat|dagligvare|matvarer|bleier|barn|medisin|apotek)\b/i.test(String(name || ""));
+  }
+
+  /**
+   * Budget proposal for one person and target month. Read-only.
+   * opts: { saving, income (optional override), lookback: 3, essentialFloor: 0.8 }
+   * Own variable categories get proposals from average actual spend over the last
+   * (up to 3) months with real data before targetKey. Fixed costs (own + felles share)
+   * and felles variable shares stay as planned.
+   */
+  function budgetProposal(months, targetKey, personId, people, categories, opts) {
+    opts = opts || {};
+    var lookback = opts.lookback || 3;
+    var floorPct = opts.essentialFloor != null ? opts.essentialFloor : 0.8;
+    var target = (months && months[targetKey]) || {};
+    var tmi = parseInt(String(targetKey).slice(5, 7), 10) - 1;
+    var histKeys = Object.keys(months || {}).filter(function (k) {
+      return /^\d{4}-\d{2}$/.test(k) && k < targetKey && monthHasRealData(months[k]);
+    }).sort().slice(-lookback);
+    var income = opts.income != null && opts.income !== "" ? Number(opts.income) || 0 : plannedIncomeForPerson(target, personId);
+    var saving = Number(opts.saving) || 0;
+    var fixed = 0, fellesVar = 0, items = [];
+    (categories || []).forEach(function (cat) {
+      if (!cat || cat.archived) return;
+      var isFast = cat.type === "fast" || categoryAutoSpends(cat);
+      if (cat.owner === personId) {
+        var plan = budgetForOwner(target, cat.id, personId, tmi) || 0;
+        if (isFast) { fixed += plan; return; }
+        var sum = 0;
+        histKeys.forEach(function (k) { sum += actualForCategoryOwner(months[k], cat.id, cat.name, personId) || 0; });
+        var avg = histKeys.length ? sum / histKeys.length : 0;
+        var tip = null;
+        if (histKeys.length < 2) {
+          var sm = starterMatch(cat.name);
+          avg = sm ? starterAmount(sm.base, income) : (plan > 0 ? plan : 0);
+          tip = sm ? sm.tip : null;
+        }
+        if (!(avg > 0) && !(plan > 0)) return;
+        items.push({ tip: tip, catId: cat.id, name: cat.name, owner: personId, currentPlan: plan, avg: avg,
+          essential: isEssentialCategory(cat.name) || !!(starterMatch(cat.name) || {}).essential && histKeys.length < 2, hasLines: getBudgetLines(target, cat.id, personId).length > 0 });
+      } else if (cat.owner === "felles") {
+        var pct = fellesSharePercent(cat, personId, people);
+        if (!(pct > 0)) return;
+        var full = budgetForOwner(target, cat.id, "felles", tmi) || 0;
+        if (isFast) fixed += (full * pct) / 100; else fellesVar += (full * pct) / 100;
+      }
+    });
+    var available = income - fixed - fellesVar - saving;
+    var sumAvg = 0;
+    items.forEach(function (it) { sumAvg += it.avg; });
+    var fits = sumAvg <= available + 0.5;
+    var missingFloor = 0;
+    if (fits) {
+      items.forEach(function (it) { it.suggested = roundTo100(it.avg); });
+    } else {
+      var rbx = rebalanceProposal(items, Math.max(0, available), {}, { essentialFloor: floorPct });
+      missingFloor = rbx.missing + Math.max(0, -available);
+      items.forEach(function (it, i) { it.suggested = rbx.values[i]; });
+    }
+    var sumSuggested = 0;
+    items.forEach(function (it) { it.suggested = Math.max(0, it.suggested); it.cut = Math.max(0, it.avg - it.suggested); sumSuggested += it.suggested; });
+    var cutTotal = Math.max(0, sumAvg - sumSuggested);
+    var biggestCuts = items.filter(function (it) { return it.cut > 0.5; }).sort(function (a, b) { return b.cut - a.cut; }).slice(0, 2).map(function (it) { return it.name; });
+    items.sort(function (a, b) { return b.avg - a.avg; });
+    return {
+      targetKey: targetKey, personId: personId, historyKeys: histKeys,
+      mode: histKeys.length < 2 ? "starter" : "history",
+      label: histKeys.length < 2 ? "Startforslag – justeres etter hvert som du fører kjøp" : "Basert på snitt siste " + histKeys.length + " mnd",
+      bufferGoal: roundTo100(fixed + fellesVar + sumAvg),
+      income: income, fixed: fixed, fellesVariable: fellesVar, saving: saving,
+      available: available, sumAvg: sumAvg, sumSuggested: sumSuggested,
+      leftover: available - sumSuggested, fits: fits, realistic: fits,
+      cutTotal: fits ? 0 : cutTotal, biggestCuts: fits ? [] : biggestCuts,
+      impossible: available < 0, missing: missingFloor, items: items
+    };
+  }
+
+  /**
+   * Rebalance a budget proposal after manual edits. Read-only.
+   * items: [{ avg, currentPlan, essential }], locked: { index: amount }.
+   * Unlocked items share (available − locked sum) proportionally to avg,
+   * never below their floor (essential: floorPct × avg, others 0), rounded down to 100.
+   * If the averages fit, unlocked items keep their average (no inflation) unless opts.fill.
+   * Returns { values[], lockedSum, unlockedSum, total, missing, fits }.
+   */
+  function rebalanceProposal(items, available, locked, opts) {
+    opts = opts || {};
+    var floorPct = opts.essentialFloor != null ? opts.essentialFloor : 0.8;
+    locked = locked || {};
+    var values = [], lockedSum = 0, free = [];
+    (items || []).forEach(function (it, i) {
+      if (Object.prototype.hasOwnProperty.call(locked, i)) {
+        var v = Math.max(0, Number(locked[i]) || 0);
+        values[i] = v; lockedSum += v;
+      } else free.push(i);
+    });
+    var remaining = (Number(available) || 0) - lockedSum;
+    var floors = {}, sumFloor = 0, sumW = 0, w = {};
+    free.forEach(function (i) {
+      var it = items[i];
+      floors[i] = it.essential ? Math.floor(((it.avg || 0) * floorPct) / 100) * 100 : 0;
+      sumFloor += floors[i];
+      w[i] = it.avg > 0 ? it.avg : 0; sumW += w[i];
+    });
+    if (!(sumW > 0)) free.forEach(function (i) { w[i] = items[i].currentPlan > 0 ? items[i].currentPlan : 1; sumW += w[i]; });
+    var missing = 0;
+    var sumCap = 0, caps = {};
+    free.forEach(function (i) { var it = items[i]; caps[i] = it.avg > 0 ? roundTo100(it.avg) : (it.currentPlan > 0 ? it.currentPlan : 0); sumCap += caps[i]; });
+    if (!opts.fill && sumCap <= remaining + 0.5) {
+      // Everything fits: keep typical/average amounts (rest stays as pluss), never inflate
+      free.forEach(function (i) { values[i] = caps[i]; });
+    } else if (remaining < sumFloor) {
+      free.forEach(function (i) { values[i] = floors[i]; });
+      missing = sumFloor - remaining;
+    } else {
+      // water-filling: proportional share, raise to floor and redistribute rest
+      var pool = free.slice(), rest = remaining, fixedSet = {};
+      for (var guard = 0; guard < 50; guard++) {
+        var W = 0; pool.forEach(function (i) { W += w[i]; });
+        var changed = false;
+        pool.forEach(function (i) {
+          var share = W > 0 ? (rest * w[i]) / W : 0;
+          if (share < floors[i]) { fixedSet[i] = floors[i]; changed = true; }
+        });
+        if (!changed) {
+          pool.forEach(function (i) { values[i] = W > 0 ? Math.floor(((rest * w[i]) / W) / 100) * 100 : 0; });
+          break;
+        }
+        pool = pool.filter(function (i) { return !(i in fixedSet); });
+        rest = remaining; Object.keys(fixedSet).forEach(function (k) { rest -= fixedSet[k]; });
+      }
+      Object.keys(fixedSet).forEach(function (k) { values[k] = fixedSet[k]; });
+    }
+    var unlockedSum = 0; free.forEach(function (i) { unlockedSum += values[i]; });
+    var total = lockedSum + unlockedSum;
+    if (missing === 0 && total > available + 0.5) missing = total - available;
+    return { values: values, lockedSum: lockedSum, unlockedSum: unlockedSum, total: total, missing: missing, fits: missing < 0.5 };
+  }
+
+  /** Typical Norwegian starting amounts (kr/mnd for ~35 000 netto) + short tips. */
+  var STARTER_CATS = [
+    { name: "Mat", re: /mat|dagligvare/i, base: 4500, essential: true, tip: "Handleliste og fast handledag kutter mye. Ca. 4–5 000 kr for én voksen er vanlig." },
+    { name: "Transport", re: /transport|bil|buss|drivstoff|bensin|lading|kollektiv/i, base: 1500, essential: true, tip: "Månedskort eller lading hjemme er ofte billigst." },
+    { name: "Fritid", re: /fritid|gøy|hobby|spill|trening|moro/i, base: 1000, tip: "Sett et fast beløp – da kan du bruke det uten dårlig samvittighet." },
+    { name: "Fastfood/kafé", re: /fastfood|kafé|kafe|take ?away|restaurant|ute/i, base: 800, tip: "Lett å undervurdere: 2–3 ganger i uka blir fort 1 500 kr." },
+    { name: "Klær", re: /klær|sko/i, base: 600, tip: "Jevnt beløp hver måned gjør store kjøp enklere." },
+    { name: "Hygiene/apotek", re: /hygiene|apotek|helse|medisin/i, base: 400, essential: true, tip: "Sjampo, tannkrem, reseptfritt osv." },
+    { name: "Div", re: /div|diverse|annet|gave/i, base: 800, tip: "Gaver, småting og overraskelser – en liten buffer i hverdagen." }
+  ];
+
+  function starterMatch(name) {
+    for (var i = 0; i < STARTER_CATS.length; i++) if (STARTER_CATS[i].re.test(String(name || ""))) return STARTER_CATS[i];
+    return null;
+  }
+
+  /** Base amount scaled to income (linear around 35 000, clamped 0.6–1.6×). */
+  function starterAmount(base, income) {
+    var f = income > 0 ? Math.max(0.6, Math.min(1.6, income / 35000)) : 1;
+    return roundTo100(base * f);
+  }
+
+  /**
+   * Starter budget for a new user (no history). 50/30/20-style after fixed costs. Read-only.
+   * opts: { income, fixed, saving (optional; default 20 % of income, limited to what is left) }
+   * Returns { income, fixed, saving, savingDefaulted, available, items[{name, suggested, avg, essential, tip}],
+   *           sumSuggested, fits, missing, needsPct, wantsPct, savingsPct, bufferGoal, bufferMonths, label }.
+   */
+  function starterBudget(opts) {
+    opts = opts || {};
+    var income = Number(opts.income) || 0, fixed = Number(opts.fixed) || 0;
+    var savingDefaulted = opts.saving == null || opts.saving === "";
+    var saving = savingDefaulted ? Math.max(0, Math.min(roundTo100(income * 0.2), roundTo100(income - fixed - 6000))) : Number(opts.saving) || 0;
+    var available = income - fixed - saving;
+    var items = STARTER_CATS.map(function (c) {
+      var a = starterAmount(c.base, income);
+      return { name: c.name, avg: a, currentPlan: 0, essential: !!c.essential, tip: c.tip };
+    });
+    var sumBase = 0; items.forEach(function (it) { sumBase += it.avg; });
+    var rb = rebalanceProposal(items, Math.max(0, available), {});
+    // If everything fits, use typical amounts (rest stays as extra pluss) rather than inflating wants.
+    var fits = sumBase <= available + 0.5;
+    items.forEach(function (it, i) { it.suggested = fits ? it.avg : rb.values[i]; });
+    var sum = 0, needs = fixed, wants = 0;
+    items.forEach(function (it) { sum += it.suggested; if (it.essential) needs += it.suggested; else wants += it.suggested; });
+    var monthly = fixed + sum;
+    return {
+      mode: "starter", label: "Startforslag – justeres etter hvert som du fører kjøp",
+      income: income, fixed: fixed, saving: saving, savingDefaulted: savingDefaulted,
+      available: available, items: items, sumSuggested: sum, fits: fits && available >= 0,
+      missing: fits ? 0 : Math.max(0, rb.missing), leftover: available - sum,
+      needsPct: income > 0 ? Math.round((needs / income) * 100) : 0,
+      wantsPct: income > 0 ? Math.round((wants / income) * 100) : 0,
+      savingsPct: income > 0 ? Math.round((saving / income) * 100) : 0,
+      bufferGoal: roundTo100(monthly), bufferMonths: saving > 0 ? Math.ceil(roundTo100(monthly) / saving) : null
+    };
+  }
+
   /** Category status for progress bars/warnings: ok | near (>=80%) | over. */
   function overviewRowStatus(r) {
     if (!r) return "ok";
@@ -6157,6 +6445,18 @@
     plannedIncomeFor: plannedIncomeFor,
     monthOverviewForPerson: monthOverviewForPerson,
     monthOverviewDrilldown: monthOverviewDrilldown,
+    monthDayInfo: monthDayInfo,
+    perDayLeft: perDayLeft,
+    variableLeftPerDay: variableLeftPerDay,
+    roundTo100: roundTo100,
+    monthHasRealData: monthHasRealData,
+    planSuggestions: planSuggestions,
+    budgetProposal: budgetProposal,
+    rebalanceProposal: rebalanceProposal,
+    starterBudget: starterBudget,
+    starterMatch: starterMatch,
+    starterAmount: starterAmount,
+    isEssentialCategory: isEssentialCategory,
     monthOverview: monthOverview,
     isSoloMode: isSoloMode,
     wizardState: wizardState,
