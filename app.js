@@ -1192,6 +1192,38 @@
     });
   }
 
+  // Tap a category row on Oversikt → list of logged purchases in that category (read-only)
+  const catOpen = new Set();
+  function catEntriesHtml(catId, owner) {
+    if (typeof Calc.monthOverviewDrilldown !== "function") return "";
+    const d = Calc.monthOverviewDrilldown(getMonth(), overviewScope(), state.people, state.categories, state.view.month,
+      { kind: "row", catId: catId, owner: owner });
+    const list = d.entries.filter(function (e) { return e.type === "expense"; });
+    if (!list.length) return '<p class="mo-cat-empty">Ingen kjøp ført ennå</p>';
+    let sum = 0;
+    return '<ul class="mo-cat-list">' + list.map(function (e) {
+      sum += e.amount;
+      const mm = /^(\d{4})-(\d{2})-(\d{2})/.exec(e.date || "");
+      return "<li><span class=\"mo-cat-date\">" + (mm ? mm[3] + "." + mm[2] + "." : "–") + '</span><span class="mo-cat-note">' +
+        escapeHtml(e.note || e.category) + (e.pct !== 100 ? ' <small>' + (Math.round(e.pct * 10) / 10) + " % av " + formatNOK(e.full) + "</small>" : "") +
+        '</span><span class="mo-cat-amt">' + formatNOK(e.amount) + "</span></li>";
+    }).join("") + '<li class="mo-cat-sum"><span></span><span>Sum ført</span><span class="mo-cat-amt">' + formatNOK(sum) + "</span></li></ul>";
+  }
+  function insertCatEntries(row) {
+    const p = document.createElement("div");
+    p.className = "mo-cat-entries";
+    p.innerHTML = catEntriesHtml(row.getAttribute("data-ov-cat"), row.getAttribute("data-ov-owner"));
+    row.insertAdjacentElement("afterend", p);
+    row.setAttribute("aria-expanded", "true");
+  }
+  function toggleCatEntries(row) {
+    const id = row.getAttribute("data-ov-cat") + "|" + row.getAttribute("data-ov-owner");
+    const nx = row.nextElementSibling;
+    if (nx && nx.classList.contains("mo-cat-entries")) {
+      nx.remove(); catOpen.delete(id); row.setAttribute("aria-expanded", "false");
+    } else { catOpen.add(id); insertCatEntries(row); }
+  }
+
   function renderMonthOverview() {
     applySoloClass();
     const host = $("#monthOverview");
@@ -1265,7 +1297,7 @@
       if (scope === "felles" && r.shares) {
         sub += r.shares.map(function (sh) { return '<span class="mo-tag">' + escapeHtml(sh.name) + " " + Math.round(sh.pct) + " %: " + formatNOK(sh.used) + "</span>"; }).join("");
       }
-      return '<div class="mo-row mo-row-' + st + '"><div class="mo-row-top"><span class="mo-row-name">' + escapeHtml(r.name) + "</span>" +
+      return '<div class="mo-row mo-row-' + st + '" data-ov-cat="' + escapeAttr(r.id) + '" data-ov-owner="' + escapeAttr(r.owner || "") + '" role="button" tabindex="0" aria-expanded="false"><div class="mo-row-top"><span class="mo-row-name">' + escapeHtml(r.name) + "</span>" +
         '<span class="mo-row-nums">' + formatNOK(r.used) + ' <small>av ' + formatNOK(r.planned) + "</small></span></div>" +
         ovBar(r) +
         '<div class="mo-row-bot"><span>' + sub + '</span><span class="' + cls(r.remain) + '">' +
@@ -1325,10 +1357,22 @@
     host.innerHTML = meAsk + seg +
       '<h2 class="mo-title">' + escapeHtml(scopeName) + " – " + escapeHtml(mName) + " " + state.view.year + "</h2>" +
       '<div class="mo-grid">' + keys + "</div>" + pv + tipsHtml + cats + trend + help;
+    host.querySelectorAll("[data-ov-cat]").forEach(function (row) {
+      if (catOpen.has(row.getAttribute("data-ov-cat") + "|" + row.getAttribute("data-ov-owner"))) insertCatEntries(row);
+    });
 
     if (!host._ovBound) {
       host._ovBound = true;
+      host.addEventListener("keydown", function (e) {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        const row = e.target.closest("[data-ov-cat]");
+        if (!row) return;
+        e.preventDefault();
+        toggleCatEntries(row);
+      });
       host.addEventListener("click", function (e) {
+        const row = e.target.closest("[data-ov-cat]");
+        if (row) { toggleCatEntries(row); return; }
         const me = e.target.closest("[data-set-me]");
         if (me) {
           const id = me.getAttribute("data-set-me");

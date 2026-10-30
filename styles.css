@@ -4847,3 +4847,18 @@ body.solo #innUtTabs, body.solo #sparingTabs, body.solo #btnMerSplitWizard, body
 .share-steps { padding-left: 20px; margin: 8px 0; }
 .share-steps li { margin-bottom: 6px; }
 .onb-join { width: 100%; margin-bottom: 14px; white-space: normal; }
+
+/* Oversikt: tap a category row to see logged purchases */
+.mo-row[data-ov-cat] { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.mo-row[data-ov-cat]:active { opacity: .7; }
+.mo-row[data-ov-cat]:focus { outline: none; }
+.mo-row[data-ov-cat]:focus-visible { outline: 2px solid rgba(59,130,246,.5); outline-offset: 2px; }
+.mo-cat-entries { margin: 0 0 10px; padding: 6px 10px; background: rgba(127,127,127,.07); border-radius: 8px; font-size: .88rem; }
+.mo-cat-list { list-style: none; margin: 0; padding: 0; }
+.mo-cat-list li { display: grid; grid-template-columns: 3.2em 1fr auto; gap: 8px; padding: 5px 0; border-bottom: 1px solid rgba(127,127,127,.15); align-items: baseline; }
+.mo-cat-list li.mo-cat-sum { border-bottom: 0; font-weight: 700; }
+.mo-cat-date { opacity: .7; font-variant-numeric: tabular-nums; }
+.mo-cat-note { overflow-wrap: anywhere; }
+.mo-cat-note small { opacity: .7; }
+.mo-cat-amt { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mo-cat-empty { margin: 4px 0; opacity: .7; }

@@ -2424,6 +2424,142 @@
     };
   }
 
+  /**
+   * Drilldown for the month overview: lists the entries behind a number.
+   * Read-only (never mutates m). Totals match monthOverview() exactly.
+   * key.kind: "income" | "used" | "planned" | "fast" | "pm" | "row" | "share"
+   *   row: { catId, owner }  share: { personId } (felles scope)
+   * Returns { kind, total, entries[], plannedTotal, plannedEntries[] }.
+   * Entry: { date, note, category, categoryId, person, ownerKey, full, pct, amount, type }
+   *   type: "expense" | "auto" | "income" | "plan"; amount = own share (signed for pm).
+   */
+  function monthOverviewDrilldown(m, scope, people, categories, monthIndex, key) {
+    key = key || {};
+    var act = activePeople(people);
+    var nameOf = function (id) {
+      if (id === "felles" || !id) return "Felles";
+      var p = (people || []).filter(function (x) { return x && x.id === id; })[0];
+      return (p && p.name) || id;
+    };
+    var personScope = scope !== "felles" && scope !== "alle";
+    // Which (cat, ownerKey, viewer) combos make up the overview rows for this scope
+    function rowSpecs() {
+      var out = [];
+      (categories || []).forEach(function (cat) {
+        if (!cat || cat.archived) return;
+        var owners = personScope ? [scope, "felles"] :
+          scope === "felles" ? ["felles"] : ["felles"].concat(act.map(function (p) { return p.id; }));
+        if (owners.indexOf(cat.owner) < 0) return;
+        var viewer = null, pct = 100;
+        if (personScope && cat.owner === "felles") {
+          pct = fellesSharePercent(cat, scope, people);
+          if (!(pct > 0)) return;
+          viewer = scope;
+        }
+        var planned = budgetForOwner(m, cat.id, cat.owner, monthIndex) || 0;
+        var used = effectiveActualForCategoryOwner(m, cat, cat.owner, monthIndex) || 0;
+        if (!(planned > 0) && !(used > 0)) return;
+        out.push({ cat: cat, ownerKey: cat.owner, viewer: viewer, pct: pct });
+      });
+      return out;
+    }
+    function mk(spec, full, pct, extra) {
+      var e = {
+        date: extra.date || "", note: extra.note || "", category: spec.cat.name, categoryId: spec.cat.id,
+        person: extra.person != null ? extra.person : nameOf(spec.ownerKey), ownerKey: spec.ownerKey,
+        full: full, pct: pct, amount: pct === 100 ? full : (full * pct) / 100,
+        type: extra.type, fast: spec.cat.type === "fast"
+      };
+      return e;
+    }
+    function usedEntries(spec, pctOverride) {
+      var cat = spec.cat, pct = pctOverride != null ? pctOverride : spec.pct;
+      var res = [], logged = 0;
+      (m && m.expenses || []).forEach(function (e) {
+        if (!e) return;
+        var matchCat = e.categoryId === cat.id || (!e.categoryId && cat.name && e.category === cat.name);
+        if (!matchCat) return;
+        if (spec.ownerKey === "felles" ? !(e.owner === "felles" || !e.owner) : e.owner !== spec.ownerKey) return;
+        var a = e.amount || 0;
+        logged += a;
+        res.push(mk(spec, a, pct, { date: e.date, note: e.note || e.description || "", type: "expense",
+          person: e.owner && e.owner !== "felles" ? nameOf(e.owner) : "Felles" }));
+      });
+      if (categoryAutoSpends(cat)) {
+        var planned = budgetForOwner(m, cat.id, spec.ownerKey, monthIndex) || 0;
+        if (planned > logged) {
+          res.push(mk(spec, planned - logged, pct, { type: "auto", note: "Fast trekk (planlagt)" }));
+        }
+      }
+      return res;
+    }
+    function planEntries(spec, pctOverride) {
+      var cat = spec.cat, pct = pctOverride != null ? pctOverride : spec.pct;
+      var lines = getBudgetLines(m, cat.id, spec.ownerKey);
+      var res = [];
+      if (lines.length) {
+        lines.forEach(function (l) {
+          var c = lineMonthlyContribution(l, monthIndex);
+          if (!c) return;
+          res.push(mk(spec, c, pct, { type: "plan", note: l.name || "Planlagt" }));
+        });
+      } else {
+        var raw = budgetForOwnerRaw(m, cat.id, spec.ownerKey);
+        if (raw) res.push(mk(spec, raw, pct, { type: "plan", note: "Planlagt beløp" }));
+      }
+      return res;
+    }
+    function incomeEntries() {
+      var ids = personScope ? [scope] : scope === "alle" ? act.map(function (p) { return p.id; }) : [];
+      var res = [];
+      ((m && m.incomes) || []).forEach(function (i) {
+        if (!i || ids.indexOf(i.person) < 0) return;
+        var a = Number(i.amount) || 0;
+        res.push({ date: i.date || "", note: i.note || "", category: i.type === "lønn" ? "Lønn" : (i.type || "Inntekt"),
+          categoryId: null, person: nameOf(i.person), ownerKey: i.person, full: a, pct: 100, amount: a, type: "income" });
+      });
+      return res;
+    }
+    var specs = rowSpecs();
+    var entries = [], planned = [];
+    var kind = key.kind;
+    if (kind === "income") entries = incomeEntries();
+    else if (kind === "used" || kind === "fast") {
+      specs.forEach(function (s) { if (kind === "fast" && s.cat.type !== "fast") return; entries = entries.concat(usedEntries(s)); });
+    } else if (kind === "planned") {
+      specs.forEach(function (s) { planned = planned.concat(planEntries(s)); });
+    } else if (kind === "pm") {
+      entries = incomeEntries();
+      specs.forEach(function (s) {
+        usedEntries(s).forEach(function (e) { e.amount = -e.amount; entries.push(e); });
+      });
+    } else if (kind === "row") {
+      specs.forEach(function (s) {
+        if (s.cat.id !== key.catId) return;
+        if (key.owner && s.ownerKey !== key.owner) return;
+        entries = entries.concat(usedEntries(s));
+        planned = planned.concat(planEntries(s));
+      });
+    } else if (kind === "share") {
+      specs.forEach(function (s) {
+        if (s.ownerKey !== "felles") return;
+        var p = fellesSharePercent(s.cat, key.personId, people);
+        if (!(p > 0)) return;
+        entries = entries.concat(usedEntries(s, p));
+        planned = planned.concat(planEntries(s, p));
+      });
+    }
+    var byDate = function (a, b) {
+      var da = a.date || "9999", db = b.date || "9999";
+      return da < db ? -1 : da > db ? 1 : 0;
+    };
+    entries.sort(byDate);
+    var total = 0, plannedTotal = 0;
+    entries.forEach(function (e) { total += e.amount; });
+    planned.forEach(function (e) { plannedTotal += e.amount; });
+    return { kind: kind, total: total, entries: entries, plannedTotal: plannedTotal, plannedEntries: planned };
+  }
+
   /** Category status for progress bars/warnings: ok | near (>=80%) | over. */
   function overviewRowStatus(r) {
     if (!r) return "ok";
@@ -6020,6 +6156,7 @@
     migrateState: migrateState,
     plannedIncomeFor: plannedIncomeFor,
     monthOverviewForPerson: monthOverviewForPerson,
+    monthOverviewDrilldown: monthOverviewDrilldown,
     monthOverview: monthOverview,
     isSoloMode: isSoloMode,
     wizardState: wizardState,
