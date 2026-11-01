@@ -1312,6 +1312,8 @@
       else if (t === "goals") { gotoTab("sparing"); const c = $("#sectionSparingGoals"); if (c) c.scrollIntoView({ block: "start" }); }
       return true;
     }
+    const oc = e.target.closest("[data-open-card]");
+    if (oc) { openCard(oc.getAttribute("data-open-card")); return true; }
     const g = e.target.closest("[data-go-tab]");
     if (g) { gotoTab(g.getAttribute("data-go-tab")); return true; }
     const ct = e.target.closest("[data-cat-tips]");
@@ -1466,6 +1468,141 @@
     document.addEventListener("visibilitychange", function () { if (!document.hidden) onDayMaybeChanged(); });
     window.addEventListener("focus", onDayMaybeChanged);
     window.addEventListener("pageshow", onDayMaybeChanged);
+  }
+
+  // ——— Brukskort ———
+  let cardOpenPid = null;
+  function cardKey() { return monthKey(state.view.year, state.view.month); }
+  function cardSnap(pid) { return Calc.spendCardMonth(state, cardKey(), pid, appToday()); }
+  function cardLineHtml(pid) {
+    const c = cardSnap(pid);
+    if (!c) return "";
+    const neg = c.left < -0.5;
+    let sub = "";
+    if (c.toTransfer > 0.5 && c.dayState !== "past") sub = '<span class="mo-card-todo">Før over ' + formatNOK(c.toTransfer) + " til kortet</span>";
+    else if (c.monthEnd && c.left > 0.5) sub = '<span class="mo-card-todo is-good">Rest ' + formatNOK(Math.round(c.left)) + " – flytt til sparing eller behold</span>";
+    return '<button type="button" class="mo-card' + (neg ? " is-neg" : "") + '" data-open-card="' + escapeAttr(pid) + '"><span class="mo-card-main">💳 Igjen på kortet: <b>' + formatNOK(Math.round(c.left)) + "</b>" +
+      (c.perDay != null && !neg ? " · " + formatNOK(c.perDay) + "/dag (" + c.daysLeft + (c.daysLeft === 1 ? " dag" : " dager") + ")" : "") + "</span>" + sub + '<span class="mo-spar-go" aria-hidden="true">›</span></button>';
+  }
+  function renderCardSet() {
+    const host = $("#cardSet");
+    if (!host) return;
+    host.innerHTML = activePeopleList().map(function (p) {
+      const on = Calc.cardSettingsFor(state.settings, p.id).on;
+      return '<div class="card-set-row"><label class="card-toggle"><input type="checkbox" data-card-on="' + escapeAttr(p.id) + '"' + (on ? " checked" : "") + " /> <span>" +
+        (activePeopleList().length > 1 ? escapeHtml(p.name) + ": b" : "B") + "ruker du eget kort til daglige kjøp?</span></label>" +
+        (on ? '<button type="button" class="btn sm" data-open-card="' + escapeAttr(p.id) + '">Åpne brukskort</button>' : "") + "</div>";
+    }).join("");
+    if (!host._b) {
+      host._b = true;
+      host.addEventListener("change", function (e) {
+        const t = e.target.closest("[data-card-on]");
+        if (!t) return;
+        const id = t.getAttribute("data-card-on");
+        const sc = Object.assign({}, state.settings.spendCard || {});
+        const prev = sc[id] || {};
+        const d = appToday();
+        sc[id] = Object.assign({}, prev, { on: t.checked, since: prev.since || monthKey(d.getFullYear(), d.getMonth()) });
+        state.settings.spendCard = sc;
+        save(); render();
+        showToast(t.checked ? "Brukskort slått på" : "Brukskort slått av");
+      });
+      host.addEventListener("click", function (e) { const b = e.target.closest("[data-open-card]"); if (b) openCard(b.getAttribute("data-open-card")); });
+    }
+  }
+  function openCard(pid) {
+    cardOpenPid = pid;
+    renderCardDlg();
+    openDlg("#dlgCard");
+  }
+  function renderCardDlg() {
+    const pid = cardOpenPid;
+    const c = cardSnap(pid);
+    const body = $("#cardBody");
+    if (!c) { body.innerHTML = '<p class="empty-note">Brukskort er ikke slått på. Slå det på under Mer → Brukskort.</p>'; return; }
+    const m = getMonth(cardKey());
+    const mName = (MONTHS[state.view.month] || "").toLowerCase();
+    $("#cardTitle").textContent = "Brukskort – " + nameOf(pid) + ", " + mName;
+    const kr = function (n) { return formatNOK(Math.round(n)); };
+    const rows = c.rows.map(function (r) { return '<div class="spar-bd-row"><span>' + escapeHtml(r.name) + (r.shared ? " <small>(din del)</small>" : "") + "</span><strong>" + kr(r.planned) + "</strong></div>"; }).join("");
+    const trans = (m.cardTransfers || []).filter(function (t) { return t.person === pid; });
+    const goals = (state.savingsGoals || []).filter(function (g) { return Calc.normalizeGoalStatus(g.status) === "aktiv"; });
+    const allVar = Calc.monthOverview(m, pid, state.people, state.categories, state.view.month).rows.filter(function (r) { return !r.fast; });
+    let html = '<div class="card-hero"><span>' + (c.toTransfer > 0.5 ? "Før over" : "Ført over") + '</span><strong>' + kr(c.toTransfer > 0.5 ? c.toTransfer : c.transferred) + "</strong><span>" + (c.toTransfer > 0.5 ? "til brukskortet" : "– alt er overført ✓") + "</span></div>" +
+      '<details class="card-bd"><summary>Slik er beløpet regnet</summary><div class="spar-bd">' + rows +
+      '<div class="spar-bd-row is-total"><span>Variable kjøp (plan)</span><strong>' + kr(c.planned) + "</strong></div>" +
+      (c.carryIn ? '<div class="spar-bd-row"><span>− Rest fra forrige mnd</span><strong>' + kr(c.carryIn) + "</strong></div>" : "") +
+      '<div class="spar-bd-row"><span>= Anbefalt overføring</span><strong>' + kr(c.recommended) + "</strong></div>" +
+      (c.transferred ? '<div class="spar-bd-row"><span>− Allerede ført over</span><strong>' + kr(c.transferred) + "</strong></div>" : "") +
+      "</div></details>" +
+      '<div class="card-left' + (c.left < -0.5 ? " is-neg" : "") + '"><span>Igjen på kortet</span><strong>' + kr(c.left) + "</strong>" +
+      (c.perDay != null && c.left > 0 ? "<small>" + formatNOK(c.perDay) + "/dag i " + c.daysLeft + " dager</small>" : "") +
+      "<small>Ført over " + kr(c.transferred) + (c.carryIn ? " + rest " + kr(c.carryIn) : "") + " − kjøp " + kr(c.used) + (c.moved ? " − flyttet " + kr(c.moved) : "") + "</small></div>" +
+      '<div class="card-form"><label>Beløp<input class="input" id="cardAmt" inputmode="numeric" value="' + (c.toTransfer > 0.5 ? Math.round(c.toTransfer) : "") + '" /></label>' +
+      '<label>Dato<input class="input" id="cardDate" type="date" value="' + todayISO() + '" /></label>' +
+      '<button type="button" class="btn primary" data-card-act="transfer">Jeg har ført over</button></div>' +
+      (trans.length ? '<ul class="card-trans">' + trans.map(function (t) { return '<li><span>' + escapeHtml(t.date || "") + "</span><span>" + kr(t.amount) + '</span><button type="button" class="btn sm ghost" data-card-del="' + escapeAttr(t.id) + '" aria-label="Slett">×</button></li>'; }).join("") + "</ul>" : "") +
+      '<div class="card-form"><label>Saldo på kortet nå (valgfritt)<input class="input" id="cardBal" inputmode="numeric" value="' + (c.balance != null ? c.balance : "") + '" placeholder="fra nettbanken" /></label>' +
+      '<button type="button" class="btn sm" data-card-act="balance">Sjekk</button></div>' +
+      (c.diff != null ? '<p class="card-diff ' + (Math.abs(c.diff) < 1 ? "is-ok" : "is-off") + '">' + (Math.abs(c.diff) < 1 ? "✓ Stemmer med det appen forventer." :
+        c.diff < 0 ? "Kortet har " + kr(-c.diff) + " mindre enn forventet – sannsynligvis kjøp som ikke er ført." : "Kortet har " + kr(c.diff) + " mer enn forventet – er noe ført to ganger, eller kom det en refusjon?") + "</p>" : "");
+    if (c.monthEnd && c.left > 0.5) {
+      html += '<div class="card-end"><p><b>Månedsslutt:</b> du har ' + kr(c.left) + " igjen på kortet.</p>" +
+        '<div class="card-form"><label>Flytt<input class="input" id="cardMoveAmt" inputmode="numeric" value="' + Math.round(c.left) + '" /></label>' +
+        '<label>Til<select class="input" id="cardMoveGoal"><option value="">Sparing (uten mål)</option>' + goals.map(function (g) { return '<option value="' + escapeAttr(g.id) + '">' + escapeHtml(g.name) + "</option>"; }).join("") + "</select></label></div>" +
+        '<div class="rec-btns"><button type="button" class="btn primary sm" data-card-act="move">Flytt til sparing</button><button type="button" class="btn ghost sm" data-card-act="keep">Behold på kortet</button></div>' +
+        '<p class="hint compact">Beholder du det, blir resten med til neste måned og trekkes fra neste overføring.</p></div>';
+    }
+    const sel = c.cats;
+    html += '<details class="card-cats"><summary>Hvilke kategorier betales med kortet?</summary><p class="hint compact">Standard: alle som ikke er faste. Faste utgifter og regninger blir alltid på hovedkontoen.</p>' +
+      allVar.map(function (r) { return '<label class="card-toggle"><input type="checkbox" data-card-cat="' + escapeAttr(r.id) + '"' + (!sel || sel.indexOf(r.id) >= 0 ? " checked" : "") + " /> " + escapeHtml(r.name) + "</label>"; }).join("") +
+      '<button type="button" class="btn sm" data-card-act="cats">Lagre kategorier</button></details>';
+    body.innerHTML = html;
+  }
+  function handleCardDlgClick(e) {
+    const pid = cardOpenPid;
+    const del = e.target.closest("[data-card-del]");
+    const m = getMonth(cardKey());
+    if (del) {
+      m.cardTransfers = (m.cardTransfers || []).filter(function (t) { return t.id !== del.getAttribute("data-card-del"); });
+      save(); render(); renderCardDlg(); return;
+    }
+    const a = e.target.closest("[data-card-act]");
+    if (!a) return;
+    const act = a.getAttribute("data-card-act");
+    if (act === "transfer") {
+      const amt = parseAmount($("#cardAmt").value);
+      if (amt == null || amt <= 0) { showToast("Skriv inn beløp"); return; }
+      if (!Array.isArray(m.cardTransfers)) m.cardTransfers = [];
+      m.cardTransfers.push({ id: uid(), person: pid, amount: amt, date: $("#cardDate").value || todayISO() });
+      showToast("Overføring ført: " + formatNOK(amt));
+    } else if (act === "balance") {
+      const v = $("#cardBal").value.trim();
+      if (!m.cardBalance || typeof m.cardBalance !== "object") m.cardBalance = {};
+      if (v === "") delete m.cardBalance[pid];
+      else { const n = parseAmount(v); if (n == null) { showToast("Ugyldig beløp"); return; } m.cardBalance[pid] = { amount: n, at: todayISO() }; }
+    } else if (act === "move") {
+      const amt = parseAmount($("#cardMoveAmt").value);
+      if (amt == null || amt <= 0) { showToast("Skriv inn beløp"); return; }
+      const goalId = $("#cardMoveGoal").value || null;
+      if (!Array.isArray(m.cardMoves)) m.cardMoves = [];
+      m.cardMoves.push({ id: uid(), person: pid, amount: amt, date: todayISO(), goalId: goalId });
+      ensureMonthShape(m);
+      m.savings.push({ id: uid(), person: pid, amount: amt, note: "Rest fra brukskort", date: todayISO(), goalId: goalId });
+      refreshGoalsFromDeposits();
+      showToast("Flyttet " + formatNOK(amt) + " til sparing");
+    } else if (act === "keep") {
+      closeDlg("#dlgCard"); showToast("Resten blir på kortet til neste måned"); return;
+    } else if (act === "cats") {
+      const ids = []; let all = true;
+      $$("[data-card-cat]").forEach(function (i) { if (i.checked) ids.push(i.getAttribute("data-card-cat")); else all = false; });
+      const sc = Object.assign({}, state.settings.spendCard || {});
+      sc[pid] = Object.assign({}, sc[pid] || { on: true });
+      if (all) delete sc[pid].cats; else sc[pid].cats = ids;
+      state.settings.spendCard = sc;
+      showToast("Kategorier lagret");
+    }
+    save(); render(); renderCardDlg();
   }
 
   // ——— Insights helpers ———
@@ -1879,11 +2016,15 @@
       sparCard = '<button type="button" class="mo-spar" data-go-tab="sparing" aria-label="Åpne Sparing">' + bits.join("") + '<span class="mo-spar-go" aria-hidden="true">›</span></button>';
     }
     const oneRec = dayInfo.state !== "past" && scope !== "felles" ? recsHtml(ovKey, scope, spar.after.result, 1) : "";
+    let cardLine = "";
+    if (scope !== "felles" && scope !== "alle") cardLine = cardLineHtml(scope);
+    else if (scope === "alle") cardLine = activePeopleList().map(function (p) { return cardLineHtml(p.id); }).join("");
+    if (cardLine && scope !== "alle") dayLine = "";
     const more = '<details class="mo-more"' + (ovLocalGet("familie-budsjett-ov-more") === "1" ? " open" : "") + '><summary>Vis mer</summary>' +
       (scope !== "felles" ? sparBreakdownHtml(spar) : "") + endLine + pv + tipsHtml + suggHtml + trend + help + "</details>";
     host.innerHTML = meAsk + seg +
       '<h2 class="mo-title">' + escapeHtml(scopeName) + " – " + escapeHtml(mName) + " " + state.view.year + "</h2>" +
-      '<div class="mo-grid">' + keys + "</div>" + sparCard + oneRec + dayLine + cats + more;
+      '<div class="mo-grid">' + keys + "</div>" + cardLine + sparCard + oneRec + dayLine + cats + more;
     host.querySelectorAll("[data-ov-cat]").forEach(function (row) {
       if (catOpen.has(row.getAttribute("data-ov-cat") + "|" + row.getAttribute("data-ov-owner"))) insertCatEntries(row);
     });
@@ -5968,6 +6109,7 @@
     renderSavingsGoals();
     renderSparingYearTrends();
     renderSparPage();
+    renderCardSet();
   }
 
   function renderSparingYearTrends() {
@@ -9483,6 +9625,9 @@
         goalFormRefresh();
       });
     }
+    $$("[data-close-card]").forEach(function (b) { b.addEventListener("click", function () { closeDlg("#dlgCard"); }); });
+    const cardBodyEl = $("#cardBody");
+    if (cardBodyEl) cardBodyEl.addEventListener("click", handleCardDlgClick);
     $$("[data-close-tips]").forEach(function (b) { b.addEventListener("click", function () { closeDlg("#dlgTips"); }); });
     const goalDelete = $("#goalDelete");
     if (goalDelete) {
@@ -9947,7 +10092,9 @@
           '<div class="onb-row onb-row-plan">' + wzInput("goal.name", wz.goal.name, 'type="text" maxlength="60" placeholder="F.eks. Buffer eller ferie" aria-label="Sparemål"') +
           wzInput("goal.target", wz.goal.target, 'type="number" inputmode="numeric" min="0" placeholder="Mål kr" aria-label="Målbeløp"') +
           wzInput("goal.month", wz.goal.month, 'type="month" aria-label="Ferdig til"') + "</div>" +
-          '<p class="hint compact">Velg en måned, så regner appen ut hvor mye du må sette av per måned. Kan endres under Sparing.</p></div>';
+          '<p class="hint compact">Velg en måned, så regner appen ut hvor mye du må sette av per måned. Kan endres under Sparing.</p></div>' +
+          '<div class="onb-goal"><label class="card-toggle"><input type="checkbox" data-wz="card"' + (wz.card ? " checked" : "") + ' /> <span><b>Bruker du eget kort til daglige kjøp?</b> (valgfritt)</span></label>' +
+          '<p class="hint compact">Brukskort: du fører over et fast beløp hver måned og bruker kortet til alle kjøp utenom regninger. Appen viser hvor mye du skal føre over og hva som er igjen.</p></div>';
       }
       b.innerHTML = html;
       const first = b.querySelector("input[type=text], input[type=number]");
@@ -9969,6 +10116,11 @@
         state.savingsGoals = [Calc.normalizeSavingsGoal({ id: uid(), name: String(wz.goal.name).trim(), target: Number(wz.goal.target),
           monthly: mo ? 0 : Math.round(Number(wz.goal.target) / 12), saved: 0, person: state.people.length > 1 ? "samlet" : state.people[0].id,
           mode: mo ? "date" : "monthly", targetDate: mo, createdAt: monthKey(gNow.getFullYear(), gNow.getMonth()), startSaved: 0, status: "aktiv" }, state.people)];
+      }
+      if (wz.card) {
+        const cNow = new Date();
+        state.settings.spendCard = {};
+        state.settings.spendCard[state.people[0].id] = { on: true, since: monthKey(cNow.getFullYear(), cNow.getMonth()) };
       }
       needsOnboarding = false;
       try { localStorage.setItem("familie-budsjett-ov-scope", names.length === 1 ? "p1" : "alle"); } catch (e) { /* */ }

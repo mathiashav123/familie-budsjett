@@ -13,7 +13,7 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icon-192.png" />
   <title>Familiebudsjett</title>
-  <link rel="stylesheet" href="styles.css?v=20261101a" />
+  <link rel="stylesheet" href="styles.css?v=20261101b" />
 </head>
 <body>
   <a class="skip-link" href="#main">Hopp til innhold</a>
@@ -526,6 +526,11 @@
 
     <!-- ——— MER ——— -->
     <div id="panelMer" class="tab-panel" role="tabpanel" aria-labelledby="tabMer" hidden>
+      <section class="card compact-card card-set-card" id="cardSetCard" aria-labelledby="cardSetTitle">
+        <div class="card-head"><h2 id="cardSetTitle">💳 Brukskort</h2></div>
+        <p class="hint compact">To-konto-metoden: hver måned fører du over et fast beløp fra regningskontoen til et eget kort, og bruker det kortet til <b>alle</b> daglige kjøp (butikk, mat, kafé osv.). Regninger og faste utgifter blir på hovedkontoen. Da ser du hele tiden hvor mye som er igjen på kortet.</p>
+        <div id="cardSet"></div>
+      </section>
       <section class="card compact-card mer-card" aria-labelledby="merTitle">
         <div class="card-head">
           <h2 id="merTitle">Mer</h2>
@@ -911,6 +916,15 @@
   </dialog>
 
   <!-- Modal: sparemål -->
+  <dialog id="dlgCard" class="modal">
+    <div class="modal-card">
+      <header class="modal-head">
+        <h2 id="cardTitle">Brukskort</h2>
+        <button type="button" class="icon-btn" data-close-card aria-label="Lukk">×</button>
+      </header>
+      <div class="modal-body" id="cardBody"></div>
+    </div>
+  </dialog>
   <dialog id="dlgTips" class="modal">
     <div class="modal-card">
       <header class="modal-head">
@@ -1211,9 +1225,9 @@
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="supabase-config.js"></script>
-  <script src="calc-core.js?v=20261101a"></script>
+  <script src="calc-core.js?v=20261101b"></script>
   <script src="sync-core.js"></script>
   <script src="cloud-sync.js"></script>
-  <script src="app.js?v=20261101a"></script>
+  <script src="app.js?v=20261101b"></script>
 </body>
 </html>

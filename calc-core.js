@@ -1773,6 +1773,7 @@
         })(),
         sparingView:
           (parsed.settings && parsed.settings.sparingView) || "samlet",
+        spendCard: normalizeSpendCard(parsed.settings && parsed.settings.spendCard),
         personBuffer: (function () {
           var pb = parsed.settings && parsed.settings.personBuffer;
           var out = {};
@@ -2856,6 +2857,83 @@
       savingsPct: income > 0 ? Math.round((saving / income) * 100) : 0,
       bufferGoal: roundTo100(monthly), bufferMonths: saving > 0 ? Math.ceil(roundTo100(monthly) / saving) : null
     };
+  }
+
+  // ——— Brukskort (to-konto-metoden): eget kort for daglige kjøp. Read-only; off = no effect ———
+  /** settings.spendCard = { pid: { on, cats: null | ["catId|owner"], since: "YYYY-MM" } } */
+  function cardSettingsFor(settings, personId) {
+    var c = settings && settings.spendCard && settings.spendCard[personId];
+    return c && c.on ? { on: true, cats: Array.isArray(c.cats) ? c.cats.slice() : null, since: c.since || null } : { on: false, cats: null, since: null };
+  }
+  function normalizeSpendCard(raw) {
+    var out = {};
+    if (raw && typeof raw === "object") Object.keys(raw).forEach(function (k) {
+      var c = raw[k];
+      if (!c || typeof c !== "object") return;
+      var o = { on: !!c.on };
+      if (Array.isArray(c.cats)) o.cats = c.cats.filter(function (x) { return typeof x === "string"; });
+      if (/^\d{4}-\d{2}$/.test(String(c.since || ""))) o.since = c.since;
+      out[k] = o;
+    });
+    return out;
+  }
+  function isCardRow(row, cfg) {
+    if (!row || row.fast) return false;
+    if (!cfg || !cfg.cats) return true;
+    return cfg.cats.indexOf(row.id + "|" + (row.owner || "")) >= 0 || cfg.cats.indexOf(row.id) >= 0;
+  }
+  function sumPerson(arr, personId) {
+    var s = 0;
+    (arr || []).forEach(function (x) { if (x && x.person === personId) s += Number(x.amount) || 0; });
+    return s;
+  }
+  function prevMonthKey(key) {
+    var p = parseYm(key); var ix = ymIndex(p.y, p.m) - 1;
+    return Math.floor(ix / 12) + "-" + String((ix % 12) + 1).padStart(2, "0");
+  }
+  /** Card figures for one person and month (no carry). */
+  function cardMonthRaw(state, key, personId, cfg) {
+    var m = (state.months || {})[key];
+    if (!m) return null;
+    var p = parseYm(key);
+    var o = monthOverview(m, personId, state.people, state.categories, p.m);
+    var rows = o.rows.filter(function (r) { return isCardRow(r, cfg); });
+    var planned = 0, used = 0;
+    rows.forEach(function (r) { planned += r.planned || 0; used += r.used || 0; });
+    return { rows: rows, planned: planned, used: used, transferred: sumPerson(m.cardTransfers, personId), moved: sumPerson(m.cardMoves, personId),
+      balance: m.cardBalance && m.cardBalance[personId] && m.cardBalance[personId].amount != null ? Number(m.cardBalance[personId].amount) : null };
+  }
+  /**
+   * Brukskort for a person + month. Returns null when off.
+   * carryIn: leftover from earlier months (since start), recommended = planned − carryIn,
+   * left = carryIn + transferred − used − moved («Igjen på kortet»).
+   */
+  function spendCardMonth(state, key, personId, today) {
+    var cfg = cardSettingsFor(state.settings, personId);
+    if (!cfg.on) return null;
+    var cur = cardMonthRaw(state, key, personId, cfg);
+    if (!cur) return null;
+    // Carry from `since` (or the earliest month with transfers) up to the month before
+    var keys = Object.keys(state.months || {}).sort();
+    var start = cfg.since;
+    if (!start) keys.forEach(function (k) { if (!start && sumPerson((state.months[k] || {}).cardTransfers, personId) > 0) start = k; });
+    var carry = 0;
+    if (start) keys.forEach(function (k) {
+      if (k < start || k >= key) return;
+      var r = cardMonthRaw(state, k, personId, cfg);
+      if (r) carry = carry + r.transferred - r.used - r.moved;
+    });
+    var d = today || new Date();
+    var p = parseYm(key);
+    var di = monthDayInfo(p.y, p.m, d);
+    var recommended = Math.max(0, Math.ceil(cur.planned - Math.max(0, carry)));
+    var left = carry + cur.transferred - cur.used - cur.moved;
+    var perDay = di.state === "current" ? perDayLeft(left + cur.used, cur.used, di.daysLeft) : null;
+    return { on: true, cats: cfg.cats, rows: cur.rows, planned: cur.planned, used: cur.used, transferred: cur.transferred, moved: cur.moved,
+      carryIn: carry, recommended: recommended, toTransfer: Math.max(0, recommended - cur.transferred), left: left,
+      perDay: perDay ? Math.floor(Math.max(0, left) / Math.max(1, di.daysLeft)) : null, daysLeft: di.daysLeft, dayState: di.state,
+      balance: cur.balance, diff: cur.balance == null ? null : cur.balance - left,
+      monthEnd: di.state === "past" || (di.state === "current" && di.daysLeft <= 3) };
   }
 
   /** Short, concrete tips to reduce spending in common categories (matched on name). */
@@ -6749,6 +6827,10 @@
     afterBudget: afterBudget,
     savingsRecommendations: savingsRecommendations,
     categoryTips: categoryTips,
+    cardSettingsFor: cardSettingsFor,
+    normalizeSpendCard: normalizeSpendCard,
+    isCardRow: isCardRow,
+    spendCardMonth: spendCardMonth,
     allCategoryTips: allCategoryTips,
     budgetProposal: budgetProposal,
     rebalanceProposal: rebalanceProposal,
