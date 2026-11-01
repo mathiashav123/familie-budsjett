@@ -1773,6 +1773,16 @@
         })(),
         sparingView:
           (parsed.settings && parsed.settings.sparingView) || "samlet",
+        personBuffer: (function () {
+          var pb = parsed.settings && parsed.settings.personBuffer;
+          var out = {};
+          if (pb && typeof pb === "object") Object.keys(pb).forEach(function (k) {
+            var b = pb[k] || {};
+            var t = Number(b.target), h = Number(b.have);
+            if (Number.isFinite(t) && t > 0) out[k] = { target: t, have: Number.isFinite(h) && h > 0 ? h : 0 };
+          });
+          return out;
+        })(),
         pendingBalancesMigrationToast:
           migratedFromSaldo ||
           !!(
@@ -2848,6 +2858,275 @@
     };
   }
 
+  /** Short, concrete tips to reduce spending in common categories (matched on name). */
+  var CATEGORY_TIPS = [
+    { key: "mat", re: /\bmat\b|dagligvar|matvare|handel/i, title: "Mat", tips: ["Lag ukesmeny og handleliste – handle etter lista", "Følg ukens tilbud hos Kiwi, Rema 1000, Extra og Coop", "Ta med matpakke på jobb/skole", "Kjøp basisvarer i storpakning og bruk rester"] },
+    { key: "fastfood", re: /fastfood|take.?away|kafé|kafe|cafe|restaurant|ute ?mat|lunsj ute|kantine/i, title: "Fastfood/kafé", tips: ["Sett et fast ukebeløp og bruk et eget kort", "Ha enkel middag i fryseren for travle dager", "Ta med kaffe på termos", "Slett matlevering-appene fra hjemskjermen"] },
+    { key: "bil", re: /\bbil\b|drivstoff|bensin|diesel|transport|kollektiv|parkering|bom/i, title: "Bil/transport", tips: ["Samkjør eller gå/sykle korte turer", "Sammenlign drivstoffpriser og fyll når det er billigst (ofte mandag)", "Vurder månedskort i stedet for enkeltbilletter", "Sjekk bilforsikringen hvert år"] },
+    { key: "strom", re: /strøm(?!ming)|strom(?!ming)|energi|elektris/i, title: "Strøm", tips: ["Sjekk at du har spotpris uten unødvendige påslag", "Flytt vask og lading til natt/helg når prisen er lav", "Senk temperaturen om natten og når ingen er hjemme", "Kortere dusjer og tetting av trekk"] },
+    { key: "abonnement", re: /abonnement|abo\b|strømming|streaming|tv|mobil|internett/i, title: "Abonnement", tips: ["Gå gjennom alle trekk på kontoutskriften", "Roter strømmetjenester – ha én om gangen", "Sjekk om mobil/internett kan bli billigere hos en annen leverandør", "Si opp det du ikke har brukt siste måned"] },
+    { key: "fritid", re: /spill|fritid|hobby|underholdning|gaming|moro/i, title: "Spill/fritid", tips: ["Sett en fast månedsgrense", "Vent 48 timer før kjøp over 300 kr", "Se etter gratis aktiviteter og bibliotek", "Kjøp spill på salg eller brukt"] },
+    { key: "klaer", re: /klær|klaer|sko|tøy|toy/i, title: "Klær", tips: ["Lag en liste over hva du faktisk trenger", "Kjøp brukt (Finn, Tise, bruktbutikker)", "Handle på salg – men bare fra lista", "Vent en uke før impulskjøp"] },
+    { key: "helse", re: /helse|hygiene|apotek|kosmetikk|frisør|frisor|tannlege/i, title: "Helse/hygiene", tips: ["Velg butikkens egne merker på apoteket/dagligvare", "Kjøp hygieneartikler på tilbud i større kvanta", "Sjekk frikort og egenandeler", "Sammenlign priser på frisør"] }
+  ];
+
+  /** Tips for a category name, or null. Returns { key, title, tips[] }. */
+  function categoryTips(name) {
+    var n = String(name || "");
+    for (var i = 0; i < CATEGORY_TIPS.length; i++) if (CATEGORY_TIPS[i].re.test(n)) return { key: CATEGORY_TIPS[i].key, title: CATEGORY_TIPS[i].title, tips: CATEGORY_TIPS[i].tips.slice() };
+    return null;
+  }
+  function allCategoryTips() { return CATEGORY_TIPS.map(function (t) { return { key: t.key, title: t.title, tips: t.tips.slice() }; }); }
+
+  // ——— Sparing: sparemål per måned, buffer, «Igjen etter budsjett», anbefalinger (read-only) ———
+
+  function ymIndex(y, m) { return y * 12 + m; }
+  function parseYm(s) {
+    var mm = /^(\d{4})-(\d{2})/.exec(String(s || ""));
+    return mm ? { y: Number(mm[1]), m: Number(mm[2]) - 1 } : null;
+  }
+
+  /** Months left to a target month, counting the current month (target month included). 0 if passed. */
+  function monthsUntilTarget(today, targetYm) {
+    var t = parseYm(targetYm);
+    if (!t) return null;
+    var d = today || new Date();
+    return Math.max(0, ymIndex(t.y, t.m) - ymIndex(d.getFullYear(), d.getMonth()) + 1);
+  }
+
+  /** Person's percent share of a goal (person goal 100/0; felles/husstand: split or equal). */
+  function goalSharePct(goal, personId, people) {
+    if (!goal) return 0;
+    if (goal.person === personId) return 100;
+    if (goal.person !== "felles" && goal.person !== "samlet") return 0;
+    var act = activePeople(people);
+    if (!act.some(function (p) { return p.id === personId; })) return 0;
+    if (goal.split && typeof goal.split === "object" && goal.split[personId] != null && goal.split[personId] !== "") {
+      var v = Number(goal.split[personId]);
+      return Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 0;
+    }
+    return act.length ? 100 / act.length : 0;
+  }
+
+  /**
+   * Plan for one goal at `today`. Read-only.
+   * monthly: kr/mnd needed (date mode: remaining / months left; monthly mode: chosen kr/mnd, capped at remaining).
+   * finish: { y, m } estimated finish month. onTrack: true/false/null (null when no start info).
+   */
+  function goalPlan(goal, today, opts) {
+    opts = opts || {};
+    var d = today || new Date();
+    var prog = savingsGoalProgress(goal, opts);
+    var st = normalizeGoalStatus(goal && goal.status);
+    var res = { mode: goal && goal.mode === "date" && goal.targetDate ? "date" : "monthly", saved: prog.saved, target: prog.target,
+      remaining: prog.remaining, pct: prog.pct, monthly: 0, monthsLeft: null, finish: null, onTrack: null, expectedNow: null, overdue: false };
+    if (st !== "aktiv" || prog.remaining <= 0) { res.reached = prog.remaining <= 0; return res; }
+    if (res.mode === "date") {
+      var ml = monthsUntilTarget(d, goal.targetDate);
+      res.monthsLeft = ml;
+      if (ml <= 0) { res.overdue = true; res.monthly = Math.ceil(prog.remaining); }
+      else res.monthly = Math.ceil(prog.remaining / ml);
+      var t = parseYm(goal.targetDate); res.finish = t;
+    } else {
+      var mo = Number(goal && goal.monthly) || 0;
+      res.monthly = Math.min(mo, Math.ceil(prog.remaining));
+      if (mo > 0) {
+        var n = Math.ceil(prog.remaining / mo);
+        var idx = ymIndex(d.getFullYear(), d.getMonth()) + n - 1;
+        res.monthsLeft = n;
+        res.finish = { y: Math.floor(idx / 12), m: idx % 12 };
+      }
+    }
+    // On track: compare with a straight line from creation (needs createdAt)
+    var c = parseYm(goal && goal.createdAt);
+    if (c) {
+      var start = Number(goal.startSaved != null ? goal.startSaved : goal.saved) || 0;
+      var elapsed = Math.max(0, ymIndex(d.getFullYear(), d.getMonth()) - ymIndex(c.y, c.m)); // full months before this one
+      var perMonth;
+      if (res.mode === "date") {
+        var tt = parseYm(goal.targetDate);
+        var total = Math.max(1, ymIndex(tt.y, tt.m) - ymIndex(c.y, c.m) + 1);
+        perMonth = (prog.target - start) / total;
+      } else perMonth = Number(goal.monthly) || 0;
+      res.expectedNow = Math.min(prog.target, start + perMonth * elapsed);
+      res.onTrack = prog.saved + 0.5 >= res.expectedNow;
+    }
+    return res;
+  }
+
+  /** Linked deposits (and all deposits) for a person in one month. personId null = everyone. */
+  function depositsInMonth(m, personId, goalId) {
+    var all = 0, linked = 0;
+    ((m && m.savings) || []).forEach(function (s) {
+      if (!s) return;
+      if (personId && s.person !== personId) return;
+      var a = Number(s.amount) || 0;
+      all += a;
+      if (s.goalId && (!goalId || s.goalId === goalId)) linked += a;
+    });
+    return { all: all, linked: linked };
+  }
+
+  /**
+   * Savings for one month and scope (personId, or null/"samlet" for household). Read-only.
+   * Returns { items[{goal, plan, sharePct, monthly, depositedLinked}], goalMonthly, plannedSparing,
+   *           target (max of goals and Plan→Sparing), depositedAll, depositedLinked, remaining }.
+   */
+  function savingsForMonth(state, monthKey, personId, today) {
+    var people = state.people, months = state.months || {};
+    var m = months[monthKey] || {};
+    var act = activePeople(people);
+    var hh = !personId || personId === "samlet" || personId === "alle";
+    var opts = { months: months, archives: state.archives || [] };
+    var items = [], goalMonthly = 0, depLinked = 0;
+    (state.savingsGoals || []).forEach(function (g) {
+      if (normalizeGoalStatus(g.status) !== "aktiv") return;
+      var pct = hh ? 100 : goalSharePct(g, personId, people);
+      if (personId === "felles") pct = (g.person === "felles" || g.person === "samlet") ? 100 : 0;
+      if (!(pct > 0)) return;
+      var plan = goalPlan(g, today, opts);
+      if (!(plan.monthly > 0)) return;
+      var own = (plan.monthly * pct) / 100;
+      var dep = 0;
+      ((m.savings) || []).forEach(function (s) {
+        if (s && s.goalId === g.id && (hh || personId === "felles" || s.person === personId)) dep += Number(s.amount) || 0;
+      });
+      items.push({ goal: g, plan: plan, sharePct: pct, monthly: own, depositedLinked: dep });
+      goalMonthly += own; depLinked += Math.min(dep, own);
+    });
+    var plannedSparing = 0;
+    if (hh) act.forEach(function (p) { plannedSparing += plannedSparingFor(m, p.id); });
+    else if (personId !== "felles") plannedSparing = plannedSparingFor(m, personId);
+    var depAll = 0;
+    if (hh) depAll = depositsInMonth(m, null).all;
+    else if (personId !== "felles") depAll = depositsInMonth(m, personId).all;
+    var target = Math.max(goalMonthly, plannedSparing);
+    var remaining = Math.max(0, target - Math.max(depLinked, Math.min(depAll, target)));
+    return { items: items, goalMonthly: goalMonthly, plannedSparing: plannedSparing, target: target,
+      depositedAll: depAll, depositedLinked: depLinked, remaining: remaining };
+  }
+
+  /** Buffer plan: fill the gap gradually (default over 3 months), rounded up to 100. */
+  function bufferPlan(target, have, months) {
+    var t = Math.max(0, Number(target) || 0), h = Math.max(0, Number(have) || 0), n = months > 0 ? months : 3;
+    var missing = Math.max(0, t - h);
+    return { target: t, have: h, missing: missing, months: n, perMonth: missing > 0 ? Math.ceil(missing / n / 100) * 100 : 0, ok: missing <= 0 };
+  }
+
+  /** Buffer settings for a scope. settings.personBuffer = { pid: { target, have } }. */
+  function bufferForScope(settings, people, personId) {
+    var pb = (settings && settings.personBuffer) || {};
+    var ids = !personId || personId === "samlet" || personId === "alle" ? activePeople(people).map(function (p) { return p.id; }) :
+      personId === "felles" ? [] : [personId];
+    var t = 0, h = 0, any = false;
+    ids.forEach(function (id) {
+      var b = pb[id];
+      if (b && Number(b.target) > 0) { any = true; t += Number(b.target) || 0; h += Number(b.have) || 0; }
+    });
+    var p = bufferPlan(t, h, 3);
+    p.set = any;
+    return p;
+  }
+
+  /**
+   * «Igjen etter budsjett»: base (existing Trygg-number) − savings this month − buffer top-up.
+   * mode "plan": deposits are not in the base → subtract max(target, deposited).
+   * other modes (bank saldo / projection): deposits already left the account → subtract what is left to save.
+   */
+  function afterBudget(base, sav, buf, mode) {
+    var b = Number(base) || 0;
+    var savingsDeduct = mode === "plan" ? Math.max(sav.target, sav.depositedAll) : sav.remaining;
+    var bufferDeduct = buf && buf.perMonth > 0 ? buf.perMonth : 0;
+    return { base: b, savingsDeduct: savingsDeduct, bufferDeduct: bufferDeduct, savedThisMonth: sav.depositedAll,
+      savingsTarget: sav.target, result: b - savingsDeduct - bufferDeduct };
+  }
+
+  /**
+   * Up to `max` honest, concrete tips from the user's own data. Read-only.
+   * input: { state, monthKey, personId, today, leftAfterBudget, dismissed: { tipId: monthKey }, max }
+   * Tip: { id, kind, text, action: { type, ... } | null }
+   */
+  function savingsRecommendations(input) {
+    var st = input.state, today = input.today || new Date(), key = input.monthKey, pid = input.personId;
+    var people = st.people, cats = st.categories || [], months = st.months || {};
+    var hh = !pid || pid === "samlet" || pid === "alle";
+    var tips = [];
+    var dis = input.dismissed || {};
+    function add(t) { if (dis[t.id] !== key) tips.push(t); }
+    var nf = function (n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, "\u00a0") + " kr"; };
+    var goals = (st.savingsGoals || []).filter(function (g) {
+      return normalizeGoalStatus(g.status) === "aktiv" && (hh || goalSharePct(g, pid, people) > 0);
+    });
+    // 1. Money left → move some to a goal
+    var left = Number(input.leftAfterBudget);
+    if (goals.length && Number.isFinite(left) && left >= 1000) {
+      var g0 = goals.slice().sort(function (a, b) {
+        return goalPlan(b, today, { months: months }).remaining - goalPlan(a, today, { months: months }).remaining;
+      })[0];
+      var mv = Math.floor(left / 2 / 500) * 500;
+      if (mv >= 500) add({ id: "move:" + g0.id, kind: "move", text: "Du har " + nf(left) + " igjen etter budsjett – vil du flytte " + nf(mv) + " til sparemålet «" + g0.name + "»?",
+        action: { type: "deposit", goalId: g0.id, amount: mv, label: "Legg til innskudd" } });
+    }
+    // 2. Category over plan last 2 completed months in a row
+    var cur = parseYm(key);
+    var prevKeys = [];
+    for (var i = 1; i <= 2; i++) {
+      var ix = ymIndex(cur.y, cur.m) - i;
+      prevKeys.push(Math.floor(ix / 12) + "-" + String((ix % 12) + 1).padStart(2, "0"));
+    }
+    if (prevKeys.every(function (k) { return monthHasRealData(months[k]); })) {
+      var best = null;
+      cats.forEach(function (cat) {
+        if (!cat || cat.archived || cat.type === "fast" || categoryAutoSpends(cat)) return;
+        var owners = hh ? [cat.owner] : pid === "felles" ? ["felles"] : [pid, "felles"];
+        if (owners.indexOf(cat.owner) < 0) return;
+        var pct = !hh && pid !== "felles" && cat.owner === "felles" ? fellesSharePercent(cat, pid, people) : 100;
+        if (!(pct > 0)) return;
+        var over = 0, ok = true;
+        prevKeys.forEach(function (k) {
+          var mi = parseYm(k).m;
+          var pl = budgetForOwner(months[k], cat.id, cat.owner, mi) || 0;
+          var us = actualForCategoryOwner(months[k], cat.id, cat.name, cat.owner) || 0;
+          if (!(pl > 0) || !(us > pl + 0.5)) ok = false; else over += us - pl;
+        });
+        if (!ok) return;
+        var plan = budgetForOwner(months[key] || {}, cat.id, cat.owner, cur.m) || budgetForOwner(months[prevKeys[0]], cat.id, cat.owner, parseYm(prevKeys[0]).m);
+        var yearly = roundTo100(((over / 2) * pct / 100) * 12);
+        if (!best || yearly > best.yearly) best = { cat: cat, plan: plan, yearly: yearly };
+      });
+      if (best && best.yearly >= 600) add({ id: "over:" + best.cat.id, kind: "over", text: best.cat.name + " har gått over planen 2 mnd på rad – holder du deg på " + nf(best.plan) + " sparer du ca. " + nf(best.yearly) + " i året." + (categoryTips(best.cat.name) ? " Tips: " + categoryTips(best.cat.name).tips[0].toLowerCase() + "." : ""),
+        action: { type: "plan", label: "Se planen" } });
+    }
+    // 3. Buffer under target
+    var buf = bufferForScope(st.settings, people, pid);
+    if (buf.set && !buf.ok) add({ id: "buffer", kind: "buffer", text: "Bufferen er " + nf(buf.missing) + " under målet – sett av " + nf(buf.perMonth) + "/mnd i " + buf.months + " mnd.",
+      action: { type: "buffer", label: "Endre buffer" } });
+    // 4. No goals
+    if (!(st.savingsGoals || []).some(function (g) { return normalizeGoalStatus(g.status) === "aktiv"; }))
+      add({ id: "nogoal", kind: "nogoal", text: "Du har ingen sparemål. Et konkret mål (f.eks. ferie eller buffer) gjør det lettere å spare litt hver måned.",
+        action: { type: "newGoal", label: "Lag sparemål" } });
+    // 5. Subscriptions
+    var subs = 0;
+    var mk = months[key] || {};
+    cats.forEach(function (cat) {
+      if (!cat || cat.archived || !/abonnement|abo\b|strømming|streaming/i.test(cat.name)) return;
+      var owners = hh ? [cat.owner] : pid === "felles" ? ["felles"] : [pid, "felles"];
+      if (owners.indexOf(cat.owner) < 0) return;
+      var pct = !hh && pid !== "felles" && cat.owner === "felles" ? fellesSharePercent(cat, pid, people) : 100;
+      subs += ((budgetForOwner(mk, cat.id, cat.owner, cur.m) || 0) * pct) / 100;
+    });
+    if (subs >= 500) add({ id: "subs", kind: "subs", text: "Abonnementer: " + nf(subs) + "/mnd (" + nf(subs * 12) + " i året) – sjekk om alle brukes.",
+      action: { type: "plan", label: "Se abonnementer" } });
+    // 6. Goals exceed realistic surplus
+    var sav = savingsForMonth(st, key, hh ? null : pid, today);
+    if (sav.goalMonthly > 0 && Number.isFinite(left) && left < 0)
+      add({ id: "toomuch", kind: "toomuch", text: "Sparemålene (" + nf(sav.goalMonthly) + "/mnd) er mer enn det som er realistisk nå – du mangler " + nf(-left) + ". Vurder å flytte en dato eller senke kr/mnd.",
+        action: { type: "goals", label: "Se sparemål" } });
+    var order = { toomuch: 0, buffer: 1, over: 2, move: 3, nogoal: 4, subs: 5 };
+    tips.sort(function (a, b) { return order[a.kind] - order[b.kind]; });
+    return tips.slice(0, input.max || 3);
+  }
+
   /** Category status for progress bars/warnings: ok | near (>=80%) | over. */
   function overviewRowStatus(r) {
     if (!r) return "ok";
@@ -3584,7 +3863,7 @@
       tryggForVariabel: r2(trygg + remVar),
       endPot: r2(endPot),
       formula:
-        "Trygg = før lønn + lønn − faste etter lønn − logget etter − planlagte utlegg − variabelt igjen − buffer"
+        "Igjen etter budsjett = før lønn + lønn − faste etter lønn − logget etter − planlagte utlegg − variabelt igjen − buffer"
     };
   }
 
@@ -5037,7 +5316,7 @@
     if (!g.status && Number.isFinite(target) && target > 0 && Number.isFinite(saved) && saved >= target) {
       status = "nådd";
     }
-    return {
+    var out = {
       id: g.id || uid(),
       name: (g.name && String(g.name).trim()) || "Sparemål",
       target: Number.isFinite(target) && target >= 0 ? target : 0,
@@ -5047,6 +5326,16 @@
       status: status,
       statusAt: g.statusAt ? String(g.statusAt) : null
     };
+    // Optional (newer) fields – only kept when set, so old goals stay unchanged
+    if (g.mode === "date" && /^\d{4}-\d{2}$/.test(String(g.targetDate || ""))) { out.mode = "date"; out.targetDate = String(g.targetDate); }
+    if (g.split && typeof g.split === "object" && (person === "felles" || person === "samlet")) {
+      var sp = {};
+      Object.keys(g.split).forEach(function (k) { var v = Number(g.split[k]); if (Number.isFinite(v) && v >= 0) sp[k] = Math.min(100, v); });
+      if (Object.keys(sp).length) out.split = sp;
+    }
+    if (/^\d{4}-\d{2}(-\d{2})?$/.test(String(g.createdAt || ""))) out.createdAt = String(g.createdAt);
+    if (g.startSaved != null && Number.isFinite(Number(g.startSaved))) out.startSaved = Math.max(0, Number(g.startSaved));
+    return out;
   }
 
   function normalizeSavingsGoals(list, people) {
@@ -6134,7 +6423,7 @@
 
   /** Hint under På konto when balances are suggested (unconfirmed). */
   function balanceSuggestedHint() {
-    return "På konto er en korreksjon for denne måneden — nullstilles / gjelder ikke automatisk neste mnd. Trygg ruller: forrige + (lønn − utgifter).";
+    return "På konto er en korreksjon for denne måneden — nullstilles / gjelder ikke automatisk neste mnd. Beløpet ruller: forrige + (lønn − utgifter).";
   }
 
   /** Short nb label for mode/date badge. */
@@ -6451,6 +6740,16 @@
     roundTo100: roundTo100,
     monthHasRealData: monthHasRealData,
     planSuggestions: planSuggestions,
+    monthsUntilTarget: monthsUntilTarget,
+    goalSharePct: goalSharePct,
+    goalPlan: goalPlan,
+    savingsForMonth: savingsForMonth,
+    bufferPlan: bufferPlan,
+    bufferForScope: bufferForScope,
+    afterBudget: afterBudget,
+    savingsRecommendations: savingsRecommendations,
+    categoryTips: categoryTips,
+    allCategoryTips: allCategoryTips,
     budgetProposal: budgetProposal,
     rebalanceProposal: rebalanceProposal,
     starterBudget: starterBudget,

@@ -813,7 +813,7 @@ console.log("\n11d. Suggested bruk seed = prev confirmed − plannedSpends (not 
   );
   assertEq(
     Calc.balanceSuggestedHint(),
-    "På konto er en korreksjon for denne måneden — nullstilles / gjelder ikke automatisk neste mnd. Trygg ruller: forrige + (lønn − utgifter).",
+    "På konto er en korreksjon for denne måneden — nullstilles / gjelder ikke automatisk neste mnd. Beløpet ruller: forrige + (lønn − utgifter).",
     "hint nb"
   );
 }

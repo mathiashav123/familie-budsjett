@@ -620,7 +620,7 @@
 
 
   /**
-   * Dual saldo-mode breakdown under Trygg å bruke (samlet + per person).
+   * Dual saldo-mode breakdown under Igjen etter budsjett (samlet + per person).
    * Primary: nå (planlagte + buffer). Fast already in bank — not re-subtracted.
    * Secondary: hvis hele budsjettet brukes.
    */
@@ -672,7 +672,7 @@
     rows.push(
       '<div class="safe-spend-breakdown-row is-eq' +
         (nowAmt < 0 ? " is-neg" : "") +
-        '"><span>= Trygg å bruke nå</span><strong>' +
+        '"><span>= Igjen etter budsjett</span><strong>' +
         formatNOK(nowAmt) +
         "</strong></div>"
     );
@@ -732,9 +732,9 @@
     const fastNote =
       (bd.autoSpendExtra || 0) > 0.5
         ? '<p class="hint compact safe-spend-breakdown-hint">Faste utgifter er allerede i banksaldo (På konto nå) — ikke trukket på nytt her. Fast auto brukes fortsatt til kategori-igjen og forventet cashflow.</p>'
-        : '<p class="hint compact safe-spend-breakdown-hint">Faste utgifter er allerede i banksaldo — ikke trukket på nytt i Trygg å bruke.</p>';
+        : '<p class="hint compact safe-spend-breakdown-hint">Faste utgifter er allerede i banksaldo — ikke trukket på nytt i Igjen etter budsjett.</p>';
     return (
-      '<div class="safe-spend-breakdown-rows" role="group" aria-label="Slik er Trygg å bruke regnet">' +
+      '<div class="safe-spend-breakdown-rows" role="group" aria-label="Slik er Igjen etter budsjett regnet">' +
       rows.join("") +
       fastNote +
       "</div>"
@@ -816,7 +816,7 @@
     rows.push(
       '<div class="safe-spend-breakdown-row is-eq' +
         (bd.trygg < 0 ? " is-neg" : "") +
-        '"><span>= Trygg å bruke nå</span><strong>' +
+        '"><span>= Igjen etter budsjett</span><strong>' +
         formatNOK(bd.trygg) +
         "</strong></div>"
     );
@@ -831,7 +831,7 @@
         ".</p>"
       : '<p class="mini-help forlonn-note">Ingen faste er merket «Før lønn» — alle faste trekkes etter lønn. Endre under Plan → kategori → «Trekkes».</p>';
     return (
-      '<div class="safe-spend-breakdown-rows forlonn-breakdown" role="group" aria-label="Slik er Trygg å bruke regnet fra saldo før lønn">' +
+      '<div class="safe-spend-breakdown-rows forlonn-breakdown" role="group" aria-label="Slik er Igjen etter budsjett regnet fra saldo før lønn">' +
       (nameLabel
         ? '<div class="safe-spend-breakdown-title">' + escapeHtml(nameLabel) + "</div>"
         : "") +
@@ -841,7 +841,7 @@
     );
   }
 
-  /** «Saldo før lønn» input(s) in the Trygg card: one per person in scope. */
+  /** «Saldo før lønn» input(s) in the «Igjen etter budsjett» card: one per person in scope. */
   function renderForLonnBox(c, view, show) {
     const box = $("#forLonnBox");
     if (!box) return;
@@ -905,7 +905,7 @@
         "</div>";
     });
     html +=
-      '<p class="mini-help forlonn-hint">Skriv hva du hadde på brukskonto før lønna kom. Trygg = før lønn + lønn − faste som trekkes etter lønn − planlagte utlegg − variabelt igjen. Merk faste som allerede er betalt med «Før lønn» under Plan.</p>';
+      '<p class="mini-help forlonn-hint">Skriv hva du hadde på brukskonto før lønna kom. «Igjen etter budsjett» = før lønn + lønn − faste som trekkes etter lønn − planlagte utlegg − variabelt igjen. Merk faste som allerede er betalt med «Før lønn» under Plan.</p>';
     box.innerHTML = html;
     box.hidden = false;
   }
@@ -1224,6 +1224,250 @@
     } else { catOpen.add(id); insertCatEntries(row); }
   }
 
+  // ——— Sparing: «Igjen etter budsjett», sparemål, buffer, anbefalinger ———
+  const REC_KEY = "familie-budsjett-rec-dismiss";
+  function recDismissed() {
+    try { return JSON.parse(ovLocalGet(REC_KEY) || "{}") || {}; } catch (e) { return {}; }
+  }
+  function sparPid(scope) { return !scope || scope === "alle" || scope === "samlet" ? null : scope; }
+  /** Savings/buffer snapshot for a month + scope; base = income plan − planned spending. */
+  function sparSnapshot(key, scope) {
+    const m = state.months[key] || getMonth(key);
+    const o = Calc.monthOverview(m, scope === "samlet" ? "alle" : scope, state.people, state.categories, ovMonthIndexFromKey(key));
+    const pid = sparPid(scope);
+    const sav = Calc.savingsForMonth(state, key, pid, appToday());
+    const buf = Calc.bufferForScope(state.settings, state.people, pid);
+    const base = scope === "felles" ? 0 : o.expectedEndBudget;
+    return { o: o, sav: sav, buf: buf, after: Calc.afterBudget(base, sav, buf, "plan"), pid: pid };
+  }
+  function sparGoalsLine(scope) {
+    const pid = sparPid(scope);
+    const opts = goalOpts();
+    const act = (state.savingsGoals || []).filter(function (g) {
+      return Calc.normalizeGoalStatus(g.status) === "aktiv" && (!pid || Calc.goalSharePct(g, pid, state.people) > 0 || g.person === pid);
+    });
+    if (!act.length) return null;
+    let saved = 0, target = 0;
+    act.forEach(function (g) { const p = Calc.savingsGoalProgress(g, opts); saved += p.saved; target += p.target; });
+    return { n: act.length, saved: saved, target: target, pct: target > 0 ? Math.round((saved / target) * 100) : 0 };
+  }
+  function sparBreakdownHtml(snap) {
+    const a = snap.after;
+    const row = function (lbl, v, cls) { return '<div class="spar-bd-row' + (cls ? " " + cls : "") + '"><span>' + lbl + "</span><strong>" + v + "</strong></div>"; };
+    return '<div class="spar-bd">' +
+      '<div class="spar-saved"><span>Spart denne mnd</span><strong>' + formatNOK(a.savedThisMonth) + "</strong>" +
+      (a.savingsTarget > 0 ? "<small>av " + formatNOK(Math.round(a.savingsTarget)) + " planlagt</small>" : "") + "</div>" +
+      row("Inntekt (plan)", formatNOK(snap.o.plannedIncome)) +
+      row("− Planlagt forbruk", formatNOK(snap.o.plannedOut)) +
+      row("− Sparing (mål)", formatNOK(Math.round(a.savingsDeduct)), "is-save") +
+      (a.bufferDeduct > 0 ? row("− Buffer-påfyll", formatNOK(a.bufferDeduct), "is-save") : "") +
+      row("= Igjen etter budsjett", formatNOKSigned(Math.round(a.result)), "is-total" + (a.result < -0.5 ? " neg" : "")) +
+      "</div>";
+  }
+  function recsHtml(key, scope, left, max) {
+    const tips = Calc.savingsRecommendations({ state: state, monthKey: key, personId: sparPid(scope), today: appToday(),
+      leftAfterBudget: left, dismissed: recDismissed(), max: max || 3 });
+    if (!tips.length) return "";
+    return '<ul class="recs">' + tips.map(function (t) {
+      const a = t.action;
+      return '<li class="rec rec-' + t.kind + '"><p>' + escapeHtml(t.text) + '</p><div class="rec-btns">' +
+        (a ? '<button type="button" class="btn sm primary" data-rec-act="' + escapeAttr(a.type) + '" data-rec-goal="' + escapeAttr(a.goalId || "") + '" data-rec-amt="' + (a.amount || "") + '">' + escapeHtml(a.label) + "</button>" : "") +
+        '<button type="button" class="btn sm ghost" data-rec-dismiss="' + escapeAttr(t.id) + '" data-rec-key="' + escapeAttr(key) + '">Ikke nå</button></div></li>';
+    }).join("") + "</ul>";
+  }
+  function gotoTab(tab) {
+    const b = $("#tab" + tab.charAt(0).toUpperCase() + tab.slice(1));
+    if (b) b.click();
+    window.scrollTo(0, 0);
+  }
+  function scopePersonForAction() {
+    const sc = overviewScope();
+    const sv = state.settings.sparingView;
+    const ppl = activePeopleList();
+    if (sv && sv !== "samlet" && ppl.some(function (p) { return p.id === sv; })) return sv;
+    if (sc && sc !== "alle" && sc !== "felles") return sc;
+    return deviceMe() || (ppl[0] || {}).id;
+  }
+  /** Handles recommendation / sparing-summary / tips clicks anywhere. Returns true if handled. */
+  function handleSparClick(e) {
+    const d = e.target.closest("[data-rec-dismiss]");
+    if (d) {
+      const dis = recDismissed();
+      dis[d.getAttribute("data-rec-dismiss")] = d.getAttribute("data-rec-key");
+      ovLocalSet(REC_KEY, JSON.stringify(dis));
+      render();
+      return true;
+    }
+    const a = e.target.closest("[data-rec-act]");
+    if (a) {
+      const t = a.getAttribute("data-rec-act");
+      if (t === "deposit") {
+        openSaving(scopePersonForAction());
+        const amt = a.getAttribute("data-rec-amt");
+        if (amt) $("#savAmount").value = amt;
+        fillSavGoalSelect(a.getAttribute("data-rec-goal") || "");
+      } else if (t === "plan") gotoTab("plan");
+      else if (t === "newGoal") { gotoTab("sparing"); openGoal(null); }
+      else if (t === "buffer") { gotoTab("sparing"); const c = $("#sparBufferCard"); if (c) c.scrollIntoView({ block: "start" }); }
+      else if (t === "goals") { gotoTab("sparing"); const c = $("#sectionSparingGoals"); if (c) c.scrollIntoView({ block: "start" }); }
+      return true;
+    }
+    const g = e.target.closest("[data-go-tab]");
+    if (g) { gotoTab(g.getAttribute("data-go-tab")); return true; }
+    const ct = e.target.closest("[data-cat-tips]");
+    if (ct) { e.stopPropagation(); openCatTips(ct.getAttribute("data-cat-tips")); return true; }
+    const dep = e.target.closest("[data-goal-deposit]");
+    if (dep) {
+      const goal = (state.savingsGoals || []).find(function (x) { return x.id === dep.getAttribute("data-goal-deposit"); });
+      const ppl = activePeopleList();
+      const who = goal && ppl.some(function (p) { return p.id === goal.person; }) ? goal.person : scopePersonForAction();
+      openSaving(who);
+      if (goal) {
+        const plan = Calc.goalPlan(goal, appToday(), goalOpts());
+        if (plan.monthly > 0) $("#savAmount").value = String(Math.round(plan.monthly * (goal.person === who ? 100 : Calc.goalSharePct(goal, who, state.people)) / 100));
+      }
+      fillSavGoalSelect(goal ? goal.id : "");
+      return true;
+    }
+    return false;
+  }
+  function openCatTips(name) {
+    const t = Calc.categoryTips(name);
+    if (!t) return;
+    $("#tipsTitle").textContent = "Tips: " + name;
+    $("#tipsBody").innerHTML = '<ul class="tips-list">' + t.tips.map(function (x) { return "<li>" + escapeHtml(x) + "</li>"; }).join("") + "</ul>";
+    openDlg("#dlgTips");
+  }
+  function monthLabel(ym) { return ym ? (MONTHS[ym.m] || "").toLowerCase().slice(0, 3) + " " + ym.y : ""; }
+
+  function renderSparPage() {
+    const view = state.settings.sparingView || "samlet";
+    const key = monthKey(state.view.year, state.view.month);
+    const sumHost = $("#sparSum");
+    if (!sumHost) return;
+    const snap = sparSnapshot(key, view);
+    const mName = (MONTHS[state.view.month] || "").toLowerCase();
+    $("#sparSumTitle").textContent = "Sparing i " + mName;
+    let warn = "";
+    if (snap.sav.goalMonthly > 0 && snap.after.result < -0.5) {
+      warn = '<p class="spar-warn">Ærlig talt: sparemålene (' + formatNOK(Math.round(snap.sav.goalMonthly)) + "/mnd) er mer enn det planen gir rom for nå. Du mangler " +
+        formatNOK(Math.round(-snap.after.result)) + " – flytt en dato, senk kr/mnd eller kutt i planen.</p>";
+    }
+    const items = snap.sav.items.map(function (it) {
+      return '<li><span>' + escapeHtml(it.goal.name) + (it.sharePct < 100 ? " <small>(" + Math.round(it.sharePct) + " %)</small>" : "") + "</span><span>" +
+        formatNOK(Math.round(it.monthly)) + "/mnd" + (it.depositedLinked > 0 ? " · " + formatNOK(it.depositedLinked) + " satt inn" : "") + "</span></li>";
+    }).join("");
+    sumHost.innerHTML = sparBreakdownHtml(snap) + (items ? '<ul class="spar-items">' + items + "</ul>" : "") + warn +
+      '<p class="hint compact">Sparing er ikke en utgift – men pengene er satt av, så de trekkes fra det som er igjen.</p>';
+    const recs = recsHtml(key, view, snap.after.result, 3);
+    $("#sparRecs").innerHTML = recs || '<p class="empty-note">Ingen anbefalinger akkurat nå – bra jobba! 🌱</p>';
+    renderSparBuffer();
+    renderSparHist(view);
+    renderSparTips();
+    const host = $("#panelSparing");
+    if (host && !host._sparBound) {
+      host._sparBound = true;
+      host.addEventListener("click", function (e) {
+        if (handleSparClick(e)) return;
+        const sb = e.target.closest("#sparBufferSave");
+        if (sb) saveBufferForm();
+      });
+    }
+  }
+  function renderSparBuffer() {
+    const host = $("#sparBuffer");
+    const pb = state.settings.personBuffer || {};
+    host.innerHTML = activePeopleList().map(function (p) {
+      const b = pb[p.id] || {};
+      const plan = Calc.bufferPlan(b.target, b.have, 3);
+      const status = !(b.target > 0) ? '<span class="muted">Ikke satt</span>' : plan.ok ? '<span class="pos">✓ Bufferen er full</span>' :
+        '<span class="warn">Mangler ' + formatNOK(plan.missing) + " – sett av " + formatNOK(plan.perMonth) + "/mnd i 3 mnd</span>";
+      const pct = b.target > 0 ? Math.min(100, Math.round(((b.have || 0) / b.target) * 100)) : 0;
+      return '<div class="buf-row"><div class="buf-name">' + escapeHtml(p.name) + "</div>" +
+        '<label class="buf-f"><span>Buffer jeg vil ha på konto</span><input class="input" inputmode="numeric" data-buf-target="' + escapeAttr(p.id) + '" value="' + (b.target ? b.target : "") + '" placeholder="f.eks. 20000" /></label>' +
+        '<label class="buf-f"><span>Har nå</span><input class="input" inputmode="numeric" data-buf-have="' + escapeAttr(p.id) + '" value="' + (b.have ? b.have : "") + '" placeholder="0" /></label>' +
+        (b.target > 0 ? '<div class="goal-progress"><span style="width:' + pct + '%"></span></div>' : "") +
+        '<div class="buf-status">' + status + "</div></div>";
+    }).join("") + '<button type="button" class="btn sm primary" id="sparBufferSave">Lagre buffer</button>';
+  }
+  function saveBufferForm() {
+    const pb = Object.assign({}, state.settings.personBuffer || {});
+    $$("[data-buf-target]").forEach(function (inp) {
+      const id = inp.getAttribute("data-buf-target");
+      const t = parseAmount(inp.value);
+      const hv = document.querySelector('[data-buf-have="' + id + '"]');
+      const h = hv ? parseAmount(hv.value) : 0;
+      if (t != null && t > 0) pb[id] = { target: t, have: h != null && h > 0 ? h : 0 };
+      else delete pb[id];
+    });
+    state.settings.personBuffer = pb;
+    save();
+    render();
+    showToast("Buffer lagret");
+  }
+  function renderSparHist(view) {
+    const host = $("#sparHist");
+    const pid = sparPid(view);
+    const rows = [];
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(state.view.year, state.view.month - i, 1);
+      const k = monthKey(d.getFullYear(), d.getMonth());
+      const m = state.months[k];
+      let sum = 0;
+      ((m && m.savings) || []).forEach(function (s) { if (!pid || s.person === pid) sum += Number(s.amount) || 0; });
+      rows.push({ k: k, label: (MONTHS[d.getMonth()] || "").slice(0, 3), sum: sum });
+    }
+    const max = Math.max.apply(null, rows.map(function (r) { return r.sum; }).concat([1]));
+    const total = rows.reduce(function (a, r) { return a + r.sum; }, 0);
+    if (!total) { host.innerHTML = '<p class="empty-note">Ingen innskudd siste 12 måneder ennå. Trykk «Legg til innskudd» på et sparemål for å komme i gang.</p>'; return; }
+    host.innerHTML = '<div class="spar-bars">' + rows.map(function (r) {
+      return '<div class="spar-bar" title="' + escapeAttr(r.label + ": " + formatNOK(r.sum)) + '"><span style="height:' + Math.max(2, Math.round((r.sum / max) * 100)) + '%"></span><em>' + escapeHtml(r.label) + "</em></div>";
+    }).join("") + '</div><p class="hint compact">Siste 12 mnd: ' + formatNOK(total) + " · snitt " + formatNOK(Math.round(total / 12)) + "/mnd</p>";
+  }
+  function renderSparTips() {
+    const host = $("#sparTips");
+    const own = {};
+    (state.categories || []).forEach(function (c) { if (!c.archived) { const t = Calc.categoryTips(c.name); if (t) own[t.key] = true; } });
+    const all = Calc.allCategoryTips().sort(function (a, b) { return (own[b.key] ? 1 : 0) - (own[a.key] ? 1 : 0); });
+    host.innerHTML = all.map(function (t) {
+      return '<details class="tips-group"><summary>' + escapeHtml(t.title) + (own[t.key] ? ' <span class="mo-tag">i budsjettet ditt</span>' : "") + '</summary><ul class="tips-list">' +
+        t.tips.map(function (x) { return "<li>" + escapeHtml(x) + "</li>"; }).join("") + "</ul></details>";
+    }).join("");
+  }
+
+  // Keep «Igjen per dag» and month-dependent numbers fresh: midnight rollover + app resume
+  let lastDayKey = null;
+  function dayKeyNow() { const d = appToday(); return d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate(); }
+  function onDayMaybeChanged() {
+    const k = dayKeyNow();
+    if (lastDayKey && k !== lastDayKey) {
+      const prev = lastDayKey.split("-").map(Number);
+      const now = appToday();
+      // Following the current month: move view along when the calendar month changes
+      if (state.view.year === prev[0] && state.view.month === prev[1] && (now.getFullYear() !== prev[0] || now.getMonth() !== prev[1])) {
+        state.view.year = now.getFullYear(); state.view.month = now.getMonth();
+        getMonth();
+      }
+      render();
+    }
+    lastDayKey = k;
+    scheduleMidnight();
+  }
+  let midnightTimer = null;
+  function scheduleMidnight() {
+    if (midnightTimer) clearTimeout(midnightTimer);
+    const n = appToday();
+    const next = new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1, 0, 0, 5);
+    midnightTimer = setTimeout(onDayMaybeChanged, Math.min(next - n, 6 * 3600 * 1000));
+  }
+  function initDayWatch() {
+    lastDayKey = dayKeyNow();
+    scheduleMidnight();
+    document.addEventListener("visibilitychange", function () { if (!document.hidden) onDayMaybeChanged(); });
+    window.addEventListener("focus", onDayMaybeChanged);
+    window.addEventListener("pageshow", onDayMaybeChanged);
+  }
+
   // ——— Insights helpers ———
   function appToday() { return new Date(); }
   const SUGG_KEY = "familie-budsjett-sugg-dismiss";
@@ -1294,6 +1538,13 @@
     const m = state.months[key];
     const inc = m ? Calc.monthOverview(m, pid, state.people, state.categories, ovMonthIndexFromKey(key)).plannedIncome : 0;
     $("#bpIncome").placeholder = inc ? String(Math.round(inc)) : "f.eks. 35000";
+    const bps = $("#bpSaving");
+    if (bps && !bps._autoBound) { bps._autoBound = true; bps.addEventListener("input", function () { bps.dataset.auto = "0"; }); }
+    if (bps && (!bps.value || bps.dataset.auto === "1")) {
+      const sv = Calc.savingsForMonth(state, key, pid, appToday());
+      if (sv.target > 0) { bps.value = String(Math.round(sv.target)); bps.dataset.auto = "1"; }
+      else if (bps.dataset.auto === "1") { bps.value = ""; }
+    }
   }
   // Shared editable proposal table (Plan dialog + Velkommen-veiviser)
   // model: { items, available, locked:{i:v}, off:{i:true}, values:[], offValue(i), host, onChange }
@@ -1467,6 +1718,9 @@
       dayFrac = now.getDate() / dim;
     }
 
+    const ovKey = monthKey(state.view.year, state.view.month);
+    const spar = sparSnapshot(ovKey, scope);
+    let endLine = "";
     let keys = "";
     if (scope === "felles") {
       keys =
@@ -1480,7 +1734,9 @@
         '<div class="mo-box"><div class="mo-lbl">Inntekt</div><div class="mo-big">' + formatNOK(o.receivedIncome) + '</div><div class="mo-sub">mottatt · plan ' + formatNOK(o.plannedIncome) + "</div></div>" +
         '<div class="mo-box"><div class="mo-lbl">Utgifter</div><div class="mo-big ' + (o.usedOut > o.plannedOut + 0.5 ? "neg" : "") + '">' + formatNOK(o.usedOut) + '</div><div class="mo-sub">brukt · plan ' + formatNOK(o.plannedOut) + "</div></div>" +
         '<div class="mo-box"><div class="mo-lbl">Pluss/minus nå</div><div class="mo-big ' + cls(o.plusMinusNow) + '">' + formatNOKSigned(o.plusMinusNow) + '</div><div class="mo-sub">mottatt − brukt</div></div>' +
-        '<div class="mo-box"><div class="mo-lbl">Ved månedsslutt</div><div class="mo-big ' + cls(o.expectedEndBudget) + '">' + formatNOKSigned(o.expectedEndBudget) + '</div><div class="mo-sub">hvis resten av planen brukes<br>' + formatNOKSigned(o.expectedEndNoMore) + " hvis du ikke kjøper mer</div></div>";
+        '<div class="mo-box mo-box-left"><div class="mo-lbl">Igjen etter budsjett</div><div class="mo-big ' + cls(spar.after.result) + '">' + formatNOKSigned(Math.round(spar.after.result)) + '</div><div class="mo-sub">' +
+        (spar.after.savingsDeduct > 0 || spar.after.bufferDeduct > 0 ? "etter plan og " + formatNOK(Math.round(spar.after.savingsDeduct + spar.after.bufferDeduct)) + (spar.after.bufferDeduct > 0 ? " til sparing/buffer" : " til sparing") : "inntekt − plan") + "</div></div>";
+      endLine = '<p class="mo-endline">Ved månedsslutt: <b class="' + cls(o.expectedEndBudget) + '">' + formatNOKSigned(o.expectedEndBudget) + "</b> hvis resten av planen brukes · " + formatNOKSigned(o.expectedEndNoMore) + " hvis du ikke kjøper mer</p>";
     }
 
     // Igjen per dag (only current month); past month: final result
@@ -1555,7 +1811,9 @@
         '<span class="mo-row-nums">' + formatNOK(r.used) + ' <small>av ' + formatNOK(r.planned) + "</small></span></div>" +
         ovBar(r) +
         '<div class="mo-row-bot"><span>' + sub + '</span><span class="' + cls(r.remain) + '">' +
-        (r.remain < -0.5 ? formatNOK(-r.remain) + " over" : formatNOK(r.remain) + " igjen") + "</span></div>" + dayRow + "</div>";
+        (r.remain < -0.5 ? formatNOK(-r.remain) + " over" : formatNOK(r.remain) + " igjen") + "</span></div>" +
+        (dayRow || (st !== "ok" && !r.fast && Calc.categoryTips(r.name)) ? '<div class="mo-row-extra">' + dayRow +
+          (st !== "ok" && !r.fast && Calc.categoryTips(r.name) ? '<button type="button" class="mo-tips-link" data-cat-tips="' + escapeAttr(r.name) + '">💡 Tips</button>' : "") + "</div>" : "") + "</div>";
     }
     const varRows = o.rows.filter(function (r) { return !r.fast; }).sort(function (a, b) {
       const ra = a.planned > 0 ? a.used / a.planned : 9, rb = b.planned > 0 ? b.used / b.planned : 9;
@@ -1608,9 +1866,24 @@
       "<li><b>Ved månedsslutt</b> = inntekt − alt som er planlagt (eller brukt, hvis det er mer).</li>" +
       "<li>Grønn = innenfor, gul = snart brukt opp (80 %), rød = over planen.</li></ul></details>";
 
+    // Compact Sparing summary (opens the Sparing page)
+    let sparCard = "";
+    if (scope !== "felles") {
+      const gl = sparGoalsLine(scope);
+      const bf = spar.buf;
+      const bits = [];
+      bits.push('<span class="mo-spar-main">Spart denne mnd: <b>' + formatNOK(spar.after.savedThisMonth) + "</b>" + (spar.after.savingsTarget > 0 ? " av " + formatNOK(Math.round(spar.after.savingsTarget)) : "") + "</span>");
+      if (gl) bits.push("<span>" + gl.n + (gl.n === 1 ? " mål" : " mål") + " · " + gl.pct + " % nådd</span>");
+      if (bf.set) bits.push("<span>Buffer " + (bf.ok ? "✓ full" : formatNOK(bf.have) + " av " + formatNOK(bf.target)) + "</span>");
+      if (!gl && !bf.set) bits.push("<span>Lag et sparemål →</span>");
+      sparCard = '<button type="button" class="mo-spar" data-go-tab="sparing" aria-label="Åpne Sparing">' + bits.join("") + '<span class="mo-spar-go" aria-hidden="true">›</span></button>';
+    }
+    const oneRec = dayInfo.state !== "past" && scope !== "felles" ? recsHtml(ovKey, scope, spar.after.result, 1) : "";
+    const more = '<details class="mo-more"' + (ovLocalGet("familie-budsjett-ov-more") === "1" ? " open" : "") + '><summary>Vis mer</summary>' +
+      (scope !== "felles" ? sparBreakdownHtml(spar) : "") + endLine + pv + tipsHtml + suggHtml + trend + help + "</details>";
     host.innerHTML = meAsk + seg +
       '<h2 class="mo-title">' + escapeHtml(scopeName) + " – " + escapeHtml(mName) + " " + state.view.year + "</h2>" +
-      '<div class="mo-grid">' + keys + "</div>" + dayLine + pv + tipsHtml + suggHtml + cats + trend + help;
+      '<div class="mo-grid">' + keys + "</div>" + sparCard + oneRec + dayLine + cats + more;
     host.querySelectorAll("[data-ov-cat]").forEach(function (row) {
       if (catOpen.has(row.getAttribute("data-ov-cat") + "|" + row.getAttribute("data-ov-owner"))) insertCatEntries(row);
     });
@@ -1626,8 +1899,10 @@
       });
       host.addEventListener("toggle", function (e) {
         if (e.target.classList && e.target.classList.contains("mo-sugg")) ovLocalSet("familie-budsjett-sugg-open", e.target.open ? "1" : "0");
+        if (e.target.classList && e.target.classList.contains("mo-more")) ovLocalSet("familie-budsjett-ov-more", e.target.open ? "1" : "0");
       }, true);
       host.addEventListener("click", function (e) {
+        if (handleSparClick(e)) return;
         const sa = e.target.closest("[data-sugg-apply], [data-sugg-pick], [data-sugg-keep]");
         if (sa) { handleSuggestion(sa); return; }
         const row = e.target.closest("[data-ov-cat]");
@@ -2363,7 +2638,7 @@
             "</div>";
         }
         // Hide «Etter lønn (plan)» when saldo already is after_salary —
-        // that line re-adds planInn/−planUt on top of bank and confuses vs Trygg.
+        // that line re-adds planInn/−planUt on top of bank and confuses vs «Igjen etter budsjett».
         const etterLine =
           row.etterLonn != null && whenMode !== "after_salary"
             ? '<p class="pa-konto-etter">Etter lønn (plan): <strong>' +
@@ -2513,11 +2788,11 @@
         newMonthHint.textContent =
           typeof Calc.balanceSuggestedHint === "function"
             ? Calc.balanceSuggestedHint()
-            : "På konto er en korreksjon for denne måneden — nullstilles / gjelder ikke automatisk neste mnd. Trygg ruller: forrige + (lønn − utgifter).";
+            : "På konto er en korreksjon for denne måneden — nullstilles / gjelder ikke automatisk neste mnd. Beløpet ruller: forrige + (lønn − utgifter).";
       } else if (emptyBal) {
         newMonthHint.hidden = false;
         newMonthHint.textContent =
-          "Ny måned — feltet er tomt. Trygg ruller automatisk (forrige + lønn − utgifter). Rett saldo bare hvis banken ikke stemmer.";
+          "Ny måned — feltet er tomt. Beløpet ruller automatisk (forrige + lønn − utgifter). Rett saldo bare hvis banken ikke stemmer.";
       } else {
         newMonthHint.hidden = true;
       }
@@ -3124,7 +3399,7 @@
     const isPerson = view !== "samlet";
     const pc = isPerson && c && c.byPerson ? c.byPerson[view] : null;
 
-    // Har nå = current Trygg (or bank-corrected saldo path)
+    // Har nå = current «Igjen etter budsjett» (or bank-corrected saldo path)
     let harNa = null;
     if (isPerson && pc && typeof pc.safeToSpend === "number") {
       harNa = pc.safeToSpend;
@@ -3136,8 +3411,8 @@
     const harHint = $("#forwardHarNaHint");
     if (harHint) {
       harHint.textContent = isPerson
-        ? "Trygg å bruke for valgt person denne måneden (lønn minus dine utgifter)."
-        : "Trygg å bruke denne måneden (eller bank hvis du har rettet På konto).";
+        ? "Igjen etter budsjett for valgt person denne måneden (lønn minus dine utgifter)."
+        : "Igjen etter budsjett denne måneden (eller bank hvis du har rettet På konto).";
     }
     const formulaHint = $("#forwardFormulaHint");
     if (formulaHint) {
@@ -3536,7 +3811,7 @@
         ? innUtView
         : null;
     // Anchor: prefer nearest CONFIRMED bank month; else nearest suggested/carry.
-    // Personal Oversikt/Trygg uses that person's bruk only — never household sum.
+    // Personal Oversikt/«Igjen etter budsjett» uses that person's bruk only — never household sum.
     const anchor = findFollowBudgetAnchor(viewKey, scopePersonId);
     if (!anchor || !anchor.anchorKey || anchor.startPot == null) return null;
     if (anchor.anchorKey === viewKey) return null;
@@ -3595,10 +3870,11 @@
     const pc = isPerson && c && c.byPerson ? c.byPerson[view] : null;
     const whoName = isPerson ? nameOf(view) : "";
 
-    // Pick household or per-person Trygg å bruke (same tabs as Inn/Ut)
+    // Pick household or per-person Igjen etter budsjett (same tabs as Inn/Ut)
     let amount, raw, mode, remAll, remFast, remVar, buf, planHead, brukForHint, hasBrukForHint;
     let futureR = 0;
     let autoX = 0;
+    let safeSparAdj = null;
     let ifBudgetUsed = null;
     let ifBudgetUsedRaw = null;
     let needsSaldo = false;
@@ -3637,7 +3913,7 @@
           ? Number(bal.bruk)
           : 0;
       hasBrukForHint = !!(pc.hasBrukBalance);
-      // På konto optional — never blank Trygg; plan fallback when no bruk/seed
+      // På konto optional — never blank «Igjen etter budsjett»; plan fallback when no bruk/seed
       needsSaldo = !!(
         pc.needsSaldoForSafeToSpend ||
         mode === "awaiting_saldo"
@@ -3709,8 +3985,8 @@
     const show = showBase;
 
     const baseTitle = fromSaldo || flMode
-      ? "Trygg å bruke nå"
-      : "Trygg å bruke";
+      ? "Igjen etter budsjett"
+      : "Igjen etter budsjett";
     const titled = isPerson && whoName
       ? baseTitle + " · " + whoName
       : baseTitle;
@@ -3743,7 +4019,7 @@
           if (any) prevBruk = sum;
         }
       }
-      // Planned spends in/after this viewed month (same reserve as Trygg)
+      // Planned spends in/after this viewed month (same reserve as «Igjen etter budsjett»)
       const plannedForEst = futureR > 0 ? futureR : 0;
       if (
         prevBruk != null &&
@@ -3821,7 +4097,12 @@
         if (needsSaldo && typeof planHead === "number" && mode !== "projection") {
           amt = planHead;
         }
-        const rawN = typeof raw === "number" ? raw : amt;
+        // Sparemål + buffer-påfyll set aside (display layer; engine numbers unchanged)
+        const sparSafe = sparSnapshot(viewKeyNow, view);
+        const sparAdj = Calc.afterBudget(amt, sparSafe.sav, sparSafe.buf, mode === "plan" ? "plan" : "saldo");
+        amt = sparAdj.result;
+        safeSparAdj = sparAdj;
+        const rawN = typeof raw === "number" ? raw - sparAdj.savingsDeduct - sparAdj.bufferDeduct : amt;
         valEl.textContent = formatNOK(amt);
         valEl.className =
           "safe-spend-value" +
@@ -3833,6 +4114,21 @@
                 ? " is-tight"
                 : "");
       }
+    }
+    let sparEl = $("#safeSpendSpar");
+    if (!sparEl && valEl) {
+      sparEl = document.createElement("div");
+      sparEl.id = "safeSpendSpar";
+      sparEl.className = "safe-spend-spar";
+      valEl.parentNode.insertBefore(sparEl, valEl);
+    }
+    if (sparEl) {
+      if (show && safeSparAdj && (safeSparAdj.savingsDeduct > 0 || safeSparAdj.bufferDeduct > 0 || safeSparAdj.savedThisMonth > 0)) {
+        sparEl.hidden = false;
+        sparEl.innerHTML = '<div class="spar-saved sm"><span>Spart denne mnd</span><strong>' + formatNOK(safeSparAdj.savedThisMonth) + "</strong></div>" +
+          '<p class="hint compact">Før sparing ' + formatNOK(Math.round(safeSparAdj.base)) + " − sparemål " + formatNOK(Math.round(safeSparAdj.savingsDeduct)) +
+          (safeSparAdj.bufferDeduct > 0 ? " − buffer " + formatNOK(safeSparAdj.bufferDeduct) : "") + " = " + formatNOK(Math.round(safeSparAdj.result)) + "</p>";
+      } else { sparEl.hidden = true; sparEl.innerHTML = ""; }
     }
     const reserveEl = $("#safeSpendReserve");
     if (reserveEl) {
@@ -3941,7 +4237,7 @@
         hintEl.classList.toggle("is-saldo-short", amtFl < 0);
         hintEl.textContent =
           (amtFl < 0
-            ? "Negativ trygg å bruke — du må spare inn eller utsette planlagte utlegg. "
+            ? "Negativt igjen etter budsjett — du må spare inn eller utsette planlagte utlegg. "
             : "") +
           "Regnet fra «Saldo før lønn»" +
           (isPerson && whoName ? " for " + whoName : "") +
@@ -3950,7 +4246,7 @@
       } else if (!show) {
         hintEl.classList.remove("is-saldo-short");
         hintEl.textContent = wantSaldo
-          ? "Trygg ruller automatisk (virtuell pot). På konto er valgfritt for å rette hvis noe er feil. Faste allerede i banksaldo — ikke trukket på nytt."
+          ? "Beløpet ruller automatisk (virtuell pot). På konto er valgfritt for å rette hvis noe er feil. Faste allerede i banksaldo — ikke trukket på nytt."
           : "Det du trygt kan bruke nå: forventet inntekt minus det du har brukt, minus faste utgifter som gjenstår.";
       } else if (mode === "projection" && projectionOverride) {
         hintEl.classList.remove("is-saldo-short");
@@ -3963,7 +4259,7 @@
       } else if (needsSaldo) {
         hintEl.classList.remove("is-saldo-short");
         hintEl.textContent =
-          "Viser plan-basert Trygg (kan være negativ) — seed/pot mangler. På konto er valgfritt for å rette." +
+          "Viser plan-basert «Igjen etter budsjett» (kan være negativ) — seed/pot mangler. På konto er valgfritt for å rette." +
           fromPrevHint;
       } else if (fromSaldo) {
         const amt = typeof amount === "number" ? amount : 0;
@@ -3984,7 +4280,7 @@
         if (amt < 0 || (amt <= 0 && (rawN < 0 || saldoShort))) {
           hintEl.textContent =
             amt < 0
-              ? "Negativ trygg å bruke" +
+              ? "Negativt igjen etter budsjett" +
                 whose +
                 " (" +
                 formatNOK(amt) +
@@ -4017,10 +4313,10 @@
             ". Faste er allerede i banksaldo.";
         } else {
           hintEl.textContent = potInclVar
-            ? "Trygg å bruke nå = rullerende pot (forrige + lønn − faste − variabelt budsjett − planlagte utlegg)" +
+            ? "Igjen etter budsjett = rullerende pot (forrige + lønn − faste − variabelt budsjett − planlagte utlegg)" +
               (buf > 0 ? " minus buffer" : "") +
               ". Faste (egne + andel felles) er trukket automatisk — ikke på nytt. Sett «Saldo før lønn» eller «På konto nå» for å rette."
-            : "Trygg å bruke nå = banksaldo minus planlagte utlegg" +
+            : "Igjen etter budsjett = banksaldo minus planlagte utlegg" +
               (buf > 0 ? " og buffer" : "") +
               ". Faste er allerede trukket i På konto nå — ikke på nytt. Variabelt telles når du logger via Kjøpt noe." +
               (ifBudgetUsed != null && remVar > 0.5
@@ -4035,7 +4331,7 @@
         if (amt < 0 || (amt <= 0 && rawN < 0)) {
           base =
             amt < 0
-              ? "Negativ trygg å bruke (" +
+              ? "Negativt igjen etter budsjett (" +
                 formatNOK(amt) +
                 ") — du må spare inn eller justere plan."
               : "Du har brukt mer enn forventet hittil. Juster plan eller hold igjen litt – det ordner seg.";
@@ -4070,7 +4366,7 @@
           miniVal.textContent = "—";
           miniVal.classList.remove("is-neg");
         } else {
-          const miniAmt = typeof amount === "number" ? amount : 0;
+          const miniAmt = (typeof amount === "number" ? amount : 0) - (safeSparAdj ? safeSparAdj.savingsDeduct + safeSparAdj.bufferDeduct : 0);
           miniVal.textContent = formatNOK(miniAmt);
           miniVal.classList.toggle("is-neg", miniAmt < 0);
         }
@@ -5017,7 +5313,7 @@
               (paidBefore ? " selected" : "") +
               ">Før lønn (allerede betalt)</option>" +
               "</select></label>" +
-              '<p class="mini-help pay-timing-hint">Brukes av «Saldo før lønn»: faste som trekkes etter lønn trekkes fra Trygg; før lønn er allerede ute av saldoen.</p>'
+              '<p class="mini-help pay-timing-hint">Brukes av «Saldo før lønn»: faste som trekkes etter lønn trekkes fra «Igjen etter budsjett»; før lønn er allerede ute av saldoen.</p>'
             : s.readOnlyShare && isFast
               ? '<p class="mini-help pay-timing-hint">Trekkes ' +
                 (paidBefore ? "før lønn" : "etter lønn") +
@@ -5671,6 +5967,7 @@
     }
     renderSavingsGoals();
     renderSparingYearTrends();
+    renderSparPage();
   }
 
   function renderSparingYearTrends() {
@@ -5785,7 +6082,46 @@
     seg.innerHTML = html;
   }
 
+  let goalSplitPrefill = null;
+  function goalFormVals() {
+    const mode = (document.querySelector('#dlgGoal input[name="goalMode"]:checked') || {}).value || "monthly";
+    const whoEl = document.querySelector('#dlgGoal input[name="goalWho"]:checked');
+    const split = {};
+    $$("[data-goal-split]").forEach(function (i) { if (i.value.trim() !== "") split[i.getAttribute("data-goal-split")] = Number(i.value.replace(",", ".")); });
+    return { mode: mode, person: (whoEl && whoEl.value) || "samlet", targetDate: $("#goalTargetDate").value,
+      target: parseAmount($("#goalTarget").value), monthly: parseAmount($("#goalMonthly").value), saved: parseAmount($("#goalSaved").value) || 0, split: split };
+  }
+  /** Show the right fields and the live calculation (kr/mnd or finish date). */
+  function goalFormRefresh() {
+    const v = goalFormVals();
+    $("#goalMonthlyField").hidden = v.mode === "date";
+    $("#goalDateField").hidden = v.mode !== "date";
+    const shared = (v.person === "felles" || v.person === "samlet") && activePeopleList().length > 1;
+    const sf = $("#goalSplitField");
+    sf.hidden = !shared;
+    const host = $("#goalSplit");
+    if (shared && !host.children.length) {
+      const sp = goalSplitPrefill || {};
+      host.innerHTML = activePeopleList().map(function (p) {
+        return '<label class="goal-split-f"><span>' + escapeHtml(p.name) + '</span><input class="input" inputmode="decimal" data-goal-split="' + escapeAttr(p.id) + '" value="' + (sp[p.id] != null ? sp[p.id] : "") + '" placeholder="' + Math.round(100 / activePeopleList().length) + '" /> %</label>';
+      }).join("");
+    }
+    const out = $("#goalCalc");
+    const remaining = Math.max(0, (v.target || 0) - (v.saved || 0));
+    if (!(v.target > 0)) { out.textContent = ""; return; }
+    if (v.mode === "date") {
+      const ml = v.targetDate ? Calc.monthsUntilTarget(appToday(), v.targetDate) : null;
+      out.textContent = ml == null ? "Velg en måned, så regner vi ut kr/mnd." : ml <= 0 ? "Datoen er passert – velg en senere måned." :
+        "Du må sette av " + formatNOK(Math.ceil(remaining / ml)) + "/mnd i " + ml + " mnd (inkl. denne).";
+    } else if (v.monthly > 0) {
+      const n = Math.ceil(remaining / v.monthly);
+      const d = appToday();
+      const idx = d.getFullYear() * 12 + d.getMonth() + n - 1;
+      out.textContent = remaining <= 0 ? "Målet er allerede nådd 🎉" : "Med " + formatNOK(v.monthly) + "/mnd er du ferdig ca. " + monthLabel({ y: Math.floor(idx / 12), m: idx % 12 }) + " (" + n + " mnd).";
+    } else out.textContent = "Skriv inn kr/mnd, eller velg «Ferdig til dato».";
+  }
   function openGoal(edit) {
+    const gs = $("#goalSplit"); if (gs) gs.innerHTML = "";
     $("#goalTitle").textContent = edit ? "Rediger sparemål" : "Nytt sparemål";
     $("#goalId").value = edit ? edit.id : "";
     $("#goalName").value = edit ? edit.name || "" : "";
@@ -5806,6 +6142,10 @@
       if (planned > 0) monthlyPrefill = String(planned).replace(".", ",");
     }
     $("#goalMonthly").value = monthlyPrefill;
+    const gm = edit && edit.mode === "date" ? "date" : "monthly";
+    $$('#dlgGoal input[name="goalMode"]').forEach(function (r) { r.checked = r.value === gm; });
+    $("#goalTargetDate").value = edit && edit.targetDate ? edit.targetDate : "";
+    goalSplitPrefill = edit && edit.split ? edit.split : null;
     $("#goalSaved").value = edit
       ? String(edit.saved != null ? edit.saved : 0).replace(".", ",")
       : "0";
@@ -5816,6 +6156,7 @@
             ? state.settings.sparingView
             : "samlet");
     fillGoalWhoSeg(defaultWho);
+    goalFormRefresh();
     $("#goalDelete").hidden = !edit;
     const statusActions = $("#goalStatusActions");
     if (statusActions) statusActions.hidden = !edit;
@@ -5875,7 +6216,7 @@
     const view = state.settings.sparingView || "samlet";
     let goals = state.savingsGoals.slice();
     if (view !== "samlet") {
-      goals = goals.filter(function (g) { return g.person === view; });
+      goals = goals.filter(function (g) { return g.person === view || Calc.goalSharePct(g, view, state.people) > 0; });
     }
     const opts = goalOpts();
     const now = new Date();
@@ -5903,50 +6244,30 @@
     function cardHtml(g) {
       const prog = Calc.savingsGoalProgress(g, opts);
       const eta = Calc.savingsGoalEta(g, now, opts);
+      const plan = Calc.goalPlan(g, appToday(), opts);
       const st = statusOf(g);
-      const etaClass =
-        eta.status === "reached"
-          ? " is-reached"
-          : eta.status === "need_monthly"
-            ? " is-need"
-            : eta.status === "abandoned"
-              ? " is-need"
-              : "";
-      const stClass =
-        st === "nådd"
-          ? " is-naadd"
-          : st === "arkivert"
-            ? " is-arkivert"
-            : st === "forlatt"
-              ? " is-forlatt"
-              : "";
+      const active = st === "aktiv";
+      let line = "";
+      if (active && !plan.reached) {
+        const myPct = view !== "samlet" && g.person !== view ? Calc.goalSharePct(g, view, state.people) : 100;
+        line = myPct < 100 ? formatNOK(Math.round(plan.monthly * myPct / 100)) + "/mnd din del (av " + formatNOK(Math.round(plan.monthly)) + ")" : formatNOK(Math.round(plan.monthly)) + "/mnd";
+        if (plan.mode === "date") line += plan.overdue ? " · datoen er passert" : " · ferdig " + monthLabel(plan.finish) + " (" + plan.monthsLeft + " mnd)";
+        else if (plan.finish) line += " · ferdig ca. " + monthLabel(plan.finish);
+        else line = "Sett kr/mnd eller en dato";
+      } else line = eta.label;
+      const track = active && plan.onTrack != null && !plan.reached
+        ? '<span class="goal-track ' + (plan.onTrack ? "is-on" : "is-behind") + '">' + (plan.onTrack ? "På skjema" : "Bak skjema – " + formatNOK(Math.round(plan.expectedNow - prog.saved))) + "</span>" : "";
+      const share = (g.person === "felles" || g.person === "samlet") && view !== "samlet"
+        ? " · din del " + Math.round(Calc.goalSharePct(g, view, state.people)) + " %" : "";
       return (
-        '<button type="button" class="goal-card" data-edit-goal="' +
-        escapeAttr(g.id) +
-        '"><div class="goal-card-top"><span class="goal-card-name">' +
-        escapeHtml(g.name) +
-        '</span><span class="goal-card-who">' +
-        escapeHtml(goalOwnerLabel(g.person)) +
-        ' <span class="goal-card-status' +
-        stClass +
-        '">' +
-        escapeHtml(st) +
-        "</span></span></div><div class=\"goal-card-meta\"><span><strong>" +
-        formatNOK(prog.saved) +
-        "</strong> av " +
-        formatNOK(prog.target) +
-        (prog.linkedSaved
-          ? " <em class=\"opt\">(+" + formatNOK(prog.linkedSaved) + " koblet)</em>"
-          : "") +
-        "</span><span>" +
-        formatNOK(g.monthly) +
-        '/mnd</span></div><div class="goal-progress" aria-hidden="true"><span style="width:' +
-        Math.round(prog.pct) +
-        '%"></span></div><div class="goal-card-eta' +
-        etaClass +
-        '">' +
-        escapeHtml(eta.label) +
-        "</div></button>"
+        '<div class="goal-card' + (plan.reached ? " is-reached" : "") + '"><button type="button" class="goal-card-main" data-edit-goal="' + escapeAttr(g.id) + '">' +
+        '<div class="goal-card-top"><span class="goal-card-name">' + escapeHtml(g.name) + '</span><span class="goal-card-who">' +
+        escapeHtml(goalOwnerLabel(g.person)) + share + (st !== "aktiv" ? ' <span class="goal-card-status is-' + escapeAttr(st) + '">' + escapeHtml(st) + "</span>" : "") + "</span></div>" +
+        '<div class="goal-card-meta"><span><strong>' + formatNOK(prog.saved) + "</strong> av " + formatNOK(prog.target) + "</span><span>" + Math.round(prog.pct) + " %</span></div>" +
+        '<div class="goal-progress" aria-hidden="true"><span style="width:' + Math.round(prog.pct) + '%"></span></div>' +
+        '<div class="goal-card-eta">' + escapeHtml(line) + " " + track + "</div></button>" +
+        (active ? '<button type="button" class="btn sm goal-dep-btn" data-goal-deposit="' + escapeAttr(g.id) + '">+ Legg til innskudd</button>' : "") +
+        "</div>"
       );
     }
 
@@ -7651,8 +7972,8 @@
         render();
         showToast(
           setSaldoSafe.checked
-            ? "Trygg å bruke bruker brukssaldo"
-            : "Trygg å bruke bruker plan-formel"
+            ? "Igjen etter budsjett bruker brukssaldo"
+            : "Igjen etter budsjett bruker plan-formel"
         );
       });
     }
@@ -9110,7 +9431,9 @@
           showToast("Ugyldig målbeløp");
           return;
         }
-        if (monthly == null || monthly < 0) {
+        const gv = goalFormVals();
+        if (gv.mode === "date" && !gv.targetDate) { showToast("Velg en måned"); return; }
+        if (gv.mode !== "date" && (monthly == null || monthly < 0)) {
           showToast("Ugyldig månedlig beløp");
           return;
         }
@@ -9127,11 +9450,16 @@
             id: id || uid(),
             name: name,
             target: target,
-            monthly: monthly,
+            monthly: gv.mode === "date" ? (monthly || 0) : monthly,
             saved: saved,
             person: person,
             status: prev && prev.status ? prev.status : "aktiv",
-            statusAt: prev && prev.statusAt ? prev.statusAt : null
+            statusAt: prev && prev.statusAt ? prev.statusAt : null,
+            mode: gv.mode,
+            targetDate: gv.mode === "date" ? gv.targetDate : null,
+            split: Object.keys(gv.split).length ? gv.split : null,
+            createdAt: prev && prev.createdAt ? prev.createdAt : todayISO().slice(0, 7),
+            startSaved: prev && prev.startSaved != null ? prev.startSaved : (prev ? undefined : saved)
           },
           state.people
         );
@@ -9147,6 +9475,15 @@
         showToast("Sparemål lagret");
       });
     }
+    const dlgGoalEl = $("#dlgGoal");
+    if (dlgGoalEl) {
+      dlgGoalEl.addEventListener("input", goalFormRefresh);
+      dlgGoalEl.addEventListener("change", function (e) {
+        if (e.target && e.target.name === "goalWho") $("#goalSplit").innerHTML = "";
+        goalFormRefresh();
+      });
+    }
+    $$("[data-close-tips]").forEach(function (b) { b.addEventListener("click", function () { closeDlg("#dlgTips"); }); });
     const goalDelete = $("#goalDelete");
     if (goalDelete) {
       goalDelete.addEventListener("click", function () {
@@ -9536,7 +9873,8 @@
       return { step: 0, name: "", solo: true, others: [""], salaries: {},
         fixed: WZ_FIXED.map(function (f) { return { on: false, name: f[0], amount: "", pct: 100 }; }),
         budgets: WZ_BUDGETS.map(function (b) { return { on: true, name: b[0], amount: b[1] }; }),
-        planned: [{ note: "", amount: "", month: "" }, { note: "", amount: "", month: "" }] };
+        planned: [{ note: "", amount: "", month: "" }, { note: "", amount: "", month: "" }],
+        goal: { name: "", target: "", month: "", monthly: "" } };
     }
     const WZ_TITLES = ["Ditt navn", "Hvem bruker appen?", "Månedlig lønn (netto)", "Faste utgifter", "Budsjett per kategori", "Planlagte utgifter og sparing"];
     function wzPeople() {
@@ -9604,7 +9942,12 @@
             return '<div class="onb-row onb-row-plan">' + wzInput("planned." + i + ".note", p.note, 'type="text" maxlength="60" placeholder="' + (i === 0 ? "F.eks. Ferie" : "F.eks. Bil") + '" aria-label="Hva"') +
               wzInput("planned." + i + ".amount", p.amount, 'type="number" inputmode="numeric" min="0" placeholder="kr" aria-label="Beløp"') +
               wzInput("planned." + i + ".month", p.month, 'type="month" aria-label="Måned"') + "</div>";
-          }).join("") + '<button type="button" class="btn sm" data-wz-act="addPlanned">+ Legg til</button>';
+          }).join("") + '<button type="button" class="btn sm" data-wz-act="addPlanned">+ Legg til</button>' +
+          '<div class="onb-goal"><p class="onb-q"><b>Har du noe du sparer til?</b> <span class="hint">(valgfritt)</span></p>' +
+          '<div class="onb-row onb-row-plan">' + wzInput("goal.name", wz.goal.name, 'type="text" maxlength="60" placeholder="F.eks. Buffer eller ferie" aria-label="Sparemål"') +
+          wzInput("goal.target", wz.goal.target, 'type="number" inputmode="numeric" min="0" placeholder="Mål kr" aria-label="Målbeløp"') +
+          wzInput("goal.month", wz.goal.month, 'type="month" aria-label="Ferdig til"') + "</div>" +
+          '<p class="hint compact">Velg en måned, så regner appen ut hvor mye du må sette av per måned. Kan endres under Sparing.</p></div>';
       }
       b.innerHTML = html;
       const first = b.querySelector("input[type=text], input[type=number]");
@@ -9620,6 +9963,13 @@
         now: new Date()
       });
       ensureCategoryOrders(state);
+      if (wz.goal && String(wz.goal.name).trim() && Number(wz.goal.target) > 0) {
+        const gNow = new Date();
+        const mo = /^\d{4}-\d{2}$/.test(wz.goal.month) ? wz.goal.month : null;
+        state.savingsGoals = [Calc.normalizeSavingsGoal({ id: uid(), name: String(wz.goal.name).trim(), target: Number(wz.goal.target),
+          monthly: mo ? 0 : Math.round(Number(wz.goal.target) / 12), saved: 0, person: state.people.length > 1 ? "samlet" : state.people[0].id,
+          mode: mo ? "date" : "monthly", targetDate: mo, createdAt: monthKey(gNow.getFullYear(), gNow.getMonth()), startSaved: 0, status: "aktiv" }, state.people)];
+      }
       needsOnboarding = false;
       try { localStorage.setItem("familie-budsjett-ov-scope", names.length === 1 ? "p1" : "alle"); } catch (e) { /* */ }
       save();
@@ -9793,6 +10143,7 @@
   getMonth();
   save();
   render();
+  initDayWatch();
   renderSyncUI();
   if (window.FamilieBudsjettCloud && typeof window.FamilieBudsjettCloud.init === "function") {
     window.FamilieBudsjettCloud.init({

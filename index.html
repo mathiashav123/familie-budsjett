@@ -13,7 +13,7 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icon-192.png" />
   <title>Familiebudsjett</title>
-  <link rel="stylesheet" href="styles.css?v=20261030c" />
+  <link rel="stylesheet" href="styles.css?v=20261101a" />
 </head>
 <body>
   <a class="skip-link" href="#main">Hopp til innhold</a>
@@ -87,7 +87,7 @@
       </div>
 
       <div id="planSafeMini" class="plan-safe-mini" hidden>
-        <span class="plan-safe-label">Trygg å bruke nå</span>
+        <span class="plan-safe-label">Igjen etter budsjett</span>
         <strong id="planSafeMiniValue">—</strong>
       </div>
 
@@ -180,7 +180,7 @@
 
       <section class="card safe-spend-card compact-card" id="safeSpendCard" aria-labelledby="safeSpendTitle">
         <div class="card-head safe-spend-head">
-          <h2 id="safeSpendTitle">Trygg å bruke nå</h2>
+          <h2 id="safeSpendTitle">Igjen etter budsjett</h2>
           <span class="pill blue" id="healthPill" hidden></span>
         </div>
         <p class="safe-spend-value" id="safeSpendValue">—</p>
@@ -188,7 +188,7 @@
         <div class="safe-spend-breakdown" id="safeSpendBreakdown" hidden></div>
         <div class="forlonn-box" id="forLonnBox" hidden></div>
         <p class="meta-line" id="safeSpendReserve" hidden>Reservert til planlagte utlegg: —</p>
-        <p class="safe-spend-hint" id="safeSpendHint">Trygg ruller automatisk: forrige pot + (lønn − utgifter). «På konto nå» er valgfri korreksjon for denne måneden — nullstilles / gjelder ikke automatisk neste mnd. Faste er allerede i banksaldo — ikke trukket på nytt.</p>
+        <p class="safe-spend-hint" id="safeSpendHint">Beløpet ruller automatisk: forrige pot + (lønn − utgifter). «På konto nå» er valgfri korreksjon for denne måneden — nullstilles / gjelder ikke automatisk neste mnd. Faste er allerede i banksaldo — ikke trukket på nytt.</p>
         <div class="health-meter" id="healthMeter" hidden>
           <div class="health-meter-track">
             <div class="health-meter-fill" id="healthMeterFill"></div>
@@ -206,7 +206,7 @@
           <span class="forward-label">Har nå</span>
           <strong class="forward-value" id="forwardHarNaValue">—</strong>
         </div>
-        <p class="hint compact" id="forwardHarNaHint">Trygg å bruke denne måneden (eller bank hvis du har rettet På konto).</p>
+        <p class="hint compact" id="forwardHarNaHint">Igjen etter budsjett denne måneden (eller bank hvis du har rettet På konto).</p>
         <h3 class="forward-sub">Hvis du følger budsjettet</h3>
         <div class="forward-months" id="forwardMonths" aria-label="Projeksjon neste måneder"></div>
         <div class="forward-milestones" id="forwardMilestones" aria-label="Milepæler">
@@ -246,8 +246,8 @@
         <div class="card-head">
           <h2 id="kontoerTitle">På konto nå <em class="opt">(valgfritt)</em></h2>
         </div>
-        <p class="hint compact pa-konto-lead">Valgfri korreksjon for <em>denne</em> måneden — nullstilles / gjelder ikke automatisk neste mnd. Trygg ruller: forrige + (lønn − utgifter). Bruk <strong>Rett saldo</strong> bare hvis banken ikke stemmer.</p>
-        <p class="hint compact pa-konto-new-month" id="paKontoNewMonthHint" hidden>Ny måned — feltet er tomt. Trygg ruller automatisk. Rett saldo bare hvis banken ikke stemmer.</p>
+        <p class="hint compact pa-konto-lead">Valgfri korreksjon for <em>denne</em> måneden — nullstilles / gjelder ikke automatisk neste mnd. Beløpet ruller: forrige + (lønn − utgifter). Bruk <strong>Rett saldo</strong> bare hvis banken ikke stemmer.</p>
+        <p class="hint compact pa-konto-new-month" id="paKontoNewMonthHint" hidden>Ny måned — feltet er tomt. Beløpet ruller automatisk. Rett saldo bare hvis banken ikke stemmer.</p>
         <div id="kontoerGrid" class="kontoer-grid pa-konto-grid"></div>
         <div class="pa-konto-samlet" id="paKontoSamlet" aria-label="Samlet husstand" hidden></div>
         <div class="kontoer-totals" id="kontoerTotals" aria-label="Totalt husstand">
@@ -273,14 +273,14 @@
             <span class="saldo-hero-label">Etter lønn <em class="opt">(plan)</em></span>
             <strong class="saldo-hero-value" id="saldoEtterLonn">—</strong>
           </div>
-          <p class="hint compact saldo-hero-hint">Etter lønn = bruk + forventet inn − forventet ut. Spare er utenfor trygg-å-bruke.</p>
+          <p class="hint compact saldo-hero-hint">Etter lønn = bruk + forventet inn − forventet ut. Spare er utenfor «Igjen etter budsjett».</p>
         </div>
         <div class="stat big blue" id="statForventetWrap" hidden>
           <span class="label">Forventet på konto etter</span>
           <span class="value" id="statForventet">—</span>
         </div>
         <p class="meta-line" id="paKontoUpdated" hidden></p>
-        <p class="hint compact" id="kontoerHint">Velg <strong>Før lønn</strong>, <strong>Etter lønn</strong> eller <strong>På dato</strong> for når saldoen gjelder. Trykk <strong>Bekreft saldo</strong> for å lagre. Under differansen ser du hvordan <strong>forventet</strong> er regnet (forrige bruk + inn − ut − sparing − Fast auto). Mangler forrige måneds bruk, følg knappen dit først. Spare er utenfor «Trygg å bruke».</p>
+        <p class="hint compact" id="kontoerHint">Velg <strong>Før lønn</strong>, <strong>Etter lønn</strong> eller <strong>På dato</strong> for når saldoen gjelder. Trykk <strong>Bekreft saldo</strong> for å lagre. Under differansen ser du hvordan <strong>forventet</strong> er regnet (forrige bruk + inn − ut − sparing − Fast auto). Mangler forrige måneds bruk, følg knappen dit først. Spare er utenfor «Igjen etter budsjett».</p>
         <div id="paKontoCalcHost" class="plan-inc-calc-host">
           <div class="amount-calc" id="paKontoCalc" hidden>
             <div class="amount-calc-display" data-calc-display aria-live="polite">0</div>
@@ -315,7 +315,7 @@
           <h2 id="plannedSpendsTitle">Planlagte utlegg</h2>
           <button type="button" class="btn primary sm" id="btnPlanSpend">Planlegg utlegg</button>
         </div>
-        <p class="hint compact">Reserveres også i måneder før kjøpet. Summen trekkes fra Trygg å bruke for valgt måned og alle senere planlagte utlegg. Unngår dobbelttelling hvis du logger samme kategori.</p>
+        <p class="hint compact">Reserveres også i måneder før kjøpet. Summen trekkes fra Igjen etter budsjett for valgt måned og alle senere planlagte utlegg. Unngår dobbelttelling hvis du logger samme kategori.</p>
         <p class="meta-line" id="plannedSpendsSum">Ingen reserve</p>
         <div id="plannedSpendsList" class="planned-spends-list"></div>
       </section>
@@ -437,11 +437,19 @@
 
     <!-- ——— SPARING ——— -->
     <div id="panelSparing" class="tab-panel" role="tabpanel" aria-labelledby="tabSparing" hidden>
+      <section class="card compact-card spar-sum-card" id="sparSumCard" aria-labelledby="sparSumTitle">
+        <div class="card-head"><h2 id="sparSumTitle">Denne måneden</h2></div>
+        <div id="sparSum"></div>
+      </section>
+      <section class="card compact-card spar-recs-card" id="sparRecsCard" aria-labelledby="sparRecsTitle">
+        <div class="card-head"><h2 id="sparRecsTitle">Anbefalinger</h2></div>
+        <div id="sparRecs"></div>
+      </section>
       <section class="card compact-card sparing-card" id="sectionSparing" aria-labelledby="sparingTitle">
         <div class="card-head">
           <h2 id="sparingTitle">Sparing</h2>
         </div>
-        <p class="hint compact">Spare saldo nå, og loggførte spareinnskudd denne måneden / i år. Ingen tips eller sammenligninger.</p>
+        <p class="hint compact">Spare saldo og loggførte spareinnskudd.</p>
         <div class="view-tabs" id="sparingTabs" role="tablist" aria-label="Visning Sparing"></div>
         <div class="sparing-metrics" id="sparingMetrics" aria-live="polite">
           <div class="sparing-metric is-hero">
@@ -481,7 +489,7 @@
         <div class="card-head">
           <h2 id="sparingGoalsTitle">Sparemål</h2>
         </div>
-        <p class="hint compact">Sett målbeløp og månedlig sparing. Koble spareinnskudd til et mål for automatisk fremdrift. Status: aktiv / nådd / arkivert / forlatt.</p>
+        <p class="hint compact">Sett et mål og spar fast kr/mnd – eller velg en dato, så regner appen ut hvor mye du må sette av. Innskudd koblet til målet teller automatisk.</p>
         <div class="sparing-actions">
           <button type="button" class="btn primary" id="btnGoalAdd">+ Nytt sparemål</button>
         </div>
@@ -493,6 +501,15 @@
         </div>
       </section>
 
+      <section class="card compact-card spar-buffer-card" id="sparBufferCard" aria-labelledby="sparBufferTitle">
+        <div class="card-head"><h2 id="sparBufferTitle">Buffer</h2></div>
+        <p class="hint compact">Hvor mye vil du alltid ha på konto til uforutsette ting? Mangler det, foreslås det å fylle opp over 3 måneder – og det trekkes fra «Igjen etter budsjett».</p>
+        <div id="sparBuffer"></div>
+      </section>
+      <section class="card compact-card spar-hist-card" id="sparHistCard" aria-labelledby="sparHistTitle">
+        <div class="card-head"><h2 id="sparHistTitle">Spart per måned</h2></div>
+        <div id="sparHist"></div>
+      </section>
       <section class="card compact-card sparing-trend-card" id="sectionSparingTrend" aria-labelledby="sparingTrendTitle">
         <div class="card-head">
           <h2 id="sparingTrendTitle">Sparing over år</h2>
@@ -500,6 +517,10 @@
         <p class="hint compact">Sum loggførte spareinnskudd per kalenderår (inkl. arkiverte år).</p>
         <div id="sparingYearBars" class="year-bars multi-year-bars" aria-hidden="true"></div>
         <div id="sparingYearCards" class="multi-year-cards" aria-label="Sparing per år"></div>
+      </section>
+      <section class="card compact-card spar-tips-card" id="sparTipsCard" aria-labelledby="sparTipsTitle">
+        <div class="card-head"><h2 id="sparTipsTitle">Tips for å redusere</h2></div>
+        <div id="sparTips"></div>
       </section>
     </div>
 
@@ -890,6 +911,15 @@
   </dialog>
 
   <!-- Modal: sparemål -->
+  <dialog id="dlgTips" class="modal">
+    <div class="modal-card">
+      <header class="modal-head">
+        <h2 id="tipsTitle">Tips</h2>
+        <button type="button" class="icon-btn" data-close-tips aria-label="Lukk">×</button>
+      </header>
+      <div class="modal-body" id="tipsBody"></div>
+    </div>
+  </dialog>
   <dialog id="dlgGoal" class="modal">
     <form id="formGoal" class="modal-card">
       <header class="modal-head">
@@ -906,19 +936,36 @@
           <span>Målbeløp (kr)</span>
           <input id="goalTarget" class="input lg amount-expr" type="text" inputmode="decimal" placeholder="0" required autocomplete="off" />
         </label>
-        <label class="field">
+        <fieldset class="field">
+          <legend>Hvordan vil du spare?</legend>
+          <div class="seg" id="goalModeSeg" role="radiogroup" aria-label="Sparemåte">
+            <label><input type="radio" name="goalMode" value="monthly" checked /><span>Fast kr/mnd</span></label>
+            <label><input type="radio" name="goalMode" value="date" /><span>Ferdig til dato</span></label>
+          </div>
+        </fieldset>
+        <label class="field" id="goalMonthlyField">
           <span>Spare per måned (kr/mnd)</span>
-          <input id="goalMonthly" class="input lg amount-expr" type="text" inputmode="decimal" placeholder="0" required autocomplete="off" />
+          <input id="goalMonthly" class="input lg amount-expr" type="text" inputmode="decimal" placeholder="0" autocomplete="off" />
+        </label>
+        <label class="field" id="goalDateField" hidden>
+          <span>Ferdig til (måned)</span>
+          <input id="goalTargetDate" class="input lg" type="month" />
         </label>
         <label class="field">
           <span>Spart manuelt / start (kr)</span>
           <input id="goalSaved" class="input lg amount-expr" type="text" inputmode="decimal" placeholder="0" autocomplete="off" />
         </label>
+        <p class="goal-calc" id="goalCalc" aria-live="polite"></p>
         <p class="hint compact" id="goalSavedHint">Kobling: spareinnskudd med valgt sparemål legges oppå dette tallet. ETA oppdateres automatisk.</p>
         <fieldset class="field">
           <legend>Hvem / eier</legend>
           <div class="seg who-seg" id="goalWhoSeg" role="radiogroup" aria-label="Hvem"></div>
         </fieldset>
+        <div class="field" id="goalSplitField" hidden>
+          <span class="field-lbl">Fordeling for felles mål (valgfritt, %)</span>
+          <div class="goal-split" id="goalSplit"></div>
+          <p class="hint compact">Tomt = likt delt. Brukes for å regne ut hvor mye hver av dere setter av per måned.</p>
+        </div>
         <div class="goal-status-actions" id="goalStatusActions" hidden>
           <button type="button" class="btn ghost sm" id="goalMarkReached">Marker nådd</button>
           <button type="button" class="btn ghost sm" id="goalMarkAbandoned" type="button">Forlat</button>
@@ -1106,9 +1153,9 @@
         <p class="hint compact">Når du åpner en tom måned, kopieres forventet inntekt og alle kategori-budsjett fra nærmeste tidligere måned med data. Endringer du gjør blir mal for senere måneder. Allerede utfylte måneder overskrives ikke.</p>
         <label class="check-row setting-toggle">
           <input type="checkbox" id="setUseSaldoSafe" checked />
-          <span>Bruk saldo i trygg-å-bruke</span>
+          <span>Bruk saldo i «Igjen etter budsjett»</span>
         </label>
-        <p class="hint compact">Når på (anbefalt): <strong>Trygg å bruke nå</strong> = bruk − planlagte utlegg − buffer (faste allerede i banksaldo — ikke trukket på nytt). Under: «Hvis hele budsjettet brukes» = bruk − gjenstående budsjett − planlagte − buffer. Slå av for plan-formel (som fortsatt trekker Fast auto).</p>
+        <p class="hint compact">Når på (anbefalt): <strong>Igjen etter budsjett</strong> = bruk − planlagte utlegg − buffer (faste allerede i banksaldo — ikke trukket på nytt). Under: «Hvis hele budsjettet brukes» = bruk − gjenstående budsjett − planlagte − buffer. Slå av for plan-formel (som fortsatt trekker Fast auto).</p>
         <label class="field setting-buffer">
           <span>Buffer som skal stå igjen på bruk</span>
           <div class="input-affix">
@@ -1116,7 +1163,7 @@
             <span>kr</span>
           </div>
         </label>
-        <p class="hint compact">Valgfritt husstandsbeløp (standard 0). Trekkes fra trygg-å-bruke når saldo-formel er på.</p>
+        <p class="hint compact">Valgfritt husstandsbeløp (standard 0). Trekkes fra «Igjen etter budsjett» når saldo-formel er på.</p>
         <h3 class="settings-people-title">Hvem bruker appen?</h3>
         <div class="mode-pick">
           <button type="button" class="btn" data-mode-pick="solo">Bare meg</button>
@@ -1164,9 +1211,9 @@
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="supabase-config.js"></script>
-  <script src="calc-core.js?v=20261030c"></script>
+  <script src="calc-core.js?v=20261101a"></script>
   <script src="sync-core.js"></script>
   <script src="cloud-sync.js"></script>
-  <script src="app.js?v=20261030c"></script>
+  <script src="app.js?v=20261101a"></script>
 </body>
 </html>
