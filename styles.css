@@ -5032,3 +5032,18 @@ body.solo #innUtTabs, body.solo #sparingTabs, body.solo #btnMerSplitWizard, body
 .card-end { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 6px; }
 .card-toggle { display: flex; gap: 8px; align-items: center; padding: 6px 0; font-size: .9rem; }
 .card-set-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--border); padding: 4px 0; }
+.mo-card-cats { display: inline-block; margin: 6px 0 0; padding: 4px 12px; border: 1px solid #c7d7fe; border-radius: 999px; background: #fff; color: var(--blue); font: inherit; font-size: .8rem; font-weight: 600; cursor: pointer; }
+.card-cats { margin: 14px 0; padding: 12px; border: 1px solid #c7d7fe; border-radius: 14px; background: #f8faff; }
+.card-cats h3 { margin: 0 0 2px; font-size: 1rem; }
+.card-cat-list { display: grid; gap: 6px; margin: 8px 0; }
+.card-cat { display: grid; grid-template-columns: auto 1fr auto; grid-template-areas: "box name sum" "box lbl lbl"; gap: 0 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: #fff; cursor: pointer; }
+.card-cat input { grid-area: box; width: 20px; height: 20px; }
+.card-cat-name { grid-area: name; font-weight: 600; }
+.card-cat-name small { font-weight: 400; color: var(--muted); }
+.card-cat-sum { grid-area: sum; font-variant-numeric: tabular-nums; }
+.card-cat-lbl { grid-area: lbl; font-size: .75rem; color: var(--muted); }
+.card-cat.is-on { border-color: #93b4fd; background: #eef3ff; }
+.card-cat.is-on .card-cat-lbl { color: var(--blue); }
+.card-cat-sub { margin: 10px 0 0; font-size: .8rem; color: var(--muted); }
+.card-cat-sticky { position: sticky; top: 0; z-index: 2; display: grid; gap: 2px; margin: -12px -12px 6px; padding: 10px 12px; border-radius: 14px 14px 0 0; background: #eef3ff; border-bottom: 1px solid #c7d7fe; font-size: .85rem; }
+.card-cat-sticky b { color: var(--blue); }

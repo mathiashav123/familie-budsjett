@@ -2878,8 +2878,8 @@
     return out;
   }
   function isCardRow(row, cfg) {
-    if (!row || row.fast) return false;
-    if (!cfg || !cfg.cats) return true;
+    if (!row) return false;
+    if (!cfg || !cfg.cats) return !row.fast;
     return cfg.cats.indexOf(row.id + "|" + (row.owner || "")) >= 0 || cfg.cats.indexOf(row.id) >= 0;
   }
   function sumPerson(arr, personId) {

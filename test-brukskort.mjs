@@ -46,7 +46,15 @@ ok(r.toTransfer === Math.max(0, r.recommended - 3000), "gjenstår å føre over"
 st.settings.spendCard.pa.cats = ["ff"];
 r = Calc.spendCardMonth(st, "2026-11", "pa", nov);
 ok(r.recommended === 1000 && r.rows.length === 1, "bare valgte kategorier");
+st.settings.spendCard.pa.cats = ["ff", "lan"];
+r = Calc.spendCardMonth(st, "2026-11", "pa", nov);
+ok(r.recommended === 9000 && r.rows.some((x) => x.id === "lan"), "fast kategori kan hukes av (abonnement på kortet)");
+st.settings.spendCard.pa.cats = [];
+r = Calc.spendCardMonth(st, "2026-11", "pa", nov);
+ok(r.recommended === 0 && r.rows.length === 0, "ingen avhuket = 0 kr");
 delete st.settings.spendCard.pa.cats;
+r = Calc.spendCardMonth(st, "2026-11", "pa", nov);
+ok(!r.rows.some((x) => x.id === "lan"), "standard: faste ikke med");
 
 // reconcile
 st.months["2026-11"].cardBalance = { pa: { amount: 2300, at: "2026-11-11" } };

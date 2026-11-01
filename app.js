@@ -1313,7 +1313,7 @@
       return true;
     }
     const oc = e.target.closest("[data-open-card]");
-    if (oc) { openCard(oc.getAttribute("data-open-card")); return true; }
+    if (oc) { openCard(oc.getAttribute("data-open-card"), oc.getAttribute("data-card-focus")); return true; }
     const g = e.target.closest("[data-go-tab]");
     if (g) { gotoTab(g.getAttribute("data-go-tab")); return true; }
     const ct = e.target.closest("[data-cat-tips]");
@@ -1482,7 +1482,8 @@
     if (c.toTransfer > 0.5 && c.dayState !== "past") sub = '<span class="mo-card-todo">Før over ' + formatNOK(c.toTransfer) + " til kortet</span>";
     else if (c.monthEnd && c.left > 0.5) sub = '<span class="mo-card-todo is-good">Rest ' + formatNOK(Math.round(c.left)) + " – flytt til sparing eller behold</span>";
     return '<button type="button" class="mo-card' + (neg ? " is-neg" : "") + '" data-open-card="' + escapeAttr(pid) + '"><span class="mo-card-main">💳 Igjen på kortet: <b>' + formatNOK(Math.round(c.left)) + "</b>" +
-      (c.perDay != null && !neg ? " · " + formatNOK(c.perDay) + "/dag (" + c.daysLeft + (c.daysLeft === 1 ? " dag" : " dager") + ")" : "") + "</span>" + sub + '<span class="mo-spar-go" aria-hidden="true">›</span></button>';
+      (c.perDay != null && !neg ? " · " + formatNOK(c.perDay) + "/dag (" + c.daysLeft + (c.daysLeft === 1 ? " dag" : " dager") + ")" : "") + "</span>" + sub + '<span class="mo-spar-go" aria-hidden="true">›</span></button>' +
+      '<button type="button" class="mo-card-cats" data-open-card="' + escapeAttr(pid) + '" data-card-focus="cats">☑ Velg kategorier</button>';
   }
   function renderCardSet() {
     const host = $("#cardSet");
@@ -1510,10 +1511,11 @@
       host.addEventListener("click", function (e) { const b = e.target.closest("[data-open-card]"); if (b) openCard(b.getAttribute("data-open-card")); });
     }
   }
-  function openCard(pid) {
+  function openCard(pid, focus) {
     cardOpenPid = pid;
     renderCardDlg();
     openDlg("#dlgCard");
+    if (focus === "cats") { const cc = $("#cardCats"); if (cc) cc.scrollIntoView({ block: "start" }); }
   }
   function renderCardDlg() {
     const pid = cardOpenPid;
@@ -1527,7 +1529,7 @@
     const rows = c.rows.map(function (r) { return '<div class="spar-bd-row"><span>' + escapeHtml(r.name) + (r.shared ? " <small>(din del)</small>" : "") + "</span><strong>" + kr(r.planned) + "</strong></div>"; }).join("");
     const trans = (m.cardTransfers || []).filter(function (t) { return t.person === pid; });
     const goals = (state.savingsGoals || []).filter(function (g) { return Calc.normalizeGoalStatus(g.status) === "aktiv"; });
-    const allVar = Calc.monthOverview(m, pid, state.people, state.categories, state.view.month).rows.filter(function (r) { return !r.fast; });
+    const allRows = Calc.monthOverview(m, pid, state.people, state.categories, state.view.month).rows;
     let html = '<div class="card-hero"><span>' + (c.toTransfer > 0.5 ? "Før over" : "Ført over") + '</span><strong>' + kr(c.toTransfer > 0.5 ? c.toTransfer : c.transferred) + "</strong><span>" + (c.toTransfer > 0.5 ? "til brukskortet" : "– alt er overført ✓") + "</span></div>" +
       '<details class="card-bd"><summary>Slik er beløpet regnet</summary><div class="spar-bd">' + rows +
       '<div class="spar-bd-row is-total"><span>Variable kjøp (plan)</span><strong>' + kr(c.planned) + "</strong></div>" +
@@ -1554,10 +1556,36 @@
         '<p class="hint compact">Beholder du det, blir resten med til neste måned og trekkes fra neste overføring.</p></div>';
     }
     const sel = c.cats;
-    html += '<details class="card-cats"><summary>Hvilke kategorier betales med kortet?</summary><p class="hint compact">Standard: alle som ikke er faste. Faste utgifter og regninger blir alltid på hovedkontoen.</p>' +
-      allVar.map(function (r) { return '<label class="card-toggle"><input type="checkbox" data-card-cat="' + escapeAttr(r.id) + '"' + (!sel || sel.indexOf(r.id) >= 0 ? " checked" : "") + " /> " + escapeHtml(r.name) + "</label>"; }).join("") +
-      '<button type="button" class="btn sm" data-card-act="cats">Lagre kategorier</button></details>';
+    const catRow = function (r) {
+      const on = sel ? sel.indexOf(r.id) >= 0 : !r.fast;
+      return '<label class="card-cat' + (on ? " is-on" : "") + '"><input type="checkbox" data-card-cat="' + escapeAttr(r.id) + '"' + (on ? " checked" : "") + ' /><span class="card-cat-name">' + escapeHtml(r.name) + (r.fast ? ' <small>fast</small>' : "") + '</span><span class="card-cat-sum">' + kr(r.planned) + '</span><span class="card-cat-lbl">Trekkes fra kortet</span></label>';
+    };
+    const vars = allRows.filter(function (r) { return !r.fast; }), fixed = allRows.filter(function (r) { return r.fast; });
+    html += '<section class="card-cats" id="cardCats"><div class="card-cat-sticky"><h3>Velg kategorier</h3><span>Før over <b>' + kr(c.toTransfer) + '</b> · Igjen på kortet <b>' + kr(c.left) + '</b></span></div><p class="hint compact">Huk av det som trekkes fra brukskortet. Beløpet over oppdateres med en gang.</p>' +
+      '<div class="card-cat-list">' + vars.map(catRow).join("") + "</div>" +
+      (fixed.length ? '<p class="card-cat-sub">Faste utgifter – huk av hvis noen trekkes fra kortet (f.eks. et abonnement)</p><div class="card-cat-list">' + fixed.map(catRow).join("") + "</div>" : "") +
+      (sel ? '<button type="button" class="btn ghost sm" data-card-act="catsReset">Tilbakestill til standard</button>' : "") + "</section>";
     body.innerHTML = html;
+  }
+  function handleCardCatChange(e) {
+    const inp = e.target.closest("[data-card-cat]");
+    if (!inp) return;
+    const pid = cardOpenPid;
+    const ids = []; let def = true;
+    const rows = Calc.monthOverview(getMonth(cardKey()), pid, state.people, state.categories, state.view.month).rows;
+    const fastById = {}; rows.forEach(function (r) { fastById[r.id] = r.fast; });
+    $$("#cardBody [data-card-cat]").forEach(function (i) {
+      const id = i.getAttribute("data-card-cat");
+      if (i.checked) ids.push(id);
+      if (i.checked === !!fastById[id]) def = false;
+    });
+    const sc = Object.assign({}, state.settings.spendCard || {});
+    sc[pid] = Object.assign({}, sc[pid] || { on: true });
+    if (def) delete sc[pid].cats; else sc[pid].cats = ids;
+    state.settings.spendCard = sc;
+    const body = $("#cardBody"), top = body.scrollTop, dlg = $("#dlgCard"), dtop = dlg ? dlg.scrollTop : 0;
+    save(); render(); renderCardDlg();
+    body.scrollTop = top; if (dlg) dlg.scrollTop = dtop;
   }
   function handleCardDlgClick(e) {
     const pid = cardOpenPid;
@@ -1593,14 +1621,10 @@
       showToast("Flyttet " + formatNOK(amt) + " til sparing");
     } else if (act === "keep") {
       closeDlg("#dlgCard"); showToast("Resten blir på kortet til neste måned"); return;
-    } else if (act === "cats") {
-      const ids = []; let all = true;
-      $$("[data-card-cat]").forEach(function (i) { if (i.checked) ids.push(i.getAttribute("data-card-cat")); else all = false; });
+    } else if (act === "catsReset") {
       const sc = Object.assign({}, state.settings.spendCard || {});
-      sc[pid] = Object.assign({}, sc[pid] || { on: true });
-      if (all) delete sc[pid].cats; else sc[pid].cats = ids;
+      sc[pid] = Object.assign({}, sc[pid] || { on: true }); delete sc[pid].cats;
       state.settings.spendCard = sc;
-      showToast("Kategorier lagret");
     }
     save(); render(); renderCardDlg();
   }
@@ -9628,6 +9652,7 @@
     $$("[data-close-card]").forEach(function (b) { b.addEventListener("click", function () { closeDlg("#dlgCard"); }); });
     const cardBodyEl = $("#cardBody");
     if (cardBodyEl) cardBodyEl.addEventListener("click", handleCardDlgClick);
+    if (cardBodyEl) cardBodyEl.addEventListener("change", handleCardCatChange);
     $$("[data-close-tips]").forEach(function (b) { b.addEventListener("click", function () { closeDlg("#dlgTips"); }); });
     const goalDelete = $("#goalDelete");
     if (goalDelete) {
