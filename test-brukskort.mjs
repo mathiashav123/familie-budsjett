@@ -82,6 +82,23 @@ const M = Sync.mergeStates({ settings: { spendCard: {} }, months: { "2026-11": {
 ok(M.settings.spendCard.pa && M.settings.spendCard.pb, "innstilling flettes per person");
 ok(M.months["2026-11"].cardTransfers.length === 2, "overføringer flettes per post");
 
+// regression: transfers survive save → reload (migrateState) and sync merge
+{
+  const S0 = base();
+  S0.months["2026-11"].cardTransfers = [{ id: "t1", person: "pa", amount: 4000, date: "2026-11-02" }];
+  S0.months["2026-11"].cardMoves = [{ id: "mv1", person: "pa", amount: 500, date: "2026-11-30", goalId: null }];
+  S0.months["2026-11"].cardBalance = { pa: { amount: 3500, at: "2026-11-02" } };
+  const R = Calc.migrateState(JSON.parse(JSON.stringify(S0)));
+  const rm = R.months["2026-11"];
+  ok(rm.cardTransfers && rm.cardTransfers.length === 1 && rm.cardTransfers[0].amount === 4000 && rm.cardTransfers[0].person === "pa", "overføring overlever omlasting");
+  ok(rm.cardMoves && rm.cardMoves.length === 1 && rm.cardBalance.pa.amount === 3500, "flytt og saldo overlever omlasting");
+  const R2 = Calc.migrateState(JSON.parse(JSON.stringify(R)));
+  ok(Calc.spendCardMonth(R2, "2026-11", "pa", nov).transferred === 4000, "overført beregnes etter to omlastinger");
+  const B0 = Calc.migrateState(base()); const Mg = Sync.mergeStates(B0, R2, B0);
+  const Mm = Calc.migrateState(Mg);
+  ok(Mm.months["2026-11"].cardTransfers.length === 1, "overføring overlever synk + omlasting");
+}
+
 // real data, read only
 const P = "/workspace/familie-budsjett-rettet-2026-10-28.json";
 if (fs.existsSync(P)) {

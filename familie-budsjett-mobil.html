@@ -7997,6 +7997,29 @@ window.FAMILIE_BUDGET_SUPABASE = {
         });
       });
 
+      // Brukskort (spend card) records — keep them, mapped to current person ids
+      ["cardTransfers", "cardMoves"].forEach(function (f) {
+        if (!Array.isArray(src[f])) return;
+        var arr = [];
+        src[f].forEach(function (t) {
+          if (!t || typeof t !== "object") return;
+          var a = Number(t.amount);
+          if (!isFinite(a) || a <= 0) return;
+          var rec = { id: t.id || uid(), person: mapLegacyOwner(t.person || ""), amount: a, date: t.date || "" };
+          if (f === "cardMoves") rec.goalId = t.goalId || null;
+          arr.push(rec);
+        });
+        if (arr.length) m[f] = arr;
+      });
+      if (src.cardBalance && typeof src.cardBalance === "object") {
+        var cb = {};
+        Object.keys(src.cardBalance).forEach(function (pid) {
+          var b = src.cardBalance[pid];
+          if (b && isFinite(Number(b.amount))) cb[mapLegacyOwner(pid)] = { amount: Number(b.amount), at: b.at || "" };
+        });
+        if (Object.keys(cb).length) m.cardBalance = cb;
+      }
+
       ensureMonthShape(m, people);
       if (src.balancesUpdatedAt) {
         m.balancesUpdatedAt = src.balancesUpdatedAt;
