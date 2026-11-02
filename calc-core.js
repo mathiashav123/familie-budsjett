@@ -1602,6 +1602,8 @@
         })
       : [];
 
+    var catOwnerById = {};
+    cats.forEach(function (c) { if (c && c.id) catOwnerById[c.id] = c.owner; });
     var months = {};
     var migratedFromSaldo = false;
     var rawMonths =
@@ -1697,15 +1699,21 @@
         });
       });
       (src.expenses || []).forEach(function (e) {
-        m.expenses.push({
+        var ow = mapLegacyOwner(e.owner || "felles");
+        // A purchase on a shared category always belongs to the shared pot
+        // (older versions stored the chosen person, which hid it from every view).
+        if (e.categoryId && catOwnerById[e.categoryId] === "felles" && ow !== "felles") ow = "felles";
+        var ne = {
           id: e.id || uid(),
-          owner: mapLegacyOwner(e.owner || "felles"),
+          owner: ow,
           categoryId: e.categoryId || null,
           category: e.category || "",
           amount: e.amount,
           note: e.note || "",
           date: e.date || ""
-        });
+        };
+        if (e.oneOff === true || e.engangs === true) ne.oneOff = true;
+        m.expenses.push(ne);
       });
 
       // Brukskort (spend card) records — keep them, mapped to current person ids
@@ -2934,6 +2942,8 @@
   function spendCardMonth(state, key, personId, today) {
     var cfg = cardSettingsFor(state.settings, personId);
     if (!cfg.on) return null;
+    // Months before the card was started have no card (unless transfers were logged there)
+    if (cfg.since && key < cfg.since && !(sumPerson(((state.months || {})[key] || {}).cardTransfers, personId) > 0)) return null;
     var cur = cardMonthRaw(state, key, personId, cfg);
     if (!cur) return null;
     // Carry from `since` (or the earliest month with transfers) up to the month before
@@ -3082,6 +3092,8 @@
     var items = [], goalMonthly = 0, depLinked = 0;
     (state.savingsGoals || []).forEach(function (g) {
       if (normalizeGoalStatus(g.status) !== "aktiv") return;
+      // A goal created later does not ask for savings in earlier months
+      if (g.createdAt && /^\d{4}-\d{2}$/.test(String(g.createdAt)) && monthKey < g.createdAt) return;
       var pct = hh ? 100 : goalSharePct(g, personId, people);
       if (personId === "felles") pct = (g.person === "felles" || g.person === "samlet") ? 100 : 0;
       if (!(pct > 0)) return;
@@ -3183,16 +3195,17 @@
         if (owners.indexOf(cat.owner) < 0) return;
         var pct = !hh && pid !== "felles" && cat.owner === "felles" ? fellesSharePercent(cat, pid, people) : 100;
         if (!(pct > 0)) return;
-        var over = 0, ok = true;
+        var over = null, ok = true;
         prevKeys.forEach(function (k) {
           var mi = parseYm(k).m;
           var pl = budgetForOwner(months[k], cat.id, cat.owner, mi) || 0;
           var us = actualForCategoryOwner(months[k], cat.id, cat.name, cat.owner) || 0;
-          if (!(pl > 0) || !(us > pl + 0.5)) ok = false; else over += us - pl;
+          // Use the smaller monthly overrun so a single big one-off (e.g. a console) does not inflate the estimate
+          if (!(pl > 0) || !(us > pl + 0.5)) ok = false; else over = over == null ? us - pl : Math.min(over, us - pl);
         });
         if (!ok) return;
         var plan = budgetForOwner(months[key] || {}, cat.id, cat.owner, cur.m) || budgetForOwner(months[prevKeys[0]], cat.id, cat.owner, parseYm(prevKeys[0]).m);
-        var yearly = roundTo100(((over / 2) * pct / 100) * 12);
+        var yearly = roundTo100((over * pct / 100) * 12);
         if (!best || yearly > best.yearly) best = { cat: cat, plan: plan, yearly: yearly };
       });
       if (best && best.yearly >= 600) add({ id: "over:" + best.cat.id, kind: "over", text: best.cat.name + " har gått over planen 2 mnd på rad – holder du deg på " + nf(best.plan) + " sparer du ca. " + nf(best.yearly) + " i året." + (categoryTips(best.cat.name) ? " Tips: " + categoryTips(best.cat.name).tips[0].toLowerCase() + "." : ""),
@@ -5921,6 +5934,11 @@
       var c = calcFamily(m, people, categories, settings, month);
       var planInn = c.planInn || 0;
       var planUt = c.plannedTotal || 0;
+      // With an archived person (solo use), count only the active people's plan
+      // (their own + their share of Felles) so the year view matches Oversikt.
+      if ((people || []).some(function (p) { return p && p.archived; }) && c.byPerson) {
+        planUt = Object.keys(c.byPerson).reduce(function (a, pid) { return a + (Number(c.byPerson[pid].planUt) || 0); }, 0);
+      }
       var actualUt = c.samletUtgifter || 0;
       var actualInn = c.samletInntekt || 0;
       var tilOvers = planInn - planUt;

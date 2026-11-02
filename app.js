@@ -1258,7 +1258,11 @@
       '<div class="spar-saved"><span>Spart denne mnd</span><strong>' + formatNOK(a.savedThisMonth) + "</strong>" +
       (a.savingsTarget > 0 ? "<small>av " + formatNOK(Math.round(a.savingsTarget)) + " planlagt</small>" : "") + "</div>" +
       row("Inntekt (plan)", formatNOK(snap.o.plannedIncome)) +
-      row("− Planlagt forbruk", formatNOK(snap.o.plannedOut)) +
+      (function () {
+        const used = Math.round(snap.o.plannedIncome - a.base);
+        const over = used > Math.round(snap.o.plannedOut) + 0.5;
+        return row(over ? "− Forbruk (plan, eller faktisk der det ble mer)" : "− Planlagt forbruk", formatNOK(over ? used : snap.o.plannedOut));
+      })() +
       row("− Sparing (mål)", formatNOK(Math.round(a.savingsDeduct)), "is-save") +
       (a.bufferDeduct > 0 ? row("− Buffer-påfyll", formatNOK(a.bufferDeduct), "is-save") : "") +
       row("= Igjen etter budsjett", formatNOKSigned(Math.round(a.result)), "is-total" + (a.result < -0.5 ? " neg" : "")) +
@@ -1896,7 +1900,7 @@
         '<div class="mo-box"><div class="mo-lbl">Utgifter</div><div class="mo-big ' + (o.usedOut > o.plannedOut + 0.5 ? "neg" : "") + '">' + formatNOK(o.usedOut) + '</div><div class="mo-sub">brukt · plan ' + formatNOK(o.plannedOut) + "</div></div>" +
         '<div class="mo-box"><div class="mo-lbl">Pluss/minus nå</div><div class="mo-big ' + cls(o.plusMinusNow) + '">' + formatNOKSigned(o.plusMinusNow) + '</div><div class="mo-sub">mottatt − brukt</div></div>' +
         '<div class="mo-box mo-box-left"><div class="mo-lbl">Igjen etter budsjett</div><div class="mo-big ' + cls(spar.after.result) + '">' + formatNOKSigned(Math.round(spar.after.result)) + '</div><div class="mo-sub">' +
-        (spar.after.savingsDeduct > 0 || spar.after.bufferDeduct > 0 ? "etter plan og " + formatNOK(Math.round(spar.after.savingsDeduct + spar.after.bufferDeduct)) + (spar.after.bufferDeduct > 0 ? " til sparing/buffer" : " til sparing") : "inntekt − plan") + "</div></div>";
+        (spar.after.savingsDeduct > 0 || spar.after.bufferDeduct > 0 ? "etter plan og " + formatNOK(Math.round(spar.after.savingsDeduct + spar.after.bufferDeduct)) + (spar.after.bufferDeduct > 0 ? " til sparing/buffer" : " til sparing") : (spar.after.base < o.plannedIncome - o.plannedOut - 0.5 ? "inntekt − plan (faktisk der det ble mer)" : "inntekt − plan")) + "</div></div>";
       endLine = '<p class="mo-endline">Ved månedsslutt: <b class="' + cls(o.expectedEndBudget) + '">' + formatNOKSigned(o.expectedEndBudget) + "</b> hvis resten av planen brukes · " + formatNOKSigned(o.expectedEndNoMore) + " hvis du ikke kjøper mer</p>";
     }
 
@@ -4149,8 +4153,10 @@
     // (or reserved planned spends) — avoid blank months shouting «Sett på konto».
     const show = showBase;
 
+    // Saldo mode = what the bank account is expected to hold after this month's plan,
+    // which is a different number from the month-flow «Igjen etter budsjett» in Oversikt/Sparing.
     const baseTitle = fromSaldo || flMode
-      ? "Igjen etter budsjett"
+      ? "Igjen på konto etter budsjett"
       : "Igjen etter budsjett";
     const titled = isPerson && whoName
       ? baseTitle + " · " + whoName
@@ -9430,7 +9436,7 @@
       const oneOffEl = $("#expOneOff");
       const payload = {
         id: id || uid(),
-        owner: whoEl ? whoEl.value : "felles",
+        owner: cat && cat.owner === "felles" ? "felles" : (whoEl ? whoEl.value : "felles"),
         categoryId: catId,
         category: cat ? cat.name : "",
         amount: amount,

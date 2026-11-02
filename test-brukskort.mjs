@@ -99,6 +99,52 @@ ok(M.months["2026-11"].cardTransfers.length === 2, "overføringer flettes per po
   ok(Mm.months["2026-11"].cardTransfers.length === 1, "overføring overlever synk + omlasting");
 }
 
+// regression: shared-category purchase stored with a person owner is counted (not hidden)
+{
+  const S1 = base();
+  S1.months["2026-11"].expenses = [{ id: "x1", owner: "pa", categoryId: "mat", category: "Mat", amount: 849, date: "2026-11-02" },
+    { id: "x2", owner: "pa", categoryId: "ff", category: "Fastfood", amount: 100, date: "2026-11-02", oneOff: true }];
+  const R1 = Calc.migrateState(JSON.parse(JSON.stringify(S1)));
+  const e1 = R1.months["2026-11"].expenses;
+  ok(e1[0].owner === "felles", "felles-kjøp lagret på person flyttes til felles");
+  ok(Calc.monthOverview(R1.months["2026-11"], "felles", people, cats, 10).rows.find((x) => x.id === "mat").used === 849, "felles-kjøp synes i felles");
+  ok(e1[1].owner === "pa" && e1[1].oneOff === true, "engangs-merke overlever omlasting");
+}
+
+// regression: one big one-off does not inflate the "over plan" yearly estimate
+{
+  const S2 = base();
+  const ex = (k, a) => ({ id: k + a, owner: "pa", categoryId: "ff", category: "Fastfood", amount: a, date: k + "-05" });
+  S2.months["2026-09"] = month({ expenses: [ex("2026-09", 10651)] });
+  S2.months["2026-10"] = month({ expenses: [ex("2026-10", 1605)] });
+  const tips = Calc.savingsRecommendations({ state: S2, monthKey: "2026-11", personId: "pa", today: nov, leftAfterBudget: 0, max: 10 });
+  const t = tips.find((x) => x.kind === "over");
+  ok(t && /7 ?300/.test(t.text.replace(/\u00a0/g, " ")), "overforbruk-tips bruker laveste måned: " + (t && t.text));
+}
+
+// regression: year view with an archived partner matches the active person's plan
+{
+  const S3 = base();
+  S3.people = [{ id: "pa", name: "A" }, { id: "pb", name: "B", archived: true }];
+  S3.months["2026-11"].plannedIncome = { pa: { "lønn": 20000 }, pb: { "lønn": 30000 } };
+  const R3 = Calc.migrateState(JSON.parse(JSON.stringify(S3)));
+  const yr = Calc.yearRollup(R3.months, 2026, R3.people, R3.categories, R3.settings, []);
+  const ov = Calc.monthOverview(R3.months["2026-11"], "pa", R3.people, R3.categories, 10);
+  ok(Math.abs(yr.months[10].planUt - ov.plannedOut) < 1, "årsoversikt = aktiv persons plan ved arkivert partner (" + yr.months[10].planUt + " / " + ov.plannedOut + ")");
+}
+
+// regression: no card / goal deduction before they started
+{
+  const S4 = base();
+  S4.settings.spendCard.pa.since = "2026-11";
+  S4.months["2026-10"] = month();
+  ok(Calc.spendCardMonth(S4, "2026-10", "pa", nov) === null, "ingen brukskort før startmåned");
+  S4.savingsGoals = [{ id: "g1", name: "Buffer", target: 80000, monthly: 5000, person: "pa", status: "aktiv", createdAt: "2026-11" }];
+  const R4 = Calc.migrateState(JSON.parse(JSON.stringify(S4)));
+  ok(Calc.savingsForMonth(R4, "2026-10", "pa", nov).goalMonthly === 0, "sparemål trekkes ikke før det ble laget");
+  ok(Calc.savingsForMonth(R4, "2026-11", "pa", nov).goalMonthly === 5000, "sparemål trekkes fra startmåned");
+}
+
 // real data, read only
 const P = "/workspace/familie-budsjett-rettet-2026-10-28.json";
 if (fs.existsSync(P)) {
